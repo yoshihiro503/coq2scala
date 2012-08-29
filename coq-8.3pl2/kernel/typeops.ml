@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: typeops.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Util
 open Names
@@ -20,8 +18,7 @@ open Reduction
 open Inductive
 open Type_errors
 
-let conv = default_conv CONV
-let conv_leq = default_conv CUMUL
+let conv_leq l2r = default_conv CUMUL ~l2r
 
 let conv_leq_vecti env v1 v2 =
   array_fold_left2_i
@@ -29,8 +26,8 @@ let conv_leq_vecti env v1 v2 =
       let c' =
         try default_conv CUMUL env t1 t2
         with NotConvertible -> raise (NotConvertibleVect i) in
-      Constraint.union c c')
-    Constraint.empty
+      union_constraints c c')
+    empty_constraint
     v1
     v2
 
@@ -46,8 +43,6 @@ let assumption_of_judgment env j =
   try (type_judgment env j).utj_val
   with TypeError _ ->
     error_assumption env j
-
-let sort_judgment env j = (type_judgment env j).utj_type
 
 (************************************************)
 (* Incremental typing rules: builds a typing judgement given the *)
@@ -206,8 +201,8 @@ let judge_of_apply env funj argjv =
         (match kind_of_term (whd_betadeltaiota env typ) with
           | Prod (_,c1,c2) ->
 	      (try
-		let c = conv_leq env hj.uj_type c1 in
-		let cst' = Constraint.union cst c in
+		let c = conv_leq false env hj.uj_type c1 in
+		let cst' = union_constraints cst c in
 		apply_rec (n+1) (subst1 hj.uj_val c2) cst' restjl
 	      with NotConvertible ->
 		error_cant_apply_bad_type env
@@ -219,7 +214,7 @@ let judge_of_apply env funj argjv =
   in
   apply_rec 1
     funj.uj_type
-    Constraint.empty
+    empty_constraint
     (Array.to_list argjv)
 
 (* Type of product *)
@@ -270,11 +265,18 @@ let judge_of_product env name t1 t2 =
 let judge_of_cast env cj k tj =
   let expected_type = tj.utj_val in
   try
-    let cst =
+    let c, cst =
       match k with
-      | VMcast -> vm_conv CUMUL env cj.uj_type expected_type
-      | DEFAULTcast -> conv_leq env cj.uj_type expected_type in
-    { uj_val = mkCast (cj.uj_val, k, expected_type);
+      | VMcast ->
+          mkCast (cj.uj_val, k, expected_type),
+          vm_conv CUMUL env cj.uj_type expected_type
+      | DEFAULTcast ->
+          mkCast (cj.uj_val, k, expected_type),
+          conv_leq false env cj.uj_type expected_type
+      | REVERTcast ->
+          cj.uj_val,
+          conv_leq true env cj.uj_type expected_type in
+    { uj_val = c;
       uj_type = expected_type },
     cst
   with NotConvertible ->
@@ -318,11 +320,11 @@ let judge_of_constructor env c =
 
 (* Case. *)
 
-let check_branch_types env cj (lfj,explft) =
+let check_branch_types env ind cj (lfj,explft) =
   try conv_leq_vecti env (Array.map j_type lfj) explft
   with
       NotConvertibleVect i ->
-        error_ill_formed_branch env cj.uj_val i lfj.(i).uj_type explft.(i)
+        error_ill_formed_branch env cj.uj_val (ind,i+1) lfj.(i).uj_type explft.(i)
     | Invalid_argument _ ->
         error_number_branches env cj (Array.length explft)
 
@@ -333,11 +335,11 @@ let judge_of_case env ci pj cj lfj =
   let _ = check_case_info env (fst indspec) ci in
   let (bty,rslty,univ) =
     type_case_branches env indspec pj cj.uj_val in
-  let univ' = check_branch_types env cj (lfj,bty) in
+  let univ' = check_branch_types env (fst indspec) cj (lfj,bty) in
   ({ uj_val  = mkCase (ci, (*nf_betaiota*) pj.uj_val, cj.uj_val,
                        Array.map j_val lfj);
      uj_type = rslty },
-  Constraint.union univ univ')
+  union_constraints univ univ')
 
 (* Fixpoints. *)
 
@@ -359,7 +361,7 @@ let type_fixpoint env lna lar vdefj =
    graph and in the universes of the environment. This is to ensure
    that the infered local graph is satisfiable. *)
 let univ_combinator (cst,univ) (j,c') =
-  (j,(Constraint.union cst c', merge_constraints c' univ))
+  (j,(union_constraints cst c', merge_constraints c' univ))
 
 (* The typing machine. *)
     (* ATTENTION : faudra faire le typage du contexte des Const,
@@ -476,23 +478,21 @@ and execute_recdef env (names,lar,vdef) i cu =
 
 and execute_array env = array_fold_map' (execute env)
 
-and execute_list env = list_fold_map' (execute env)
-
 (* Derived functions *)
 let infer env constr =
   let (j,(cst,_)) =
-    execute env constr (Constraint.empty, universes env) in
-  assert (j.uj_val = constr);
-  ({ j with uj_val = constr }, cst)
+    execute env constr (empty_constraint, universes env) in
+  assert (eq_constr j.uj_val constr);
+  (j, cst)
 
 let infer_type env constr =
   let (j,(cst,_)) =
-    execute_type env constr (Constraint.empty, universes env) in
+    execute_type env constr (empty_constraint, universes env) in
   (j, cst)
 
 let infer_v env cv =
   let (jv,(cst,_)) =
-    execute_array env cv (Constraint.empty, universes env) in
+    execute_array env cv (empty_constraint, universes env) in
   (jv, cst)
 
 (* Typing of several terms. *)
@@ -510,8 +510,8 @@ let infer_local_decls env decls =
   | (id, d) :: l ->
       let env, l, cst1 = inferec env l in
       let d, cst2 = infer_local_decl env id d in
-      push_rel d env, add_rel_decl d l, Constraint.union cst1 cst2
-  | [] -> env, empty_rel_context, Constraint.empty in
+      push_rel d env, add_rel_decl d l, union_constraints cst1 cst2
+  | [] -> env, empty_rel_context, empty_constraint in
   inferec env decls
 
 (* Exported typing functions *)

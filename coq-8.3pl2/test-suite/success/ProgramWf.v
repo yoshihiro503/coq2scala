@@ -1,3 +1,9 @@
+(* Before loading Program, check non-anomaly on missing library Program *)
+
+Fail Program Definition f n (e:n=n): {n|n=0} := match n,e with 0, refl => 0 | _, _ => 0 end.
+
+(* Then we test Program properly speaking *)
+
 Require Import Arith Program.
 Require Import ZArith Zwf.
 
@@ -16,14 +22,14 @@ Program Fixpoint merge (n m : nat) {measure (n + m) (lt)} : nat :=
 Print merge.
 
 
-Print Zlt.
+Print Z.lt.
 Print Zwf.
 
-Open Local Scope Z_scope.
+Local Open Scope Z_scope.
 
 Program Fixpoint Zwfrec (n m : Z) {measure (n + m) (Zwf 0)} : Z :=
   match n ?= m with
-    | Lt => Zwfrec n (Zpred m)
+    | Lt => Zwfrec n (Z.pred m)
     | _ => 0
   end.
 

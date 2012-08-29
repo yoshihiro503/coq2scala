@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,34 +8,33 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: ZAdd.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Export ZBase.
 
-Module ZAddPropFunct (Import Z : ZAxiomsSig').
-Include ZBasePropFunct Z.
+Module ZAddProp (Import Z : ZAxiomsMiniSig').
+Include ZBaseProp Z.
 
 (** Theorems that are either not valid on N or have different proofs
     on N and Z *)
+
+Hint Rewrite opp_0 : nz.
 
 Theorem add_pred_l : forall n m, P n + m == P (n + m).
 Proof.
 intros n m.
 rewrite <- (succ_pred n) at 2.
-rewrite add_succ_l. now rewrite pred_succ.
+now rewrite add_succ_l, pred_succ.
 Qed.
 
 Theorem add_pred_r : forall n m, n + P m == P (n + m).
 Proof.
-intros n m; rewrite (add_comm n (P m)), (add_comm n m);
-apply add_pred_l.
+intros n m; rewrite 2 (add_comm n); apply add_pred_l.
 Qed.
 
 Theorem add_opp_r : forall n m, n + (- m) == n - m.
 Proof.
 nzinduct m.
-rewrite opp_0; rewrite sub_0_r; now rewrite add_0_r.
-intro m. rewrite opp_succ, sub_succ_r, add_pred_r; now rewrite pred_inj_wd.
+now nzsimpl.
+intro m. rewrite opp_succ, sub_succ_r, add_pred_r. now rewrite pred_inj_wd.
 Qed.
 
 Theorem sub_0_l : forall n, 0 - n == - n.
@@ -45,7 +44,7 @@ Qed.
 
 Theorem sub_succ_l : forall n m, S n - m == S (n - m).
 Proof.
-intros n m; do 2 rewrite <- add_opp_r; now rewrite add_succ_l.
+intros n m; rewrite <- 2 add_opp_r; now rewrite add_succ_l.
 Qed.
 
 Theorem sub_pred_l : forall n m, P n - m == P (n - m).
@@ -69,7 +68,7 @@ Qed.
 Theorem sub_diag : forall n, n - n == 0.
 Proof.
 nzinduct n.
-now rewrite sub_0_r.
+now nzsimpl.
 intro n. rewrite sub_succ_r, sub_succ_l; now rewrite pred_succ.
 Qed.
 
@@ -90,20 +89,20 @@ Qed.
 
 Theorem add_sub_assoc : forall n m p, n + (m - p) == (n + m) - p.
 Proof.
-intros n m p; do 2 rewrite <- add_opp_r; now rewrite add_assoc.
+intros n m p; rewrite <- 2 add_opp_r; now rewrite add_assoc.
 Qed.
 
 Theorem opp_involutive : forall n, - (- n) == n.
 Proof.
 nzinduct n.
-now do 2 rewrite opp_0.
-intro n. rewrite opp_succ, opp_pred; now rewrite succ_inj_wd.
+now nzsimpl.
+intro n. rewrite opp_succ, opp_pred. now rewrite succ_inj_wd.
 Qed.
 
 Theorem opp_add_distr : forall n m, - (n + m) == - n + (- m).
 Proof.
 intros n m; nzinduct n.
-rewrite opp_0; now do 2 rewrite add_0_l.
+now nzsimpl.
 intro n. rewrite add_succ_l; do 2 rewrite opp_succ; rewrite add_pred_l.
 now rewrite pred_inj_wd.
 Qed.
@@ -116,12 +115,12 @@ Qed.
 
 Theorem opp_inj : forall n m, - n == - m -> n == m.
 Proof.
-intros n m H. apply opp_wd in H. now do 2 rewrite opp_involutive in H.
+intros n m H. apply opp_wd in H. now rewrite 2 opp_involutive in H.
 Qed.
 
 Theorem opp_inj_wd : forall n m, - n == - m <-> n == m.
 Proof.
-intros n m; split; [apply opp_inj | apply opp_wd].
+intros n m; split; [apply opp_inj | intros; now f_equiv].
 Qed.
 
 Theorem eq_opp_l : forall n m, - n == m <-> n == - m.
@@ -137,7 +136,7 @@ Qed.
 Theorem sub_add_distr : forall n m p, n - (m + p) == (n - m) - p.
 Proof.
 intros n m p; rewrite <- add_opp_r, opp_add_distr, add_assoc.
-now do 2 rewrite add_opp_r.
+now rewrite 2 add_opp_r.
 Qed.
 
 Theorem sub_sub_distr : forall n m p, n - (m - p) == (n - m) + p.
@@ -148,7 +147,7 @@ Qed.
 
 Theorem sub_opp_l : forall n m, - n - m == - m - n.
 Proof.
-intros n m. do 2 rewrite <- add_opp_r. now rewrite add_comm.
+intros n m. rewrite <- 2 add_opp_r. now rewrite add_comm.
 Qed.
 
 Theorem sub_opp_r : forall n m, n - (- m) == n + m.
@@ -165,7 +164,7 @@ Qed.
 Theorem sub_cancel_l : forall n m p, n - m == n - p <-> m == p.
 Proof.
 intros n m p. rewrite <- (add_cancel_l (n - m) (n - p) (- n)).
-do 2 rewrite add_sub_assoc. rewrite add_opp_diag_l; do 2 rewrite sub_0_l.
+rewrite 2 add_sub_assoc. rewrite add_opp_diag_l; rewrite 2 sub_0_l.
 apply opp_inj_wd.
 Qed.
 
@@ -252,6 +251,11 @@ Proof.
 intros; now rewrite <- sub_sub_distr, sub_diag, sub_0_r.
 Qed.
 
+Theorem sub_add : forall n m, m - n + n == m.
+Proof.
+ intros. now rewrite <- add_sub_swap, add_simpl_r.
+Qed.
+
 (** Now we have two sums or differences; the name includes the two
     operators and the position of the terms being canceled *)
 
@@ -289,5 +293,5 @@ Qed.
 
 (** Of course, there are many other variants *)
 
-End ZAddPropFunct.
+End ZAddProp.
 

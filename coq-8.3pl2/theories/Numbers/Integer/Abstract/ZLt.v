@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,12 +8,10 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: ZLt.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Export ZMul.
 
-Module ZOrderPropFunct (Import Z : ZAxiomsSig').
-Include ZMulPropFunct Z.
+Module ZOrderProp (Import Z : ZAxiomsMiniSig').
+Include ZMulProp Z.
 
 (** Instances of earlier theorems for m == 0 *)
 
@@ -70,12 +68,12 @@ Qed.
 
 Theorem lt_lt_pred : forall n m, n < m -> P n < m.
 Proof.
-intros; apply <- lt_pred_le; now apply lt_le_incl.
+intros; apply lt_pred_le; now apply lt_le_incl.
 Qed.
 
 Theorem le_le_pred : forall n m, n <= m -> P n <= m.
 Proof.
-intros; apply lt_le_incl; now apply <- lt_pred_le.
+intros; apply lt_le_incl; now apply lt_pred_le.
 Qed.
 
 Theorem lt_pred_lt : forall n m, n < P m -> n < m.
@@ -85,7 +83,7 @@ Qed.
 
 Theorem le_pred_lt : forall n m, n <= P m -> n <= m.
 Proof.
-intros; apply lt_le_incl; now apply <- lt_le_pred.
+intros; apply lt_le_incl; now apply lt_le_pred.
 Qed.
 
 Theorem pred_lt_mono : forall n m, n < m <-> P n < P m.
@@ -123,12 +121,12 @@ Proof.
 intro; apply lt_neq; apply lt_pred_l.
 Qed.
 
-Theorem lt_n1_r : forall n m, n < m -> m < 0 -> n < -(1).
+Theorem lt_m1_r : forall n m, n < m -> m < 0 -> n < -1.
 Proof.
-intros n m H1 H2. apply -> lt_le_pred in H2.
-setoid_replace (P 0) with (-(1)) in H2. now apply lt_le_trans with m.
-apply <- eq_opp_r. now rewrite opp_pred, opp_0.
+intros n m H1 H2. apply lt_le_pred in H2.
+setoid_replace (P 0) with (-1) in H2. now apply lt_le_trans with m.
+apply eq_opp_r. now rewrite one_succ, opp_pred, opp_0.
 Qed.
 
-End ZOrderPropFunct.
+End ZOrderProp.
 

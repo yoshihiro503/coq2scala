@@ -6,8 +6,6 @@
 (*         *       GNU Lesser General Public License Version 2.1       *)
 (***********************************************************************)
 
-(* $Id: OrderedTypeEx.v 13297 2010-07-19 23:32:42Z letouzey $ *)
-
 Require Import OrderedType.
 Require Import ZArith.
 Require Import Omega.
@@ -23,9 +21,9 @@ Module Type UsualOrderedType.
  Parameter Inline t : Type.
  Definition eq := @eq t.
  Parameter Inline lt : t -> t -> Prop.
- Definition eq_refl := @refl_equal t.
- Definition eq_sym := @sym_eq t.
- Definition eq_trans := @trans_eq t.
+ Definition eq_refl := @eq_refl t.
+ Definition eq_sym := @eq_sym t.
+ Definition eq_trans := @eq_trans t.
  Axiom lt_trans : forall x y z : t, lt x y -> lt y z -> lt x z.
  Axiom lt_not_eq : forall x y : t, lt x y -> ~ eq x y.
  Parameter compare : forall x y : t, Compare lt eq x y.
@@ -43,9 +41,9 @@ Module Nat_as_OT <: UsualOrderedType.
   Definition t := nat.
 
   Definition eq := @eq nat.
-  Definition eq_refl := @refl_equal t.
-  Definition eq_sym := @sym_eq t.
-  Definition eq_trans := @trans_eq t.
+  Definition eq_refl := @eq_refl t.
+  Definition eq_sym := @eq_sym t.
+  Definition eq_trans := @eq_trans t.
 
   Definition lt := lt.
 
@@ -55,12 +53,12 @@ Module Nat_as_OT <: UsualOrderedType.
   Lemma lt_not_eq : forall x y : t, lt x y -> ~ eq x y.
   Proof. unfold lt, eq; intros; omega. Qed.
 
-  Definition compare : forall x y : t, Compare lt eq x y.
+  Definition compare x y : Compare lt eq x y.
   Proof.
-    intros x y; destruct (nat_compare x y) as [ | | ]_eqn.
-    apply EQ. apply nat_compare_eq; assumption.
-    apply LT. apply nat_compare_Lt_lt; assumption.
-    apply GT. apply nat_compare_Gt_gt; assumption.
+    case_eq (nat_compare x y); intro.
+    - apply EQ. now apply nat_compare_eq.
+    - apply LT. now apply nat_compare_Lt_lt.
+    - apply GT. now apply nat_compare_Gt_gt.
   Defined.
 
   Definition eq_dec := eq_nat_dec.
@@ -70,15 +68,15 @@ End Nat_as_OT.
 
 (** [Z] is an ordered type with respect to the usual order on integers. *)
 
-Open Local Scope Z_scope.
+Local Open Scope Z_scope.
 
 Module Z_as_OT <: UsualOrderedType.
 
   Definition t := Z.
   Definition eq := @eq Z.
-  Definition eq_refl := @refl_equal t.
-  Definition eq_sym := @sym_eq t.
-  Definition eq_trans := @trans_eq t.
+  Definition eq_refl := @eq_refl t.
+  Definition eq_sym := @eq_sym t.
+  Definition eq_trans := @eq_trans t.
 
   Definition lt (x y:Z) := (x<y).
 
@@ -88,89 +86,73 @@ Module Z_as_OT <: UsualOrderedType.
   Lemma lt_not_eq : forall x y, x<y -> ~ x=y.
   Proof. intros; omega. Qed.
 
-  Definition compare : forall x y, Compare lt eq x y.
+  Definition compare x y : Compare lt eq x y.
   Proof.
-    intros x y; destruct (x ?= y) as [ | | ]_eqn.
-    apply EQ; apply Zcompare_Eq_eq; assumption.
-    apply LT; assumption.
-    apply GT; apply Zgt_lt; assumption.
+    case_eq (x ?= y); intro.
+    - apply EQ. now apply Z.compare_eq.
+    - apply LT. assumption.
+    - apply GT. now apply Z.gt_lt.
   Defined.
 
-  Definition eq_dec := Z_eq_dec.
+  Definition eq_dec := Z.eq_dec.
 
 End Z_as_OT.
 
 (** [positive] is an ordered type with respect to the usual order on natural numbers. *)
 
-Open Local Scope positive_scope.
+Local Open Scope positive_scope.
 
 Module Positive_as_OT <: UsualOrderedType.
   Definition t:=positive.
   Definition eq:=@eq positive.
-  Definition eq_refl := @refl_equal t.
-  Definition eq_sym := @sym_eq t.
-  Definition eq_trans := @trans_eq t.
+  Definition eq_refl := @eq_refl t.
+  Definition eq_sym := @eq_sym t.
+  Definition eq_trans := @eq_trans t.
 
-  Definition lt p q:= (p ?= q) Eq = Lt.
+  Definition lt := Pos.lt.
 
-  Lemma lt_trans : forall x y z : t, lt x y -> lt y z -> lt x z.
-  Proof.
-  unfold lt; intros x y z.
-  change ((Zpos x < Zpos y)%Z -> (Zpos y < Zpos z)%Z -> (Zpos x < Zpos z)%Z).
-  omega.
-  Qed.
+  Definition lt_trans := Pos.lt_trans.
 
   Lemma lt_not_eq : forall x y : t, lt x y -> ~ eq x y.
   Proof.
-  intros; intro.
-  rewrite H0 in H.
-  unfold lt in H.
-  rewrite Pcompare_refl in H; discriminate.
+  intros x y H. contradict H. rewrite H. apply Pos.lt_irrefl.
   Qed.
 
-  Definition compare : forall x y : t, Compare lt eq x y.
+  Definition compare x y : Compare lt eq x y.
   Proof.
-  intros x y. destruct ((x ?= y) Eq) as [ | | ]_eqn.
-  apply EQ; apply Pcompare_Eq_eq; assumption.
-  apply LT; assumption.
-  apply GT; apply ZC1; assumption.
+  case_eq (x ?= y); intros H.
+  - apply EQ. now apply Pos.compare_eq.
+  - apply LT; assumption.
+  - apply GT. now apply Pos.gt_lt.
   Defined.
 
-  Definition eq_dec : forall x y, { eq x y } + { ~ eq x y }.
-  Proof.
-   intros; unfold eq; decide equality.
-  Defined.
+  Definition eq_dec := Pos.eq_dec.
 
 End Positive_as_OT.
 
 
 (** [N] is an ordered type with respect to the usual order on natural numbers. *)
 
-Open Local Scope positive_scope.
-
 Module N_as_OT <: UsualOrderedType.
   Definition t:=N.
   Definition eq:=@eq N.
-  Definition eq_refl := @refl_equal t.
-  Definition eq_sym := @sym_eq t.
-  Definition eq_trans := @trans_eq t.
+  Definition eq_refl := @eq_refl t.
+  Definition eq_sym := @eq_sym t.
+  Definition eq_trans := @eq_trans t.
 
-  Definition lt:=Nlt.
-  Definition lt_trans := Nlt_trans.
-  Definition lt_not_eq := Nlt_not_eq.
+  Definition lt := N.lt.
+  Definition lt_trans := N.lt_trans.
+  Definition lt_not_eq := N.lt_neq.
 
-  Definition compare : forall x y : t, Compare lt eq x y.
+  Definition compare x y : Compare lt eq x y.
   Proof.
-  intros x y. destruct (x ?= y)%N as [ | | ]_eqn.
-  apply EQ; apply Ncompare_Eq_eq; assumption.
-  apply LT; assumption.
-  apply GT. apply Ngt_Nlt; assumption.
+  case_eq (x ?= y)%N; intro.
+  - apply EQ. now apply N.compare_eq.
+  - apply LT. assumption.
+  - apply GT. now apply N.gt_lt.
   Defined.
 
-  Definition eq_dec : forall x y, { eq x y } + { ~ eq x y }.
-  Proof.
-   intros. unfold eq. decide equality. apply Positive_as_OT.eq_dec.
-  Defined.
+  Definition eq_dec := N.eq_dec.
 
 End N_as_OT.
 
@@ -250,9 +232,9 @@ End PairOrderedType.
 Module PositiveOrderedTypeBits <: UsualOrderedType.
   Definition t:=positive.
   Definition eq:=@eq positive.
-  Definition eq_refl := @refl_equal t.
-  Definition eq_sym := @sym_eq t.
-  Definition eq_trans := @trans_eq t.
+  Definition eq_refl := @eq_refl t.
+  Definition eq_sym := @eq_sym t.
+  Definition eq_trans := @eq_trans t.
 
   Fixpoint bits_lt (p q:positive) : Prop :=
    match p, q with
@@ -296,38 +278,38 @@ Module PositiveOrderedTypeBits <: UsualOrderedType.
   Definition compare : forall x y : t, Compare lt eq x y.
   Proof.
   induction x; destruct y.
-  (* I I *)
-  destruct (IHx y).
-  apply LT; auto.
-  apply EQ; rewrite e; red; auto.
-  apply GT; auto.
-  (* I O *)
-  apply GT; simpl; auto.
-  (* I H *)
-  apply GT; simpl; auto.
-  (* O I *)
-  apply LT; simpl; auto.
-  (* O O *)
-  destruct (IHx y).
-  apply LT; auto.
-  apply EQ; rewrite e; red; auto.
-  apply GT; auto.
-  (* O H *)
-  apply LT; simpl; auto.
-  (* H I *)
-  apply LT; simpl; auto.
-  (* H O *)
-  apply GT; simpl; auto.
-  (* H H *)
-  apply EQ; red; auto.
+  - (* I I *)
+    destruct (IHx y).
+    apply LT; auto.
+    apply EQ; rewrite e; red; auto.
+    apply GT; auto.
+  - (* I O *)
+    apply GT; simpl; auto.
+  - (* I H *)
+    apply GT; simpl; auto.
+  - (* O I *)
+    apply LT; simpl; auto.
+  - (* O O *)
+    destruct (IHx y).
+    apply LT; auto.
+    apply EQ; rewrite e; red; auto.
+    apply GT; auto.
+  - (* O H *)
+    apply LT; simpl; auto.
+  - (* H I *)
+    apply LT; simpl; auto.
+  - (* H O *)
+    apply GT; simpl; auto.
+  - (* H H *)
+    apply EQ; red; auto.
   Qed.
 
   Lemma eq_dec (x y: positive): {x = y} + {x <> y}.
   Proof.
-  intros. case_eq ((x ?= y) Eq); intros.
-  left. apply Pcompare_Eq_eq; auto.
-  right. red. intro. subst y. rewrite (Pcompare_refl x) in H. discriminate.
-  right. red. intro. subst y. rewrite (Pcompare_refl x) in H. discriminate.
+  intros. case_eq (x ?= y); intros.
+  - left. now apply Pos.compare_eq.
+  - right. intro. subst y. now rewrite (Pos.compare_refl x) in *.
+  - right. intro. subst y. now rewrite (Pos.compare_refl x) in *.
   Qed.
 
 End PositiveOrderedTypeBits.

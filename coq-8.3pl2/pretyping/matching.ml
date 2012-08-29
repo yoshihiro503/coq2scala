@@ -1,14 +1,13 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: matching.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 (*i*)
+open Pp
 open Util
 open Names
 open Libnames
@@ -16,7 +15,7 @@ open Nameops
 open Termops
 open Reductionops
 open Term
-open Rawterm
+open Glob_term
 open Sign
 open Environ
 open Pattern
@@ -56,23 +55,23 @@ let constrain (n,(ids,m as x)) (names,terms as subst) =
   with
       Not_found ->
         if List.mem_assoc n names then
-          Flags.if_verbose Pp.warning
-              ("Collision between bound variable "^string_of_id n^
-                 " and a metavariable of same name.");
+          Flags.if_warn Pp.msg_warning
+              (str "Collision between bound variable " ++ pr_id n ++
+               str " and a metavariable of same name.");
         (names,(n,x)::terms)
 
 let add_binders na1 na2 (names,terms as subst) =
   match na1, na2 with
   | Name id1, Name id2 ->
       if List.mem_assoc id1 names then
-        (Flags.if_verbose Pp.warning
-          ("Collision between bound variables of name "^string_of_id id1);
+        (Flags.if_warn Pp.msg_warning
+          (str "Collision between bound variables of name " ++ pr_id id1);
          (names,terms))
       else
         (if List.mem_assoc id1 terms then
-            Flags.if_verbose Pp.warning
-              ("Collision between bound variable "^string_of_id id1^
-                  " and another bound variable of same name.");
+            Flags.if_warn Pp.msg_warning
+              (str "Collision between bound variable " ++ pr_id id1 ++
+               str " and another bound variable of same name.");
          ((id1,id2)::names,terms));
   | _ -> subst
 
@@ -86,18 +85,6 @@ let build_lambda toabstract stk (m : constr) =
 	  buildrec (lift (-1) m) (n+1) tl
   in
   buildrec m 1 stk
-
-let memb_metavars m n =
-  match (m,n) with
-    | (None, _)     -> true
-    | (Some mvs, n) -> List.mem n mvs
-
-let eq_context ctxt1 ctxt2 = array_for_all2 eq_constr ctxt1 ctxt2
-
-let same_case_structure (_,cs1,ind,_) ci2 br1 br2 =
-  match ind with
-  | Some ind -> ind = ci2.ci_ind
-  | None -> cs1 = ci2.ci_cstr_nargs
 
 let rec list_insert f a = function
   | [] -> [a]
@@ -182,9 +169,9 @@ let matches_core convert allow_partial_app allow_bound_rels pat c =
 
       | PRel n1, Rel n2 when n1 = n2 -> subst
 
-      | PSort (RProp c1), Sort (Prop c2) when c1 = c2 -> subst
+      | PSort (GProp c1), Sort (Prop c2) when c1 = c2 -> subst
 
-      | PSort (RType _), Sort (Type _) -> subst
+      | PSort (GType _), Sort (Type _) -> subst
 
       | PApp (p, [||]), _ -> sorec stk subst p t
 
@@ -217,8 +204,8 @@ let matches_core convert allow_partial_app allow_bound_rels pat c =
             (add_binders na1 na2 (sorec stk subst c1 c2)) d1 d2
 
       | PIf (a1,b1,b1'), Case (ci,_,a2,[|b2;b2'|]) ->
-	  let ctx,b2 = decompose_lam_n_assum ci.ci_cstr_nargs.(0) b2 in
-	  let ctx',b2' = decompose_lam_n_assum ci.ci_cstr_nargs.(1) b2' in
+	  let ctx,b2 = decompose_lam_n_assum ci.ci_cstr_ndecls.(0) b2 in
+	  let ctx',b2' = decompose_lam_n_assum ci.ci_cstr_ndecls.(1) b2' in
 	  let n = rel_context_length ctx in
           let n' = rel_context_length ctx' in
 	  if noccur_between 1 n b2 & noccur_between 1 n' b2' then
@@ -232,11 +219,18 @@ let matches_core convert allow_partial_app allow_bound_rels pat c =
             raise PatternMatchingFailure
 
       | PCase (ci1,p1,a1,br1), Case (ci2,p2,a2,br2) ->
-	  if same_case_structure ci1 ci2 br1 br2 then
-  	    array_fold_left2 (sorec stk)
-	      (sorec stk (sorec stk subst a1 a2) p1 p2) br1 br2
-          else
-            raise PatternMatchingFailure
+	  let n2 = Array.length br2 in
+	  if (ci1.cip_ind <> None && ci1.cip_ind <> Some ci2.ci_ind) ||
+	     (not ci1.cip_extensible && List.length br1 <> n2)
+	  then raise PatternMatchingFailure;
+	  let chk_branch subst (j,n,c) =
+	    (* (ind,j+1) is normally known to be a correct constructor
+	       and br2 a correct match over the same inductive *)
+	    assert (j < n2);
+	    sorec stk subst c br2.(j)
+	  in
+	  let chk_head = sorec stk (sorec stk subst a1 a2) p1 p2 in
+	  List.fold_left chk_branch chk_head br1
 
       |	PFix c1, Fix _ when eq_constr (mkFix c1) cT -> subst
       |	PCoFix c1, CoFix _ when eq_constr (mkCoFix c1) cT -> subst

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: ClassicalDescription.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (** This file provides classical logic and definite description, which is
     equivalent to providing classical logic and Church's iota operator *)
@@ -18,13 +16,11 @@
 
 Set Implicit Arguments.
 
-Require Export Classical.
+Require Export Classical.   (* Axiomatize classical reasoning *)
+Require Export Description. (* Axiomatize constructive form of Church's iota *)
 Require Import ChoiceFacts.
 
-Notation Local inhabited A := A (only parsing).
-
-Axiom constructive_definite_description :
-  forall (A : Type) (P : A->Prop), (exists! x : A, P x) -> { x : A | P x }.
+Local Notation inhabited A := A (only parsing).
 
 (** The idea for the following proof comes from [ChicliPottierSimpson02] *)
 

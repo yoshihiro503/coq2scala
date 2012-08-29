@@ -34,9 +34,6 @@ isomorphism} \cite{How80,Bar91,Gir89,Hue89}, \Coq~ stores proofs as
 terms of {\sc Cic}. Those terms are called {\em proof
   terms}\index{Proof term}.
 
-It is possible to edit several proofs in parallel: see Section
-\ref{Resume}.
-
 \ErrMsg When one attempts to use a proof editing command out of the
 proof editing mode, \Coq~ raises the error message : \errindex{No focused
   proof}.
@@ -133,6 +130,24 @@ one gulp, as a proof term (see Section~\ref{exact}).
 
 \SeeAlso {\tt Proof with {\tac}.} in Section~\ref{ProofWith}.
 
+\subsection[\tt Proof using {\ident$_1$ \dots {\ident$_n$}}.]
+{\tt Proof using {\ident$_1$ \dots {\ident$_n$}}.
+\comindex{Proof using} \label{ProofUsing}}
+
+This command applies in proof editing mode. 
+It declares the set of section variables (see~\ref{Variable}) 
+used by the proof. At {\tt Qed} time, the system will assert that 
+the set of section variables actually used in the proof is a subset of
+the declared one.
+
+The set of declared variables is closed under type dependency.
+For example if {\tt T} is variable and {\tt a} is a variable of
+type {\tt T}, the commands {\tt Proof using a} and
+{\tt Proof using T a} are actually equivalent.
+
+\variant {\tt Proof using {\ident$_1$ \dots {\ident$_n$}} with {\tac}.} 
+in Section~\ref{ProofWith}.
+
 \subsection[\tt Abort.]{\tt Abort.\comindex{Abort}}
 
 This command cancels the current proof development, switching back to
@@ -156,35 +171,6 @@ proof was edited.
 \end{Variants}
 
 %%%%
-\subsection[\tt Suspend.]{\tt Suspend.\comindex{Suspend}}
-
-This command applies in proof editing mode. It switches back to the
-\Coq\ toplevel, but without canceling the current proofs.
-
-%%%%
-\subsection[\tt Resume.]{\tt Resume.\comindex{Resume}\label{Resume}}
-
-This commands switches back to the editing of the last edited proof.
-
-\begin{ErrMsgs}
-\item \errindex{No proof-editing in progress}
-\end{ErrMsgs}
-
-\begin{Variants}
-
-\item {\tt Resume {\ident}.}
-
-  Restarts the editing of the proof named {\ident}. This can be used
-  to navigate between currently edited proofs.
-
-\end{Variants}
-
-\begin{ErrMsgs}
-\item \errindex{No such proof}
-\end{ErrMsgs}
-
-
-%%%%
 \subsection[\tt Existential {\num} := {\term}.]{\tt Existential  {\num} := {\term}.\comindex{Existential}
 \label{Existential}}
 
@@ -198,7 +184,14 @@ existential variables remain. To instantiate existential variables
 during proof edition, you should use the tactic {\tt instantiate}.
 
 \SeeAlso {\tt instantiate (\num:= \term).} in Section~\ref{instantiate}.
+\SeeAlso {\tt Grab Existential Variables.} below.
 
+\subsection[\tt Grab Existential Variables.]{\tt Grab Existential Variables.\comindex{Grab Existential Variables}
+\label{GrabEvars}}
+
+This command can be run when a proof has no more goal to be solved but has remaining
+uninstantiated existential variables. It takes every uninstantiated existential variable
+and turns it into a goal.
 
 %%%%%%%%
 \section{Navigation in the proof tree}
@@ -211,7 +204,6 @@ backtracks one step.
 
 \begin{ErrMsgs}
 \item \errindex{No focused proof (No proof-editing in progress)}
-\item \errindex{Undo stack would be exhausted}
 \end{ErrMsgs}
 
 \begin{Variants}
@@ -221,18 +213,6 @@ backtracks one step.
   Repeats {\tt Undo} {\num} times.
 
 \end{Variants}
-
-\subsection[\tt Set Undo {\num}.]{\tt Set Undo {\num}.\comindex{Set Undo}}
-
-This command changes the maximum number of {\tt Undo}'s that will be
-possible when doing a proof. It only affects proofs started after
-this command, such that if you want to change the current undo limit
-inside a proof, you should first restart this proof.
-
-\subsection[\tt Unset Undo.]{\tt Unset Undo.\comindex{Unset Undo}}
-
-This command resets the default number of possible {\tt Undo} commands
-(which is currently 12).
 
 \subsection[\tt Restart.]{\tt Restart.\comindex{Restart}}
 This command restores the proof editing process to the original goal.
@@ -254,7 +234,75 @@ This focuses the attention on the $\num^{th}$ subgoal to prove.
 \end{Variant}
 
 \subsection[\tt Unfocus.]{\tt Unfocus.\comindex{Unfocus}}
-Turns off the focus mode.
+This command restores to focus the goal that were suspended by the
+last {\tt Focus} command.
+
+\subsection[\tt Unfocused.]{\tt Unfocused.\comindex{Unfocused}}
+Succeeds in the proof is fully unfocused, fails is there are some
+goals out of focus.
+
+\subsection[\tt \{ \textrm{and} \}]{\tt \{ \textrm{and} \}\comindex{\{}\comindex{\}}}
+The command {\tt \{} (without a terminating period) focuses on the
+first goal, much like {\tt Focus.} does, however, the subproof can
+only be unfocused when it has been fully solved (\emph{i.e.} when
+there is no focused goal left). Unfocusing is then handled by {\tt \}}
+(again, without a terminating period). See also example in next section.
+
+\begin{ErrMsgs}
+\item \errindex{Error: This proof is focused, but cannot be unfocused
+      this way}
+  You are trying to use a bullet that is already in use or a {\tt \}} but the current
+  subproof has not been fully solved.
+\end{ErrMsgs}
+
+\subsection[Bullets]{Bullets\comindex{+ (command)}\comindex{- (command)}\comindex{* (command)}\index{Bullets}}
+Alternatively to {\tt \{} and {\tt \}}, proofs can be structured with
+bullets. The use of a bullet $b$ for the first time focuses on the
+first goal $g$, the same bullet cannot be used again until the proof
+of $g$ is completed, then it is mandatory to focus the next goal with $b$. The
+consequence is that $g$ and all goals present when $g$ was focused are
+focused with the same bullet $b$. See the example below.
+
+Different bullets can be used to nest levels. The scope of bullet does
+not go beyond enclosing {\tt \{} and {\tt \}}, so bullets can be
+reused as further nesting levels provided they are delimited by these.
+Available bullets are {\tt -}, {\tt +} and {\tt *} (without a
+terminating period).
+
+The following example script illustrates all these features:
+\begin{coq_example*}
+Goal (((True/\True)/\True)/\True)/\True.
+Proof.
+  split.
+  - split.
+    + split.
+      * { split.
+          - trivial.
+          - trivial.
+        }
+      * trivial.
+    + trivial.
+  - assert True.
+    { trivial. }
+    assumption.
+\end{coq_example*}
+
+Remark: In ProofGeneral (emacs interface to coq), you must use bullets
+with this priority ordering to have a correct indentation: {\tt -},
+{\tt +}, {\tt *}. That is {\tt -} must be the outer bullet and {\tt *}
+the inner one, like in the example above.
+
+\begin{ErrMsgs}
+\item \errindex{Error: No such unproven subgoal} there is no proof
+      under focus (because it has just been solved), so the command
+      you are trying to use cannot be applied. You need to first focus
+      the next proof by using the bullet corresponding to the right
+      level (using an incorrect bullet also generates this message).
+\item \errindex{Error: This proof is focused, but cannot be unfocused
+      this way}
+  You are trying to use a bullet that is already in use or a {\tt \}} but the current
+  subproof has not been fully solved.
+\end{ErrMsgs}
 
 
 \section{Requesting information}
@@ -361,8 +409,6 @@ All the hypotheses remains usable in the proof development.
 \subsection[\tt Unset Hyps Limit.]{\tt Unset Hyps Limit.\comindex{Unset Hyps Limit}}
 This command goes back to the default mode which is to print all
 available hypotheses.
-
-% $Id: RefMan-pro.tex 13091 2010-06-08 13:56:19Z herbelin $
 
 
 \subsection[\tt Set Automatic Introduction.]{\tt Set Automatic Introduction.\comindex{Set Automatic Introduction}\comindex{Unset Automatic Introduction}\label{Set Automatic Introduction}}

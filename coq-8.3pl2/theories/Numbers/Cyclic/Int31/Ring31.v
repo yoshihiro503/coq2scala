@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Ring31.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (** * Int31 numbers defines Z/(2^31)Z, and can hence be equipped
       with a ring structure and a ring tactic *)
@@ -83,9 +81,10 @@ Qed.
 Lemma eqb31_eq : forall x y, eqb31 x y = true <-> x=y.
 Proof.
 unfold eqb31. intros x y.
-generalize (Cyclic31.spec_compare x y).
-destruct (x ?= y); intuition; subst; auto with zarith; try discriminate.
-apply Int31_canonic; auto.
+rewrite Cyclic31.spec_compare. case Z.compare_spec.
+intuition. apply Int31_canonic; auto.
+intuition; subst; auto with zarith; try discriminate.
+intuition; subst; auto with zarith; try discriminate.
 Qed.
 
 Lemma eqb31_correct : forall x y, eqb31 x y = true -> x=y.

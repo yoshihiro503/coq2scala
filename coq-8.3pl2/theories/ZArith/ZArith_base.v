@@ -1,17 +1,16 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: ZArith_base.v 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 (** Library for manipulating integers based on binary encoding.
     These are the basic modules, required by [Omega] and [Ring] for instance.
     The full library is [ZArith]. *)
 
+Require Export BinNums.
 Require Export BinPos.
 Require Export BinNat.
 Require Export BinInt.
@@ -29,8 +28,8 @@ Require Export Zbool.
 Require Export Zmisc.
 Require Export Wf_Z.
 
-Hint Resolve Zle_refl Zplus_comm Zplus_assoc Zmult_comm Zmult_assoc Zplus_0_l
-  Zplus_0_r Zmult_1_l Zplus_opp_l Zplus_opp_r Zmult_plus_distr_l
-  Zmult_plus_distr_r: zarith.
+Hint Resolve Z.le_refl Z.add_comm Z.add_assoc Z.mul_comm Z.mul_assoc Z.add_0_l
+  Z.add_0_r Z.mul_1_l Z.add_opp_diag_l Z.add_opp_diag_r Z.mul_add_distr_l
+  Z.mul_add_distr_r: zarith.
 
 Require Export Zhints.

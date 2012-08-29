@@ -1,4 +1,5 @@
 auxiliary.vo
+BinIntDef.vo
 BinInt.vo
 Int.vo
 Wf_Z.vo
@@ -13,6 +14,7 @@ Zcomplements.vo
 Zdiv.vo
 Zeven.vo
 Zgcd_alt.vo
+Zpow_alt.vo
 Zhints.vo
 Zlogarithm.vo
 Zmax.vo
@@ -23,10 +25,11 @@ Znat.vo
 Znumtheory.vo
 ZOdiv_def.vo
 ZOdiv.vo
+Zquot.vo
 Zorder.vo
 Zpow_def.vo
 Zpower.vo
 Zpow_facts.vo
-Zsqrt.vo
+Zsqrt_compat.vo
 Zwf.vo
-ZOrderedType.vo
+Zeuclid.vo

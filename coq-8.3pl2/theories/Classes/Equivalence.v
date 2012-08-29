@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -11,8 +11,6 @@
    Author: Matthieu Sozeau
    Institution: LRI, CNRS UMR 8623 - University Paris Sud
 *)
-
-(* $Id: Equivalence.v 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 Require Import Coq.Program.Basics.
 Require Import Coq.Program.Tactics.
@@ -28,7 +26,7 @@ Unset Strict Implicit.
 Generalizable Variables A R eqA B S eqB.
 Local Obligation Tactic := simpl_relation.
 
-Open Local Scope signature_scope.
+Local Open Scope signature_scope.
 
 Definition equiv `{Equivalence A R} : relation A := R.
 
@@ -39,7 +37,7 @@ Notation " x === y " := (equiv x y) (at level 70, no associativity) : equiv_scop
 
 Notation " x =/= y " := (complement equiv x y) (at level 70, no associativity) : equiv_scope.
 
-Open Local Scope equiv_scope.
+Local Open Scope equiv_scope.
 
 (** Overloading for [PER]. *)
 

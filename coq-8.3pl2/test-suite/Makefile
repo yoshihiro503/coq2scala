@@ -75,7 +75,7 @@ VSUBSYSTEMS := prerequisite success failure $(BUGS) output \
   interactive micromega $(COMPLEXITY) modules
 
 # All subsystems
-SUBSYSTEMS := $(VSUBSYSTEMS) misc bugs
+SUBSYSTEMS := $(VSUBSYSTEMS) misc bugs ide
 
 #######################################################################
 # Phony targets
@@ -94,11 +94,8 @@ clean:
 	rm -f trace lia.cache
 	$(SHOW) "RM        <**/*.stamp> <**/*.vo> <**/*.log>"
 	$(HIDE)find . \( \
-	  -name '*.stamp' -o -name '*.vo' -o -name '*.v.log' \
+	  -name '*.stamp' -o -name '*.vo' -o -name '*.log' \
 	\) -print0 | xargs -0 rm -f
-
-distclean: clean
-	$(HIDE)find . -name '*.log' -print0 | xargs -0 rm -f
 
 #######################################################################
 # Per-subsystem targets
@@ -115,7 +112,7 @@ $(foreach S,$(VSUBSYSTEMS),$(eval $(call mkstamp,$(S))))
 # Summary
 #######################################################################
 
-summary_dir = echo $(1); find $(2) -name '*.log' -print0 | xargs -0 tail -q -n1 | sort -g
+summary_dir = echo $(1); find $(2) -name '*.log' -print0 | xargs -0 -n 1 tail -n1 | sort -g
 
 .PHONY: summary summary.log
 
@@ -131,6 +128,7 @@ summary:
 	  $(call summary_dir, "Miscellaneous tests", misc); \
 	  $(call summary_dir, "Complexity tests", complexity); \
 	  $(call summary_dir, "Module tests", modules); \
+	  $(call summary_dir, "IDE tests", ide); \
 	  nb_success=`find . -name '*.log' -exec tail -n2 '{}' \; | grep -e $(log_success) | wc -l`; \
 	  nb_failure=`find . -name '*.log' -exec tail -n2 '{}' \; | grep -e $(log_failure) | wc -l`; \
 	  nb_tests=`expr $$nb_success + $$nb_failure`; \
@@ -271,7 +269,7 @@ $(addsuffix .log,$(wildcard output/*.v)): %.v.log: %.v
 	    | grep -v "Welcome to Coq" \
 	    | grep -v "Skipping rcfile loading" \
 	    > $$tmpoutput; \
-	  diff $$tmpoutput $*.out 2>&1; R=$$?; times; \
+	  diff -u $*.out $$tmpoutput 2>&1; R=$$?; times; \
 	  if [ $$R = 0 ]; then \
 	    echo $(log_success); \
 	    echo "    $<...Ok"; \
@@ -354,7 +352,7 @@ $(addsuffix .log,$(wildcard modules/*.v)): %.v.log: modules/Nat.vo modules/plik.
 # Miscellaneous tests
 #######################################################################
 
-misc: misc/xml.log misc/deps-order.log
+misc: misc/xml.log misc/deps-order.log misc/universes.log
 
 # Test xml compilation
 xml: misc/xml.log
@@ -371,7 +369,7 @@ misc/xml.log:
 	  else \
 	    echo $(log_success); \
 	    echo "    misc/xml...apparently ok"; \
-	  fi; rm -r misc/xml; \
+	  fi; rm -rf misc/xml; \
 	} > "$@"
 
 # Check that both coqdep and coqtop/coqc takes the later -I/-R
@@ -386,7 +384,7 @@ misc/deps-order.log:
 	  tmpoutput=`mktemp /tmp/coqcheck.XXXXXX`; \
 	  $(coqdep) -I misc/deps/lib -as lib -R misc/deps/client client misc/deps/client/bar.v 2>&1 \
 	    | head -n 1 > $$tmpoutput; \
-	  diff $$tmpoutput misc/deps/deps.out 2>&1; R=$$?; times; \
+	  diff -u misc/deps/deps.out $$tmpoutput 2>&1; R=$$?; times; \
 	  $(bincoqc) -I misc/deps/lib -as lib misc/deps/lib/foo.v 2>&1; \
 	  $(bincoqc) -I misc/deps/lib -as lib -R misc/deps/client client misc/deps/client/foo.v 2>&1; \
 	  $(coqtop) -I misc/deps/lib -as lib -R misc/deps/client client -load-vernac-source misc/deps/client/bar.v 2>&1; \
@@ -399,4 +397,46 @@ misc/deps-order.log:
 	    echo "    misc/deps-order...Error! (unexpected order)"; \
 	  fi; \
 	  rm $$tmpoutput; \
+	} > "$@"
+
+# Sort universes for the whole standard library
+EXPECTED_UNIVERSES := 3
+universes: misc/universes.log
+misc/universes.log: misc/universes/all_stdlib.v
+	@echo "TEST      misc/universes"
+	$(HIDE){ \
+	  $(bincoqc) -I misc/universes misc/universes/all_stdlib 2>&1; \
+	  $(bincoqc) -I misc/universes misc/universes/universes 2>&1; \
+	  mv universes.txt misc/universes; \
+	  N=`awk '{print $$3}' misc/universes/universes.txt | sort -u | wc -l`; \
+	  times; \
+	  if [ "$$N" -eq $(EXPECTED_UNIVERSES) ]; then \
+	    echo $(log_success); \
+	    echo "    misc/universes...Ok ($(EXPECTED_UNIVERSES) universes)"; \
+	  else \
+	    echo $(log_failure); \
+	    echo "    misc/universes...Error! ($$N/$(EXPECTED_UNIVERSES) universes)"; \
+	  fi; \
+	} > "$@"
+
+misc/universes/all_stdlib.v:
+	cd .. && $(MAKE) test-suite/$@
+
+
+# IDE : some tests of backtracking for coqtop -ideslave
+
+ide : $(patsubst %.fake,%.fake.log,$(wildcard ide/*.fake))
+
+%.fake.log : %.fake
+	@echo "TEST      $<"
+	$(HIDE){ \
+	  echo $(call log_intro,$<); \
+	  $(BIN)fake_ide "$(BIN)coqtop -boot" < $< 2>&1; \
+	  if [ $$? = 0 ]; then \
+	    echo $(log_success); \
+	    echo "    $<...Ok"; \
+	  else \
+	    echo $(log_failure); \
+	    echo "    $<...Error!"; \
+	  fi; \
 	} > "$@"

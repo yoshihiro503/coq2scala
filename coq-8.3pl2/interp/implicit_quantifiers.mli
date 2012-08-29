@@ -1,14 +1,11 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: implicit_quantifiers.mli 13332 2010-07-26 22:12:43Z msozeau $ i*)
-
-(*i*)
 open Names
 open Decl_kinds
 open Term
@@ -17,12 +14,11 @@ open Evd
 open Environ
 open Nametab
 open Mod_subst
-open Rawterm
+open Glob_term
 open Topconstr
 open Util
 open Libnames
 open Typeclasses
-(*i*)
 
 val declare_generalizable : Vernacexpr.locality_flag -> (identifier located) list option -> unit
 
@@ -30,7 +26,7 @@ val ids_of_list : identifier list -> Idset.t
 val destClassApp : constr_expr -> loc * reference * constr_expr list
 val destClassAppExpl : constr_expr -> loc * reference * (constr_expr * explicitation located option) list
 
-(* Fragile, should be used only for construction a set of identifiers to avoid *)
+(** Fragile, should be used only for construction a set of identifiers to avoid *)
 
 val free_vars_of_constr_expr : constr_expr -> ?bound:Idset.t ->
   identifier list -> identifier list
@@ -38,15 +34,15 @@ val free_vars_of_constr_expr : constr_expr -> ?bound:Idset.t ->
 val free_vars_of_binders :
   ?bound:Idset.t -> Names.identifier list -> local_binder list -> Idset.t * Names.identifier list
 
-(* Returns the generalizable free ids in left-to-right
+(** Returns the generalizable free ids in left-to-right
    order with the location of their first occurence *)
 
-val generalizable_vars_of_rawconstr : ?bound:Idset.t -> ?allowed:Idset.t ->
-  rawconstr -> (Names.identifier * loc) list
+val generalizable_vars_of_glob_constr : ?bound:Idset.t -> ?allowed:Idset.t ->
+  glob_constr -> (Names.identifier * loc) list
 
 val make_fresh : Names.Idset.t -> Environ.env -> identifier -> identifier
 
-val implicits_of_rawterm : ?with_products:bool -> Rawterm.rawconstr -> (Topconstr.explicitation * (bool * bool * bool)) list
+val implicits_of_glob_constr : ?with_products:bool -> Glob_term.glob_constr -> Impargs.manual_implicits
 
 val combine_params_freevar :
   Names.Idset.t -> (global_reference * bool) option * (Names.name * Term.constr option * Term.types) ->

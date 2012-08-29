@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,32 +8,60 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: NAxioms.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
+Require Export Bool NZAxioms NZParity NZPow NZSqrt NZLog NZDiv NZGcd NZBits.
 
-Require Export NZAxioms.
+(** From [NZ], we obtain natural numbers just by stating that [pred 0] == 0 *)
 
-Set Implicit Arguments.
+Module Type NAxiom (Import NZ : NZDomainSig').
+ Axiom pred_0 : P 0 == 0.
+End NAxiom.
 
-Module Type NAxioms (Import NZ : NZDomainSig').
+Module Type NAxiomsMiniSig := NZOrdAxiomsSig <+ NAxiom.
+Module Type NAxiomsMiniSig' := NZOrdAxiomsSig' <+ NAxiom.
 
-Axiom pred_0 : P 0 == 0.
+(** Let's now add some more functions and their specification *)
 
-Parameter Inline recursion : forall A : Type, A -> (t -> A -> A) -> t -> A.
-Implicit Arguments recursion [A].
+(** Division Function : we reuse NZDiv.DivMod and NZDiv.NZDivCommon,
+    and add to that a N-specific constraint. *)
 
-Declare Instance recursion_wd (A : Type) (Aeq : relation A) :
- Proper (Aeq ==> (eq==>Aeq==>Aeq) ==> eq ==> Aeq) (@recursion A).
+Module Type NDivSpecific (Import N : NAxiomsMiniSig')(Import DM : DivMod' N).
+ Axiom mod_upper_bound : forall a b, b ~= 0 -> a mod b < b.
+End NDivSpecific.
+
+(** For all other functions, the NZ axiomatizations are enough. *)
+
+(** We now group everything together. *)
+
+Module Type NAxiomsSig := NAxiomsMiniSig <+ OrderFunctions
+  <+ NZParity.NZParity <+ NZPow.NZPow <+ NZSqrt.NZSqrt <+ NZLog.NZLog2
+  <+ NZGcd.NZGcd <+ NZDiv.NZDiv <+ NZBits.NZBits <+ NZSquare.
+
+Module Type NAxiomsSig' := NAxiomsMiniSig' <+ OrderFunctions'
+  <+ NZParity.NZParity <+ NZPow.NZPow' <+ NZSqrt.NZSqrt' <+ NZLog.NZLog2
+  <+ NZGcd.NZGcd' <+ NZDiv.NZDiv' <+ NZBits.NZBits' <+ NZSquare.
+
+
+(** It could also be interesting to have a constructive recursor function. *)
+
+Module Type NAxiomsRec (Import NZ : NZDomainSig').
+
+Parameter Inline recursion : forall {A : Type}, A -> (t -> A -> A) -> t -> A.
+
+Declare Instance recursion_wd {A : Type} (Aeq : relation A) :
+ Proper (Aeq ==> (eq==>Aeq==>Aeq) ==> eq ==> Aeq) recursion.
 
 Axiom recursion_0 :
-  forall (A : Type) (a : A) (f : t -> A -> A), recursion a f 0 = a.
+  forall {A} (a : A) (f : t -> A -> A), recursion a f 0 = a.
 
 Axiom recursion_succ :
-  forall (A : Type) (Aeq : relation A) (a : A) (f : t -> A -> A),
+  forall {A} (Aeq : relation A) (a : A) (f : t -> A -> A),
     Aeq a a -> Proper (eq==>Aeq==>Aeq) f ->
       forall n, Aeq (recursion a f (S n)) (f n (recursion a f n)).
 
-End NAxioms.
+End NAxiomsRec.
 
-Module Type NAxiomsSig := NZOrdAxiomsSig <+ NAxioms.
-Module Type NAxiomsSig' := NZOrdAxiomsSig' <+ NAxioms.
+Module Type NAxiomsRecSig := NAxiomsMiniSig <+ NAxiomsRec.
+Module Type NAxiomsRecSig' := NAxiomsMiniSig' <+ NAxiomsRec.
 
+Module Type NAxiomsFullSig := NAxiomsSig <+ NAxiomsRec.
+Module Type NAxiomsFullSig' := NAxiomsSig' <+ NAxiomsRec.

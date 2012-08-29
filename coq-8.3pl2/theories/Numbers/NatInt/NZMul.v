@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,13 +8,10 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: NZMul.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Import NZAxioms NZBase NZAdd.
 
-Module Type NZMulPropSig
- (Import NZ : NZAxiomsSig')(Import NZBase : NZBasePropSig NZ).
-Include NZAddPropSig NZ NZBase.
+Module Type NZMulProp (Import NZ : NZAxiomsSig')(Import NZBase : NZBaseProp NZ).
+Include NZAddProp NZ NZBase.
 
 Theorem mul_0_r : forall n, n * 0 == 0.
 Proof.
@@ -59,12 +56,34 @@ Qed.
 
 Theorem mul_1_l : forall n, 1 * n == n.
 Proof.
-intro n. now nzsimpl.
+intro n. now nzsimpl'.
 Qed.
 
 Theorem mul_1_r : forall n, n * 1 == n.
 Proof.
-intro n. now nzsimpl.
+intro n. now nzsimpl'.
 Qed.
 
-End NZMulPropSig.
+Hint Rewrite mul_1_l mul_1_r : nz.
+
+Theorem mul_shuffle0 : forall n m p, n*m*p == n*p*m.
+Proof.
+intros n m p. now rewrite <- 2 mul_assoc, (mul_comm m).
+Qed.
+
+Theorem mul_shuffle1 : forall n m p q, (n * m) * (p * q) == (n * p) * (m * q).
+Proof.
+intros n m p q. now rewrite 2 mul_assoc, (mul_shuffle0 n).
+Qed.
+
+Theorem mul_shuffle2 : forall n m p q, (n * m) * (p * q) == (n * q) * (m * p).
+Proof.
+intros n m p q. rewrite (mul_comm p). apply mul_shuffle1.
+Qed.
+
+Theorem mul_shuffle3 : forall n m p, n * (m * p) == m * (n * p).
+Proof.
+intros n m p. now rewrite mul_assoc, (mul_comm n), mul_assoc.
+Qed.
+
+End NZMulProp.

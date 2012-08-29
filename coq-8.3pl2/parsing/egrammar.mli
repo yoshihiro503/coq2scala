@@ -1,14 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: egrammar.mli 13329 2010-07-26 11:05:39Z herbelin $ i*)
-
-(*i*)
+open Compat
 open Util
 open Names
 open Topconstr
@@ -16,36 +14,35 @@ open Pcoq
 open Extend
 open Vernacexpr
 open Ppextend
-open Rawterm
+open Glob_term
 open Genarg
 open Mod_subst
-(*i*)
 
 (** Mapping of grammar productions to camlp4 actions
     Used for Coq-level Notation and Tactic Notation,
     and for ML-level tactic and vernac extensions
  *)
 
-(* For constr notations *)
+(** For constr notations *)
 
 type grammar_constr_prod_item =
-  | GramConstrTerminal of Token.pattern
+  | GramConstrTerminal of Tok.t
   | GramConstrNonTerminal of constr_prod_entry_key * identifier option
   | GramConstrListMark of int * bool
     (* tells action rule to make a list of the n previous parsed items; 
        concat with last parsed list if true *)
 
 type notation_grammar =
-    int * Gramext.g_assoc option * notation * grammar_constr_prod_item list list
+    int * gram_assoc option * notation * grammar_constr_prod_item list list
 
-(* For tactic and vernac notations *)
+(** For tactic and vernac notations *)
 
 type grammar_prod_item =
   | GramTerminal of string
   | GramNonTerminal of loc * argument_type *
-      Gram.te prod_entry_key * identifier option
+      prod_entry_key * identifier option
 
-(* Adding notations *)
+(** Adding notations *)
 
 type all_grammar_command =
   | Notation of
@@ -64,7 +61,7 @@ val extend_tactic_grammar :
   string -> grammar_prod_item list list -> unit
 
 val extend_vernac_command_grammar :
-  string -> grammar_prod_item list list -> unit
+  string -> vernac_expr Gram.entry option -> grammar_prod_item list list -> unit
 
 val get_extend_vernac_grammars :
  unit -> (string * grammar_prod_item list list) list
@@ -74,3 +71,5 @@ val get_extend_vernac_grammars :
 val recover_notation_grammar :
   notation -> (precedence * tolerability list) ->
   notation_var_internalization_type list * notation_grammar
+
+val with_grammar_rule_protection : ('a -> 'b) -> 'a -> 'b

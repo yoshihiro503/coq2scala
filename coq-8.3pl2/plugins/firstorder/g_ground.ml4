@@ -1,14 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
 (*i camlp4deps: "parsing/grammar.cma"  i*)
-
-(* $Id: g_ground.ml4 13344 2010-07-28 15:04:36Z msozeau $ *)
 
 open Formula
 open Sequent
@@ -29,6 +27,7 @@ let ground_depth=ref 3
 let _=
   let gdopt=
     { optsync=true;
+      optdepr=false;
       optname="Firstorder Depth";
       optkey=["Firstorder";"Depth"];
       optread=(fun ()->Some !ground_depth);
@@ -44,6 +43,7 @@ let congruence_depth=ref 100
 let _=
   let gdopt=
     { optsync=true;
+      optdepr=false;
       optname="Congruence Depth";
       optkey=["Congruence";"Depth"];
       optread=(fun ()->Some !congruence_depth);
@@ -111,7 +111,6 @@ let pr_firstorder_using_glob _ _ _ = prlist_with_sep pr_comma (pr_or_var (pr_loc
 let pr_firstorder_using_typed _ _ _ = prlist_with_sep pr_comma pr_global
 
 ARGUMENT EXTEND firstorder_using
-  TYPED AS reference_list
   PRINTED BY pr_firstorder_using_typed
   RAW_TYPED AS reference_list
   RAW_PRINTED BY pr_firstorder_using_raw
@@ -135,8 +134,6 @@ TACTIC EXTEND firstorder
 |   [ "firstorder" tactic_opt(t) firstorder_using(l)
        "with" ne_preident_list(l') ] ->
       [ gen_ground_tac true (Option.map eval_tactic t) l l' ]
-|   [ "firstorder" tactic_opt(t) ] ->
-      [ gen_ground_tac true (Option.map eval_tactic t) [] [] ]
 END
 
 TACTIC EXTEND gintuition

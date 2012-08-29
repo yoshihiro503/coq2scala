@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: clenvtac.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Pp
 open Util
@@ -20,12 +18,11 @@ open Evd
 open Evarutil
 open Proof_type
 open Refiner
-open Proof_trees
 open Logic
 open Reduction
 open Reductionops
 open Tacmach
-open Rawterm
+open Glob_term
 open Pattern
 open Tacexpr
 open Clenv
@@ -64,7 +61,7 @@ let clenv_value_cast_meta clenv =
     clenv_cast_meta clenv (clenv_value clenv)
 
 let clenv_pose_dependent_evars with_evars clenv =
-  let dep_mvs = clenv_dependent false clenv in
+  let dep_mvs = clenv_dependent clenv in
   if dep_mvs <> [] & not with_evars then
     raise
       (RefinerError (UnresolvedBindings (List.map (meta_name clenv.evd) dep_mvs)));
@@ -74,8 +71,8 @@ let clenv_refine with_evars ?(with_classes=true) clenv gls =
   let clenv = clenv_pose_dependent_evars with_evars clenv in
   let evd' =
     if with_classes then
-      Typeclasses.resolve_typeclasses ~fail:(not with_evars)
-	clenv.env clenv.evd
+      Typeclasses.resolve_typeclasses ~filter:Typeclasses.all_evars
+        ~fail:(not with_evars) clenv.env clenv.evd
     else clenv.evd
   in
   let clenv = { clenv with evd = evd' } in
@@ -84,17 +81,18 @@ let clenv_refine with_evars ?(with_classes=true) clenv gls =
     (refine (clenv_cast_meta clenv (clenv_value clenv)))
     gls
 
-let dft = Unification.default_unify_flags
+open Unification
 
-let res_pf clenv ?(with_evars=false) ?(allow_K=false) ?(flags=dft) gls =
-  clenv_refine with_evars
-    (clenv_unique_resolver allow_K ~flags:flags clenv gls) gls
+let dft = default_unify_flags
+
+let res_pf clenv ?(with_evars=false) ?(flags=dft) gls =
+  clenv_refine with_evars (clenv_unique_resolver ~flags clenv gls) gls
 
 let elim_res_pf_THEN_i clenv tac gls =
-  let clenv' = (clenv_unique_resolver true clenv gls) in
+  let clenv' = (clenv_unique_resolver ~flags:elim_flags clenv gls) in
   tclTHENLASTn (clenv_refine false clenv') (tac clenv') gls
 
-let e_res_pf clenv = res_pf clenv ~with_evars:true ~allow_K:false ~flags:dft
+let e_res_pf clenv = res_pf clenv ~with_evars:true ~flags:dft
 
 
 (* [unifyTerms] et [unify] ne semble pas gérer les Meta, en
@@ -102,21 +100,27 @@ let e_res_pf clenv = res_pf clenv ~with_evars:true ~allow_K:false ~flags:dft
    d'une même Meta sont compatibles. D'ailleurs le "fst" jette les metas
    provenant de w_Unify. (Utilisé seulement dans prolog.ml) *)
 
-open Unification
-
 let fail_quick_unif_flags = {
   modulo_conv_on_closed_terms = Some full_transparent_state;
-  use_metas_eagerly = false;
+  use_metas_eagerly_in_conv_on_closed_terms = false;
   modulo_delta = empty_transparent_state;
+  modulo_delta_types = full_transparent_state;
+  check_applied_meta_types = false;
   resolve_evars = false;
-  use_evars_pattern_unification = false;
+  use_pattern_unification = false;
+  use_meta_bound_pattern_unification = true; (* ? *)
+  frozen_evars = ExistentialSet.empty;
+  restrict_conv_on_strict_subterms = false; (* ? *)
+  modulo_betaiota = false;
+  modulo_eta = true;
+  allow_K_in_toplevel_higher_order_unification = false
 }
 
 (* let unifyTerms m n = walking (fun wc -> fst (w_Unify CONV m n [] wc)) *)
 let unifyTerms ?(flags=fail_quick_unif_flags) m n gls =
   let env = pf_env gls in
   let evd = create_goal_evar_defs (project gls) in
-  let evd' = w_unify false env CONV ~flags m n evd in
+  let evd' = w_unify env evd CONV ~flags m n in
   tclIDTAC {it = gls.it; sigma =  evd'}
 
 let unify ?(flags=fail_quick_unif_flags) m gls =

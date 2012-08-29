@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: proof_type.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 (*i*)
 open Environ
@@ -16,8 +14,8 @@ open Libnames
 open Term
 open Util
 open Tacexpr
-open Decl_expr
-open Rawterm
+(* open Decl_expr *)
+open Glob_term
 open Genarg
 open Nametab
 open Pattern
@@ -25,6 +23,10 @@ open Pattern
 
 (* This module defines the structure of proof tree and the tactic type. So, it
    is used by Proof_tree and Refiner *)
+
+type goal = Goal.goal
+
+type tactic = goal sigma -> goal list sigma 
 
 type prim_rule =
   | Intro of identifier
@@ -42,7 +44,6 @@ type prim_rule =
   | Change_evars
 
 type proof_tree = {
-  open_subgoals : int;
   goal : goal;
   ref : (rule * proof_tree list) option }
 
@@ -54,13 +55,6 @@ and rule =
 
 and compound_rule=
   | Tactic of tactic_expr * bool
-  | Proof_instr of bool*proof_instr (* the boolean is for focus restrictions *)
-
-and goal = evar_info
-
-and tactic = goal sigma -> (goal list sigma * validation)
-
-and validation = (proof_tree list -> proof_tree)
 
 and tactic_expr =
   (constr,
@@ -100,7 +94,7 @@ type ltac_call_kind =
   | LtacNameCall of ltac_constant
   | LtacAtomCall of glob_atomic_tactic_expr * atomic_tactic_expr option ref
   | LtacVarCall of identifier * glob_tactic_expr
-  | LtacConstrInterp of rawconstr *
+  | LtacConstrInterp of glob_constr *
       (extended_patvar_map * (identifier * identifier option) list)
 
 type ltac_trace = (int * loc * ltac_call_kind) list

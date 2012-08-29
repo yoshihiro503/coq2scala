@@ -1,12 +1,14 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: esubst.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
+(* Created by Bruno Barras for Coq V7.0, Mar 2001 *)
+
+(* Support for explicit substitutions *)
 
 open Util
 
@@ -20,6 +22,8 @@ type lift =
   | ELSHFT of lift * int (* ELSHFT(l,n) == lift of n, then apply lift l *)
   | ELLFT of int * lift  (* ELLFT(n,l)  == apply l to de Bruijn > n *)
                          (*                 i.e under n binders *)
+
+let el_id = ELID
 
 (* compose a relocation of magnitude n *)
 let rec el_shft_rec n = function
@@ -66,6 +70,8 @@ type 'a subs =
 (* operations of subs: collapses constructors when possible.
  * Needn't be recursive if we always use these functions
  *)
+
+let subs_id i = ESID i
 
 let subs_cons(x,s) = if Array.length x = 0 then s else CONS(x,s)
 

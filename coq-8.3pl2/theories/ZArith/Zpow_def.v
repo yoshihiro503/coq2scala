@@ -1,27 +1,31 @@
-Require Import ZArith_base.
-Require Import Ring_theory.
+(************************************************************************)
+(*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(*   \VV/  **************************************************************)
+(*    //   *      This file is distributed under the terms of the       *)
+(*         *       GNU Lesser General Public License Version 2.1        *)
+(************************************************************************)
 
-Open Local Scope Z_scope.
+Require Import BinInt Ring_theory.
+Local Open Scope Z_scope.
 
-(** [Zpower_pos z n] is the n-th power of [z] when [n] is an binary
-      integer (type [positive]) and [z] a signed integer (type [Z]) *)
-Definition Zpower_pos (z:Z) (n:positive) := iter_pos n Z (fun x:Z => z * x) 1.
+(** * Power functions over [Z] *)
 
-Definition Zpower (x y:Z) :=
-    match y with
-      | Zpos p => Zpower_pos x p
-      | Z0 => 1
-      | Zneg p => 0
-    end.
+(** Nota : this file is mostly deprecated. The definition of [Z.pow]
+    and its usual properties are now provided by module [BinInt.Z]. *)
 
-Lemma Zpower_theory : power_theory 1 Zmult (eq (A:=Z)) Z_of_N Zpower.
+Notation Zpower_pos := Z.pow_pos (compat "8.3").
+Notation Zpower := Z.pow (compat "8.3").
+Notation Zpower_0_r := Z.pow_0_r (compat "8.3").
+Notation Zpower_succ_r := Z.pow_succ_r (compat "8.3").
+Notation Zpower_neg_r := Z.pow_neg_r (compat "8.3").
+Notation Zpower_Ppow := Pos2Z.inj_pow (compat "8.3").
+
+Lemma Zpower_theory : power_theory 1 Z.mul (@eq Z) Z.of_N Z.pow.
 Proof.
  constructor. intros.
  destruct n;simpl;trivial.
- unfold Zpower_pos.
- assert (forall k, iter_pos p Z (fun x : Z => r * x) k = pow_pos Zmult r p*k).
- induction p;simpl;intros;repeat rewrite IHp;trivial;
-   repeat rewrite Zmult_assoc;trivial.
- rewrite H;rewrite Zmult_1_r;trivial.
+ unfold Z.pow_pos.
+ rewrite <- (Z.mul_1_r (pow_pos _ _ _)). generalize 1.
+ induction p; simpl; intros; rewrite ?IHp, ?Z.mul_assoc; trivial.
 Qed.
-

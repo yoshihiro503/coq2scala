@@ -1,29 +1,26 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i camlp4use: "pa_extend.cmo" i*)
-
-(* $Id: g_ltac.ml4 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 open Pp
 open Util
 open Topconstr
-open Rawterm
+open Glob_term
 open Tacexpr
 open Vernacexpr
 open Pcoq
 open Prim
 open Tactic
+open Tok
 
 let fail_default_value = ArgArg 0
 
 let arg_of_expr = function
-    TacArg a -> a
+    TacArg (loc,a) -> a
   | e -> Tacexp (e:raw_tactic_expr)
 
 (* Tactics grammar rules *)
@@ -60,6 +57,7 @@ GEXTEND Gram
     | "3" RIGHTA
       [ IDENT "try"; ta = tactic_expr -> TacTry ta
       | IDENT "do"; n = int_or_var; ta = tactic_expr -> TacDo (n,ta)
+      | IDENT "timeout"; n = int_or_var; ta = tactic_expr -> TacTimeout (n,ta)
       | IDENT "repeat"; ta = tactic_expr -> TacRepeat ta
       | IDENT "progress"; ta = tactic_expr -> TacProgress ta
 (*To do: put Abstract in Refiner*)
@@ -82,25 +80,24 @@ GEXTEND Gram
 	  TacFirst l
       | IDENT "solve" ; "["; l = LIST0 tactic_expr SEP "|"; "]" ->
 	  TacSolve l
-      | IDENT "complete" ; ta = tactic_expr -> TacComplete ta
       | IDENT "idtac"; l = LIST0 message_token -> TacId l
       | IDENT "fail"; n = [ n = int_or_var -> n | -> fail_default_value ];
 	  l = LIST0 message_token -> TacFail (n,l)
       | IDENT "external"; com = STRING; req = STRING; la = LIST1 tactic_arg ->
-	  TacArg (TacExternal (loc,com,req,la))
+	  TacArg (loc,TacExternal (loc,com,req,la))
       | st = simple_tactic -> TacAtom (loc,st)
-      | a = may_eval_arg -> TacArg(a)
+      | a = may_eval_arg -> TacArg(loc,a)
       | IDENT "constr"; ":"; id = METAIDENT ->
-          TacArg(MetaIdArg (loc,false,id))
+          TacArg(loc,MetaIdArg (loc,false,id))
       | IDENT "constr"; ":"; c = Constr.constr ->
-          TacArg(ConstrMayEval(ConstrTerm c))
+          TacArg(loc,ConstrMayEval(ConstrTerm c))
       | IDENT "ipattern"; ":"; ipat = simple_intropattern ->
-	  TacArg(IntroPattern ipat)
+	  TacArg(loc,IntroPattern ipat)
       | r = reference; la = LIST0 tactic_arg ->
-          TacArg(TacCall (loc,r,la)) ]
+          TacArg(loc,TacCall (loc,r,la)) ]
     | "0"
       [ "("; a = tactic_expr; ")" -> a
-      | a = tactic_atom -> TacArg a ] ]
+      | a = tactic_atom -> TacArg (loc,a) ] ]
   ;
   (* binder_tactic: level 5 of tactic_expr *)
   binder_tactic:

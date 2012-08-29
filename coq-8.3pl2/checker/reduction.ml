@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: reduction.ml 9215 2006-10-05 15:40:31Z herbelin $ *)
 
 open Util
 open Names
@@ -80,11 +78,11 @@ let pure_stack lfts stk =
 (*                   Reduction Functions                                    *)
 (****************************************************************************)
 
-let whd_betaiotazeta env x =
+let whd_betaiotazeta x =
   match x with
     | (Sort _|Var _|Meta _|Evar _|Const _|Ind _|Construct _|
        Prod _|Lambda _|Fix _|CoFix _) -> x
-    | _ -> whd_val (create_clos_infos betaiotazeta env) (inject x)
+    | _ -> whd_val (create_clos_infos betaiotazeta empty_env) (inject x)
 
 let whd_betadeltaiota env t =
   match t with
@@ -106,15 +104,6 @@ let beta_appvect c v =
         Lambda(_,_,c), arg::stacktl -> stacklam (arg::env) c stacktl
       | _ -> applist (substl env t, stack) in
   stacklam [] c (Array.to_list v)
-
-let betazeta_appvect n c v =
-  let rec stacklam n env t stack =
-    if n = 0 then applist (substl env t, stack) else
-    match t, stack with
-        Lambda(_,_,c), arg::stacktl -> stacklam (n-1) (arg::env) c stacktl
-      | LetIn(_,b,_,c), _ -> stacklam (n-1) (b::env) c stack
-      | _ -> anomaly "Not enough lambda/let's" in
-  stacklam n [] c (Array.to_list v)
 
 (********************************************************************)
 (*                         Conversion                               *)
@@ -219,7 +208,7 @@ let rec ccnv univ cv_pb infos lft1 lft2 term1 term2 =
 and eqappr univ cv_pb infos (lft1,st1) (lft2,st2) =
   Util.check_for_interrupt ();
   (* First head reduce both terms *)
-  let rec  whd_both (t1,stk1) (t2,stk2) =
+  let rec whd_both (t1,stk1) (t2,stk2) =
     let st1' = whd_stack infos t1 stk1 in
     let st2' = whd_stack infos t2 stk2 in
     (* Now, whd_stack on term2 might have modified st1 (due to sharing),
@@ -279,20 +268,10 @@ and eqappr univ cv_pb infos (lft1,st1) (lft2,st2) =
 		    | None -> raise NotConvertible) in
           eqappr univ cv_pb infos app1 app2)
 
-    (* only one constant, defined var or defined rel *)
-    | (FFlex fl1, _)      ->
-        (match unfold_reference infos fl1 with
-           | Some def1 ->
-	       eqappr univ cv_pb infos (lft1, whd_stack infos def1 v1) appr2
-           | None -> raise NotConvertible)
-    | (_, FFlex fl2)      ->
-        (match unfold_reference infos fl2 with
-           | Some def2 ->
-	       eqappr univ cv_pb infos appr1 (lft2, whd_stack infos def2 v2)
-           | None -> raise NotConvertible)
-
     (* other constructors *)
     | (FLambda _, FLambda _) ->
+        (* Inconsistency: we tolerate that v1, v2 contain shift and update but
+           we throw them away *)
         assert (is_empty_stack v1 && is_empty_stack v2);
         let (_,ty1,bd1) = destFLambda mk_clos hd1 in
         let (_,ty2,bd2) = destFLambda mk_clos hd2 in
@@ -304,6 +283,32 @@ and eqappr univ cv_pb infos (lft1,st1) (lft2,st2) =
 	(* Luo's system *)
         ccnv univ CONV infos el1 el2 c1 c'1;
         ccnv univ cv_pb infos (el_lift el1) (el_lift el2) c2 c'2
+
+    (* Eta-expansion on the fly *)
+    | (FLambda _, _) ->
+        if v1 <> [] then
+          anomaly "conversion was given unreduced term (FLambda)";
+        let (_,_ty1,bd1) = destFLambda mk_clos hd1 in
+        eqappr univ CONV infos
+          (el_lift lft1,(bd1,[])) (el_lift lft2,(hd2,eta_expand_stack v2))
+    | (_, FLambda _) ->
+        if v2 <> [] then
+          anomaly "conversion was given unreduced term (FLambda)";
+        let (_,_ty2,bd2) = destFLambda mk_clos hd2 in
+        eqappr univ CONV infos
+          (el_lift lft1,(hd1,eta_expand_stack v1)) (el_lift lft2,(bd2,[]))
+
+    (* only one constant, defined var or defined rel *)
+    | (FFlex fl1, _)      ->
+        (match unfold_reference infos fl1 with
+           | Some def1 ->
+	       eqappr univ cv_pb infos (lft1, whd_stack infos def1 v1) appr2
+           | None -> raise NotConvertible)
+    | (_, FFlex fl2)      ->
+        (match unfold_reference infos fl2 with
+           | Some def2 ->
+	       eqappr univ cv_pb infos appr1 (lft2, whd_stack infos def2 v2)
+           | None -> raise NotConvertible)
 
     (* Inductive types:  MutInd MutConstruct Fix Cofix *)
 
@@ -367,37 +372,18 @@ and convert_vect univ infos lft1 lft2 v1 v2 =
 let clos_fconv cv_pb env t1 t2 =
   let infos = create_clos_infos betaiotazeta env in
   let univ = universes env in
-  ccnv univ cv_pb infos ELID ELID (inject t1) (inject t2)
+  ccnv univ cv_pb infos el_id el_id (inject t1) (inject t2)
 
 let fconv cv_pb env t1 t2 =
   if eq_constr t1 t2 then ()
   else clos_fconv cv_pb env t1 t2
 
-let conv_cmp = fconv
 let conv = fconv CONV
 let conv_leq = fconv CUMUL
 
-let conv_leq_vecti env v1 v2 =
-  array_fold_left2_i
-    (fun i _ t1 t2 ->
-      (try conv_leq env t1 t2
-      with (NotConvertible|Invalid_argument _) ->
-        raise (NotConvertibleVect i));
-      ())
-    ()
-    v1
-    v2
+(* option for conversion : no compilation for the checker *)
 
-(* option for conversion *)
-
-let vm_conv = ref fconv
-let set_vm_conv f = vm_conv := f
-let vm_conv cv_pb env t1 t2 =
-  try
-    !vm_conv cv_pb env t1 t2
-  with Not_found | Invalid_argument _ ->
-      (* If compilation fails, fall-back to closure conversion *)
-      clos_fconv cv_pb env t1 t2
+let vm_conv = fconv
 
 (********************************************************************)
 (*             Special-Purpose Reduction                            *)
@@ -451,10 +437,4 @@ let dest_arity env c =
   match c with
     | Sort s -> l,s
     | _ -> error "not an arity"
-
-let is_arity env c =
-  try
-    let _ = dest_arity env c in
-    true
-  with UserError _ -> false
 

@@ -6,9 +6,8 @@
 (*         *       GNU Lesser General Public License Version 2.1       *)
 (***********************************************************************)
 
-(* $Id: util.ml 13492 2010-10-04 21:20:01Z herbelin $ *)
-
 open Pp
+open Compat
 
 (* Errors *)
 
@@ -17,10 +16,8 @@ let anomaly string = raise (Anomaly(string, str string))
 let anomalylabstrm string pps = raise (Anomaly(string,pps))
 
 exception UserError of string * std_ppcmds (* User errors *)
-let error string = raise (UserError(string, str string))
+let error string = raise (UserError("_", str string))
 let errorlabstrm l pps = raise (UserError(l,pps))
-
-exception AnomalyOnError of string * exn
 
 exception AlreadyDeclared of std_ppcmds (* for already declared Schemes *)
 let alreadydeclared pps = raise (AlreadyDeclared(pps))
@@ -29,17 +26,17 @@ let todo s = prerr_string ("TODO: "^s^"\n")
 
 exception Timeout
 
-type loc = Compat.loc
-let dummy_loc = Compat.dummy_loc
-let unloc = Compat.unloc
-let make_loc = Compat.make_loc
-let join_loc = Compat.join_loc
+type loc = Loc.t
+let dummy_loc = Loc.ghost
+let join_loc = Loc.merge
+let make_loc = make_loc
+let unloc = unloc
 
 (* raising located exceptions *)
 type 'a located = loc * 'a
-let anomaly_loc (loc,s,strm) = Stdpp.raise_with_loc loc (Anomaly (s,strm))
-let user_err_loc (loc,s,strm) = Stdpp.raise_with_loc loc (UserError (s,strm))
-let invalid_arg_loc (loc,s) = Stdpp.raise_with_loc loc (Invalid_argument s)
+let anomaly_loc (loc,s,strm) = Loc.raise loc (Anomaly (s,strm))
+let user_err_loc (loc,s,strm) = Loc.raise loc (UserError (s,strm))
+let invalid_arg_loc (loc,s) = Loc.raise loc (Invalid_argument s)
 
 let located_fold_left f x (_,a) = f x a
 let located_iter2 f (_,a) (_,b) = f a b
@@ -54,6 +51,7 @@ exception Error_in_file of string * (bool * string * loc) * exn
 
 let on_fst f (a,b) = (f a,b)
 let on_snd f (a,b) = (a,f b)
+let map_pair f (a,b) = (f a,f b)
 
 (* Mapping under pairs *)
 
@@ -402,6 +400,13 @@ let rec list_compare cmp l1 l2 =
 	   | 0 -> list_compare cmp l1 l2
 	   | c -> c)
 
+let rec list_equal cmp l1 l2 =
+  match l1, l2 with
+    | [], [] -> true
+    | x1 :: l1, x2 :: l2 ->
+      cmp x1 x2 && list_equal cmp l1 l2
+    | _ -> false
+
 let list_intersect l1 l2 =
   List.filter (fun x -> List.mem x l2) l1
 
@@ -425,24 +430,21 @@ let list_subtract l1 l2 =
 let list_subtractq l1 l2 =
   if l2 = [] then l1 else List.filter (fun x -> not (List.memq x l2)) l1
 
-let list_chop n l =
-  let rec chop_aux acc = function
-    | (0, l2) -> (List.rev acc, l2)
-    | (n, (h::t)) -> chop_aux (h::acc) (pred n, t)
-    | (_, []) -> failwith "list_chop"
-  in
-  chop_aux [] (n,l)
-
 let list_tabulate f len =
   let rec tabrec n =
     if n = len then [] else (f n)::(tabrec (n+1))
   in
   tabrec 0
 
-let rec list_make n v =
-  if n = 0 then []
-  else if n < 0 then invalid_arg "list_make"
-  else v::list_make (n-1) v
+let list_addn n v =
+  let rec aux n l =
+    if n = 0 then l
+    else aux (pred n) (v::l)
+  in
+    if n < 0 then invalid_arg "list_addn"
+    else aux n
+
+let list_make n v = list_addn n v []
 
 let list_assign l n e =
   let rec assrec stk = function
@@ -496,6 +498,27 @@ let list_map4 f l1 l2 l3 l4 =
     | (_, _, _, _) -> invalid_arg "map4"
   in
   map (l1,l2,l3,l4)
+
+let list_map_to_array f l =
+  Array.of_list (List.map f l)
+
+let rec list_smartfilter f l = match l with
+    [] -> l
+  | h::tl ->
+      let tl' = list_smartfilter f tl in
+	if f h then
+	  if tl' == tl then l
+	  else h :: tl'
+	else tl'
+	  
+let list_index_f f x =
+  let rec index_x n = function
+    | y::l -> if f x y then n else index_x (succ n) l
+    | [] -> raise Not_found
+  in
+  index_x 1
+
+let list_index0_f f x l = list_index_f f x l - 1
 
 let list_index x =
   let rec index_x n = function
@@ -583,6 +606,10 @@ let rec list_remove_first a = function
 let rec list_remove_assoc_in_triple x = function
   | [] -> []
   | (y,_,_ as z)::l -> if x = y then l else z::list_remove_assoc_in_triple x l
+
+let rec list_assoc_snd_in_triple x = function
+    [] -> raise Not_found
+  | (a,b,_)::l -> if compare a x = 0 then b else list_assoc_snd_in_triple x l
 
 let list_add_set x l = if List.mem x l then l else x::l
 
@@ -676,6 +703,20 @@ let rec list_map_filter f = function
       let l' = list_map_filter f l in
       match f x with None -> l' | Some y -> y::l'
 
+let list_map_filter_i f =
+  let rec aux i = function
+    | [] -> []
+    | x::l ->
+      let l' = aux (succ i) l in
+	match f i x with None -> l' | Some y -> y::l'
+  in aux 0
+
+let list_filter_along f filter l =
+  snd (list_filter2 (fun b c -> f b) (filter,l))
+
+let list_filter_with filter l =
+  list_filter_along (fun x -> x) filter l
+
 let list_subset l1 l2 =
   let t2 = Hashtbl.create 151 in
   List.iter (fun x -> Hashtbl.add t2 x ()) l2;
@@ -685,15 +726,17 @@ let list_subset l1 l2 =
   in
   look l1
 
-(* [list_split_at i l] splits [l] into two lists [(l1,l2)] such that [l1++l2=l]
-    and [l1] has length [i].
-    It raises [Failure] when [i] is negative or greater than the length of [l]  *)
-let list_split_at index l =
-  let rec aux i acc = function
-      tl when i = index -> (List.rev acc), tl
-    | hd :: tl -> aux (succ i) (hd :: acc) tl
-    | [] -> failwith "list_split_at: Invalid argument"
-  in aux 0 [] l
+(* [list_chop i l] splits [l] into two lists [(l1,l2)] such that
+   [l1++l2=l] and [l1] has length [i].
+   It raises [Failure] when [i] is negative or greater than the length of [l]  *)
+
+let list_chop n l =
+  let rec chop_aux i acc = function
+    | tl when i=0 -> (List.rev acc, tl)
+    | h::t -> chop_aux (pred i) (h::acc) t
+    | [] -> failwith "list_chop"
+  in
+  chop_aux n [] l
 
 (* [list_split_when p l] splits [l] into two lists [(l1,a::l2)] such that
     [l1++(a::l2)=l], [p a=true] and [p b = false] for every element [b] of [l1].
@@ -707,7 +750,7 @@ let list_split_when p =
   split_when_loop []
 
 (* [list_split_by p l] splits [l] into two lists [(l1,l2)] such that elements of
-   [l1] satisfy [p] and elements of [l2] do not *)
+   [l1] satisfy [p] and elements of [l2] do not; order is preserved *)
 let list_split_by p =
   let rec split_by_loop = function
   | []   -> ([],[])
@@ -756,9 +799,6 @@ let rec list_skipn n l = match n,l with
 
 let rec list_skipn_at_least n l =
   try list_skipn n l with Failure _ -> []
-
-let rec list_addn n x l =
-  if n = 0 then l else x :: (list_addn (pred n) x l)
 
 let list_prefix_of prefl l =
   let rec prefrec = function
@@ -815,6 +855,10 @@ let list_fold_map' f l e =
 
 let list_map_assoc f = List.map (fun (x,a) -> (x,f a))
 
+let rec list_assoc_f f a = function
+  | (x, e) :: xs -> if f a x then e else list_assoc_f f a xs
+  | [] -> raise Not_found
+
 (* Specification:
    - =p= is set equality (double inclusion)
    - f such that \forall l acc, (f l acc) =p= append (f l []) acc
@@ -865,6 +909,14 @@ let rec list_cartesians_filter op init ll =
 
 let rec list_drop_last = function [] -> assert false | hd :: [] -> [] | hd :: tl -> hd :: list_drop_last tl
 
+(* Factorize lists of pairs according to the left argument *)
+let rec list_factorize_left = function
+  | (a,b)::l ->
+      let al,l' = list_split_by (fun (a',b) -> a=a') l in
+      (a,(b::List.map snd al)) :: list_factorize_left l'
+  | [] ->
+      []
+
 (* Arrays *)
 
 let array_compare item_cmp v1 v2 =
@@ -877,6 +929,12 @@ let array_compare item_cmp v1 v2 =
 	  if c'<>0 then c'
 	  else cmp (i-1) in
     cmp (Array.length v1 - 1)
+
+let array_equal cmp t1 t2 =
+  Array.length t1 = Array.length t2 &&
+  let rec aux i =
+    (i = Array.length t1) || (cmp t1.(i) t2.(i) && aux (i + 1))
+  in aux 0
 
 let array_exists f v =
   let rec exrec = function
@@ -996,6 +1054,15 @@ let array_fold_left2_i f a v1 v2 =
     if n >= lv1 then a else fold (f n a v1.(n) v2.(n)) (succ n)
   in
   if Array.length v2 <> lv1 then invalid_arg "array_fold_left2";
+  fold a 0
+
+let array_fold_left3 f a v1 v2 v3 =
+  let lv1 = Array.length v1 in
+  let rec fold a n =
+    if n >= lv1 then a else fold (f a v1.(n) v2.(n) v3.(n)) (succ n)
+  in
+  if Array.length v2 <> lv1 || Array.length v3 <> lv1 then
+    invalid_arg "array_fold_left2";
   fold a 0
 
 let array_fold_left_from n f a v =
@@ -1166,6 +1233,21 @@ let array_rev_to_list a =
   let rec tolist i res =
     if i >= Array.length a then res else tolist (i+1) (a.(i) :: res) in
   tolist 0 []
+
+let array_filter_along f filter v =
+  Array.of_list (list_filter_along f filter (Array.to_list v))
+
+let array_filter_with filter v =
+  Array.of_list (list_filter_with filter (Array.to_list v))
+
+(* Stream *)
+
+let stream_nth n st =
+  try List.nth (Stream.npeek (n+1) st) n
+  with Failure _ -> raise Stream.Failure
+
+let stream_njunk n st =
+  for i = 1 to n do Stream.junk st done
 
 (* Matrices *)
 

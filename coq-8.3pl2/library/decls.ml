@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: decls.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 (** This module registers tables for some non-logical informations
      associated declarations *)
@@ -57,7 +55,8 @@ let constant_kind kn = Cmap.find kn !csttab
 
 (** Miscellaneous functions. *)
 
-let clear_proofs sign =
+let initialize_named_context_for_proof () =
+  let sign = Global.named_context () in
   List.fold_right
     (fun (id,c,t as d) signv ->
       let d = if variable_opacity id then (id,None,t) else d in

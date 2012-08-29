@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: equality.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (*i*)
 open Util
@@ -23,12 +21,13 @@ open Tacticals
 open Tactics
 open Tacexpr
 open Termops
-open Rawterm
+open Glob_term
 open Genarg
 open Ind_tables
 (*i*)
 
 type dep_proof_flag = bool (* true = support rewriting dependent proofs *)
+type freeze_evars_flag = bool (* true = don't instantiate existing evars *)
 
 type orientation = bool
 
@@ -38,10 +37,10 @@ type conditions =
   | AllMatches (* Rewrite all matches whose side-conditions are solved *)
 
 val general_rewrite_bindings :
-  orientation -> occurrences -> dep_proof_flag ->
+  orientation -> occurrences -> freeze_evars_flag -> dep_proof_flag ->
   ?tac:(tactic * conditions) -> constr with_bindings -> evars_flag -> tactic
 val general_rewrite :
-  orientation -> occurrences -> dep_proof_flag ->
+  orientation -> occurrences -> freeze_evars_flag -> dep_proof_flag ->
   ?tac:(tactic * conditions) -> constr -> tactic
 
 (* Equivalent to [general_rewrite l2r] *)
@@ -56,15 +55,16 @@ val register_general_rewrite_clause :
 val register_is_applied_rewrite_relation : (env -> evar_map -> rel_context -> constr -> constr option) -> unit
 
 val general_rewrite_ebindings_clause : identifier option ->
-  orientation -> occurrences -> dep_proof_flag -> ?tac:(tactic * conditions) ->
-  constr with_bindings -> evars_flag -> tactic
+  orientation -> occurrences -> freeze_evars_flag -> dep_proof_flag ->
+  ?tac:(tactic * conditions) -> constr with_bindings -> evars_flag -> tactic
 
 val general_rewrite_bindings_in :
-  orientation -> occurrences -> dep_proof_flag -> ?tac:(tactic * conditions) ->
+  orientation -> occurrences -> freeze_evars_flag -> dep_proof_flag ->
+  ?tac:(tactic * conditions) ->
   identifier -> constr with_bindings -> evars_flag -> tactic
 val general_rewrite_in          :
-  orientation -> occurrences -> dep_proof_flag -> ?tac:(tactic * conditions) ->
-  identifier -> constr -> evars_flag -> tactic
+  orientation -> occurrences -> freeze_evars_flag -> dep_proof_flag -> 
+  ?tac:(tactic * conditions) -> identifier -> constr -> evars_flag -> tactic
 
 val general_multi_rewrite :
   orientation -> evars_flag -> ?tac:(tactic * conditions) -> constr with_bindings -> clause -> tactic
@@ -73,7 +73,7 @@ type delayed_open_constr_with_bindings =
     env -> evar_map -> evar_map * constr with_bindings
 
 val general_multi_multi_rewrite :
-  evars_flag -> (bool * multi * delayed_open_constr_with_bindings) list -> 
+  evars_flag -> (bool * multi * delayed_open_constr_with_bindings) list ->
     clause -> (tactic * conditions) option -> tactic
 
 val replace_in_clause_maybe_by : constr -> constr -> clause -> tactic option -> tactic

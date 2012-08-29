@@ -6,8 +6,6 @@
 (*         *       GNU Lesser General Public License Version 2.1       *)
 (***********************************************************************)
 
-(* $Id$ *)
-
 (** * Finite sets library *)
 
 (** This functor derives additional properties from [MSetInterface.S].
@@ -339,6 +337,14 @@ Module WPropertiesOn (Import E : DecidableType)(M : WSetsOn E).
   Notation NoDup := (NoDupA E.eq).
   Notation InA := (InA E.eq).
 
+  (** Alternative specification via [fold_right] *)
+
+  Lemma fold_spec_right (s:t)(A:Type)(i:A)(f : elt -> A -> A) :
+    fold f s i = List.fold_right f i (rev (elements s)).
+  Proof.
+   rewrite fold_spec. symmetry. apply fold_left_rev_right.
+  Qed.
+
   (** ** Induction principles for fold (contributed by S. Lescuyer) *)
 
   (** In the following lemma, the step hypothesis is deliberately restricted
@@ -352,8 +358,7 @@ Module WPropertiesOn (Import E : DecidableType)(M : WSetsOn E).
      P s (fold f s i).
   Proof.
   intros A P f i s Pempty Pstep.
-  rewrite fold_1; unfold flip; rewrite <- fold_left_rev_right.
-  set (l:=rev (elements s)).
+  rewrite fold_spec_right. set (l:=rev (elements s)).
   assert (Pstep' : forall x a s' s'', InA x l -> ~In x s' -> Add x s' s'' ->
            P s' a -> P s'' (f x a)).
    intros; eapply Pstep; eauto.
@@ -425,8 +430,7 @@ Module WPropertiesOn (Import E : DecidableType)(M : WSetsOn E).
      R (fold f s i) (fold g s j).
   Proof.
   intros A B R f g i j s Rempty Rstep.
-  do 2 (rewrite fold_1; unfold flip; rewrite <- fold_left_rev_right).
-  set (l:=rev (elements s)).
+  rewrite 2 fold_spec_right. set (l:=rev (elements s)).
   assert (Rstep' : forall x a b, InA x l -> R a b -> R (f x a) (g x b)) by
     (intros; apply Rstep; auto; rewrite elements_iff, <- InA_rev; auto with *).
   clearbody l; clear Rstep s.
@@ -484,8 +488,7 @@ Module WPropertiesOn (Import E : DecidableType)(M : WSetsOn E).
   split; intros.
   rewrite elements_iff; do 2 rewrite InA_alt.
   split; destruct 1; generalize (In_rev (elements s) x0); exists x0; intuition.
-  rewrite fold_left_rev_right.
-  apply fold_1.
+  apply fold_spec_right.
   Qed.
 
   (** An alternate (and previous) specification for [fold] was based on
@@ -828,7 +831,7 @@ Module WPropertiesOn (Import E : DecidableType)(M : WSetsOn E).
   rewrite (inter_subset_equal H).
   generalize (@cardinal_inv_1 (diff s' s)).
   destruct (cardinal (diff s' s)).
-  intro H2; destruct (H2 (refl_equal _) x).
+  intro H2; destruct (H2 (eq_refl _) x).
   set_iff; auto.
   intros _.
   change (0 + cardinal s < S n + cardinal s).
@@ -1095,8 +1098,7 @@ Module OrdProperties (M:Sets).
    Above x s -> Add x s s' -> eqA (fold f s' i) (f x (fold f s i)).
   Proof.
   intros.
-  rewrite !FM.fold_1.
-  unfold flip; rewrite <-!fold_left_rev_right.
+  rewrite 2 fold_spec_right.
   change (f x (fold_right f i (rev (elements s)))) with
     (fold_right f i (rev (x::nil)++rev (elements s))).
   apply (@fold_right_eqlistA E.t E.eq A eqA st); auto with *.
@@ -1112,7 +1114,7 @@ Module OrdProperties (M:Sets).
    Below x s -> Add x s s' -> eqA (fold f s' i) (fold f s (f x i)).
   Proof.
   intros.
-  rewrite !FM.fold_1.
+  rewrite !fold_spec.
   change (eqA (fold_left (flip f) (elements s') i)
               (fold_left (flip f) (x::elements s) i)).
   unfold flip; rewrite <-!fold_left_rev_right.
@@ -1133,8 +1135,7 @@ Module OrdProperties (M:Sets).
    forall i s s', s[=]s' -> eqA (fold f s i) (fold f s' i).
   Proof.
   intros.
-  rewrite !FM.fold_1.
-  unfold flip; rewrite <- !fold_left_rev_right.
+  rewrite 2 fold_spec_right.
   apply (@fold_right_eqlistA E.t E.eq A eqA st); auto.
   apply eqlistA_rev.
   apply sort_equivlistA_eqlistA; auto with set.

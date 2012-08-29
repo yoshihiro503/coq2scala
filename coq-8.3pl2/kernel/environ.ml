@@ -1,12 +1,24 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: environ.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
+(* Author: Jean-Christophe Filliâtre as part of the rebuilding of Coq
+   around a purely functional abstract type-checker, Aug 1999 *)
+(* Cleaning and lightening of the kernel by Bruno Barras, Nov 2001 *)
+(* Flag for predicativity of Set by Hugo Herbelin in Oct 2003 *)
+(* Support for virtual machine by Benjamin Grégoire in Oct 2004 *)
+(* Support for retroknowledge by Arnaud Spiwack in May 2007 *)
+(* Support for assumption dependencies by Arnaud Spiwack in May 2007 *)
+
+(* Miscellaneous maintenance by Bruno Barras, Hugo Herbelin, Jean-Marc
+   Notin, Matthieu Sozeau *)
+
+(* This file defines the type of environments on which the
+   type-checker works, together with simple related functions *)
 
 open Util
 open Names
@@ -97,7 +109,7 @@ let lookup_named id env = Sign.lookup_named id env.env_named_context
 let lookup_named_val id (ctxt,_) = Sign.lookup_named id ctxt
 
 let eq_named_context_val c1 c2 =
-   c1 == c2 || named_context_of_val c1 = named_context_of_val c2
+   c1 == c2 || named_context_equal (named_context_of_val c1) (named_context_of_val c2)
 
 (* A local const is evaluable if it is defined  *)
 
@@ -158,10 +170,10 @@ exception NotEvaluableConst of const_evaluation_result
 
 let constant_value env kn =
   let cb = lookup_constant kn env in
-  if cb.const_opaque then raise (NotEvaluableConst Opaque);
   match cb.const_body with
-    | Some l_body -> Declarations.force l_body
-    | None -> raise (NotEvaluableConst NoBody)
+    | Def l_body -> Declarations.force l_body
+    | OpaqueDef _ -> raise (NotEvaluableConst Opaque)
+    | Undef _ -> raise (NotEvaluableConst NoBody)
 
 let constant_opt_value env cst =
   try Some (constant_value env cst)
@@ -183,14 +195,9 @@ let add_mind kn mib env =
   { env with env_globals = new_globals }
 
 (* Universe constraints *)
-let set_universes g env =
-  if env.env_stratification.env_universes == g then env
-  else
-    { env with env_stratification =
-      { env.env_stratification with env_universes = g } }
 
 let add_constraints c env =
-  if c == Constraint.empty then
+  if is_empty_constraint c then
     env
   else
     let s = env.env_stratification in
@@ -516,144 +523,3 @@ fun env field value ->
   in
   Retroknowledge.add_field retroknowledge_with_reactive_info field value
   }
-
-
-(**************************************************************)
-(* spiwack: the following definitions are used by the function
-   [assumptions] which gives as an output the set of all
-   axioms and sections variables on which a given term depends
-   in a context (expectingly the Global context) *)
-
-type context_object =
-  | Variable of identifier (* A section variable or a Let definition *)
-  | Axiom of constant      (* An axiom or a constant. *)
-  | Opaque of constant     (* An opaque constant. *)
-
-(* Defines a set of [assumption] *)
-module OrderedContextObject =
-struct
-  type t = context_object
-  let compare x y =
-      match x , y with
-      | Variable i1 , Variable i2 -> id_ord i1 i2
-      | Axiom k1 , Axiom k2 -> Pervasives.compare k1 k2
-	          (* spiwack: it would probably be cleaner
-		     to provide a [kn_ord] function *)
-      | Opaque k1 , Opaque k2 -> Pervasives.compare k1 k2
-      | Variable _ , Axiom _ -> -1
-      | Axiom _ , Variable _ -> 1
-      | Opaque _ , _ -> -1
-      | _, Opaque _ -> 1
-end
-
-module ContextObjectSet = Set.Make (OrderedContextObject)
-module ContextObjectMap = Map.Make (OrderedContextObject)
-
-
-let assumptions ?(add_opaque=false) st (* t env *) =
-  let (idts,knst) = st in
-  (* Infix definition for chaining function that accumulate
-     on a and a ContextObjectSet, ContextObjectMap.  *)
-  let ( ** ) f1 f2 s m = let (s',m') = f1 s m in f2 s' m' in
-  (* This function eases memoization, by checking if an object is already
-     stored before trying and applying a function.
-     If the object is there, the function is not fired (we are in a
-     particular case where memoized object don't need a treatment at all).
-     If the object isn't there, it is stored and the function is fired*)
-  let try_and_go o f s m =
-    if ContextObjectSet.mem o s then
-      (s,m)
-    else
-      f (ContextObjectSet.add o s) m
-  in
-  let identity2 s m = (s,m) in
-  (* Goes recursively into the term to see if it depends on assumptions
-    the 3 important cases are : - Const _ where we need to first unfold
-    the constant and return the needed assumptions of its body in the
-    environment,
-                                - Rel _ which means the term is a variable
-    which has been bound earlier by a Lambda or a Prod (returns [] ),
-                                - Var _ which means that the term refers
-    to a section variable or a "Let" definition, in the former it is
-    an assumption of [t], in the latter is must be unfolded like a Const.
-    The other cases are straightforward recursion.
-    Calls to the environment are memoized, thus avoiding to explore
-    the DAG of the environment as if it was a tree (can cause
-    exponential behavior and prevent the algorithm from terminating
-    in reasonable time). [s] is a set of [context_object], representing
-    the object already visited.*)
-  let rec aux t env s acc =
-    match kind_of_term t with
-    | Var id -> aux_memoize_id id env s acc
-    | Meta _ | Evar _ ->
-	Util.anomaly "Environ.assumption: does not expect a meta or an evar"
-    | Cast (e1,_,e2) | Prod (_,e1,e2) | Lambda (_,e1,e2) ->
-                           ((aux e1 env)**(aux e2 env)) s acc
-    | LetIn (_,e1,e2,e3) -> ((aux e1 env)**
-                             (aux e2 env)**
-                             (aux e3 env))
-	                     s acc
-    | App (e1, e_array) -> ((aux e1 env)**
-			    (Array.fold_right
-			       (fun e f -> (aux e env)**f)
-                               e_array identity2))
-	                   s acc
-    | Case (_,e1,e2,e_array) -> ((aux e1 env)**
-                                 (aux e2 env)**
-				 (Array.fold_right
-				    (fun e f -> (aux e env)**f)
-                                    e_array identity2))
-	                        s acc
-    | Fix (_,(_, e1_array, e2_array)) | CoFix (_,(_,e1_array, e2_array)) ->
-                  ((Array.fold_right
-		      (fun e f -> (aux e env)**f)
-                      e1_array identity2) **
-                   (Array.fold_right
-		      (fun e f -> (aux e env)**f)
-                      e2_array identity2))
-		     s acc
-    | Const kn -> aux_memoize_kn kn env s acc
-    | _ -> (s,acc) (* closed atomic types + rel *)
-
-  and add_id id env s acc =
-    (* a Var can be either a variable, or a "Let" definition.*)
-    match lookup_named id env with
-    | (_,None,t) ->
-        (s,ContextObjectMap.add (Variable id) t acc)
-    | (_,Some bdy,_) -> aux bdy env s acc
-
-  and aux_memoize_id id env =
-    try_and_go (Variable id) (add_id id env)
-
-  and add_kn kn env s acc =
-    let cb = lookup_constant kn env in
-    let do_type cst =
-      let ctype =
-	match cb.Declarations.const_type with
-	| PolymorphicArity (ctx,a) -> mkArity (ctx, Type a.poly_level)
-	| NonPolymorphicType t -> t
-      in
-	(s,ContextObjectMap.add cst ctype acc)
-    in
-    let (s,acc) =
-      if cb.Declarations.const_body <> None
-	&& (cb.Declarations.const_opaque || not (Cpred.mem kn knst))
-	&& add_opaque
-      then
-	do_type (Opaque kn)
-      else (s,acc)
-    in
-      match cb.Declarations.const_body with
-      | None -> do_type (Axiom kn)
-      | Some body -> aux (Declarations.force body) env s acc
-
-  and aux_memoize_kn kn env =
-    try_and_go (Axiom kn) (add_kn kn env)
- in
- fun t env ->
-   snd (aux t env (ContextObjectSet.empty) (ContextObjectMap.empty))
-
-(* /spiwack *)
-
-
-

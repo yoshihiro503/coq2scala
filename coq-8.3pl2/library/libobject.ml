@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: libobject.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Util
 open Names
@@ -18,7 +16,7 @@ open Mod_subst
    wants to work with restricted Coq programs that have only parts of
    the full capabilities, but may still be able to work correctly for
    limited purposes.  One example is for the graphical interface, that uses
-   such a limite coq process to do only parsing.  It loads .vo files, but
+   such a limited Coq process to do only parsing.  It loads .vo files, but
    is only interested in loading the grammar rule definitions. *)
 
 let relax_flag = ref false;;
@@ -57,7 +55,7 @@ let default_object s = {
    declare_object { (default_object "MY OBJECT") with
        cache_function = fun (sp,a) -> Mytbl.add sp a}
 
-   and the listed functions are only those which definitions accually
+   and the listed functions are only those which definitions actually
    differ from the default.
 
    This helps introducing new functions in objects.
@@ -81,7 +79,7 @@ let object_tag lobj = Dyn.tag lobj
 let cache_tab =
   (Hashtbl.create 17 : (string,dynamic_object_declaration) Hashtbl.t)
 
-let declare_object odecl =
+let declare_object_full odecl =
   let na = odecl.object_name in
   let (infun,outfun) = Dyn.create na in
   let cacher (oname,lobj) =
@@ -124,6 +122,8 @@ let declare_object odecl =
 			     dyn_rebuild_function = rebuild };
   (infun,outfun)
 
+let declare_object odecl = fst (declare_object_full odecl)
+
 let missing_tab = (Hashtbl.create 17 : (string, unit) Hashtbl.t)
 
 (* this function describes how the cache, load, open, and export functions
@@ -143,8 +143,9 @@ let apply_dyn_fun deflt f lobj =
     Failure "local to_apply_dyn_fun" ->
       if not (!relax_flag || Hashtbl.mem missing_tab tag) then
         begin
-          Pp.warning ("Cannot find library functions for an object with tag "
-                      ^ tag ^ " (a plugin may be missing)");
+          Pp.msg_warning
+	    (Pp.str ("Cannot find library functions for an object with tag "
+                      ^ tag ^ " (a plugin may be missing)"));
           Hashtbl.add missing_tab tag ()
         end;
       deflt

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: pptactic.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 open Pp
 open Genarg
@@ -14,7 +12,7 @@ open Tacexpr
 open Pretyping
 open Proof_type
 open Topconstr
-open Rawterm
+open Glob_term
 open Pattern
 open Ppextend
 open Environ
@@ -32,8 +30,8 @@ type 'a raw_extra_genarg_printer =
     'a -> std_ppcmds
 
 type 'a glob_extra_genarg_printer =
-    (rawconstr_and_expr -> std_ppcmds) ->
-    (rawconstr_and_expr -> std_ppcmds) ->
+    (glob_constr_and_expr -> std_ppcmds) ->
+    (glob_constr_and_expr -> std_ppcmds) ->
     (tolerability -> glob_tactic_expr -> std_ppcmds) ->
     'a -> std_ppcmds
 
@@ -43,7 +41,7 @@ type 'a extra_genarg_printer =
     (tolerability -> glob_tactic_expr -> std_ppcmds) ->
     'a -> std_ppcmds
 
-  (* if the boolean is false then the extension applies only to old syntax *)
+  (** if the boolean is false then the extension applies only to old syntax *)
 val declare_extra_genarg_pprule :
   ('c raw_abstract_argument_type * 'c raw_extra_genarg_printer) ->
   ('a glob_abstract_argument_type * 'a glob_extra_genarg_printer) ->
@@ -51,7 +49,7 @@ val declare_extra_genarg_pprule :
 
 type grammar_terminals = string option list
 
-  (* if the boolean is false then the extension applies only to old syntax *)
+  (** if the boolean is false then the extension applies only to old syntax *)
 val declare_extra_tactic_pprule :
   string * argument_type list * (int * grammar_terminals) -> unit
 
@@ -72,9 +70,9 @@ val pr_raw_extend:
     string -> raw_generic_argument list -> std_ppcmds
 
 val pr_glob_extend:
-  (rawconstr_and_expr -> std_ppcmds) -> (rawconstr_and_expr -> std_ppcmds) ->
+  (glob_constr_and_expr -> std_ppcmds) -> (glob_constr_and_expr -> std_ppcmds) ->
   (tolerability -> glob_tactic_expr -> std_ppcmds) ->
-  (rawconstr_pattern_and_expr -> std_ppcmds) -> int ->
+  (glob_constr_pattern_and_expr -> std_ppcmds) -> int ->
     string -> glob_generic_argument list -> std_ppcmds
 
 val pr_extend :

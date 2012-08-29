@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: lib.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Pp
 open Util
@@ -14,13 +12,15 @@ open Libnames
 open Nameops
 open Libobject
 open Summary
+
+type is_type = bool (* Module Type or just Module *)
+type export = bool option (* None for a Module Type *)
+
 type node =
   | Leaf of obj
   | CompilingLibrary of object_prefix
-  | OpenedModule of bool option * object_prefix * Summary.frozen
+  | OpenedModule of is_type * export * object_prefix * Summary.frozen
   | ClosedModule  of library_segment
-  | OpenedModtype of object_prefix * Summary.frozen
-  | ClosedModtype of library_segment
   | OpenedSection of object_prefix * Summary.frozen
   | ClosedSection of library_segment
   | FrozenState of Summary.frozen
@@ -30,6 +30,9 @@ and library_entry = object_name * node
 and library_segment = library_entry list
 
 type lib_objects =  (Names.identifier * obj) list
+
+let module_kind is_type =
+  if is_type then "module type" else "module"
 
 let iter_objects f i prefix =
   List.iter (fun (id,obj) -> f i (make_oname prefix id, obj))
@@ -69,10 +72,9 @@ let classify_segment seg =
     (* LEM; TODO: Understand what this does and see if what I do is the
                   correct thing for ClosedMod(ule|type) *)
     | (_,ClosedModule _) :: stk -> clean acc stk
-    | (_,ClosedModtype _) :: stk -> clean acc stk
     | (_,OpenedSection _) :: _ -> error "there are still opened sections"
-    | (_,OpenedModule _) :: _ -> error "there are still opened modules"
-    | (_,OpenedModtype _) :: _ -> error "there are still opened module types"
+    | (_,OpenedModule (ty,_,_,_)) :: _ ->
+      error ("there are still opened " ^ module_kind ty ^"s")
     | (_,FrozenState _) :: stk -> clean acc stk
   in
     clean ([],[],[]) (List.rev seg)
@@ -144,8 +146,7 @@ let make_oname id = make_path id, make_kn id
 let recalc_path_prefix () =
   let rec recalc = function
     | (sp, OpenedSection (dir,_)) :: _ -> dir
-    | (sp, OpenedModule (_,dir,_)) :: _ -> dir
-    | (sp, OpenedModtype (dir,_)) :: _ -> dir
+    | (sp, OpenedModule (_,_,dir,_)) :: _ -> dir
     | (sp, CompilingLibrary dir) :: _ -> dir
     | _::l -> recalc l
     | [] -> initial_prefix
@@ -181,7 +182,6 @@ let split_lib_gen test =
 	then Some (collect after [hd] before)
 	else (match hd with
 		| (sp,ClosedModule  seg)
-		| (sp,ClosedModtype seg)
 		| (sp,ClosedSection seg) ->
 		    (match findeq after seg with
 		       | None -> findeq (hd::after) before
@@ -197,11 +197,11 @@ let split_lib_gen test =
 let split_lib sp = split_lib_gen (fun x -> fst x = sp)
 
 let split_lib_at_opening sp =
-  let a,s,b = split_lib_gen (function
-    | x,(OpenedSection _|OpenedModule _|OpenedModtype _|CompilingLibrary _) ->
-	x = sp
-    | _ ->
-	false) in
+  let is_sp = function
+    | x,(OpenedSection _|OpenedModule _|CompilingLibrary _) -> x = sp
+    | _ -> false
+  in
+  let a,s,b = split_lib_gen is_sp in
   assert (List.tl s = []);
   (a,List.hd s,b)
 
@@ -254,110 +254,72 @@ let add_frozen_state () =
 
 (* Modules. *)
 
-
-let is_opened id = function
-    oname,(OpenedSection _ | OpenedModule _ | OpenedModtype _) when
-      basename (fst oname) = id -> true
-  | _ -> false
-
 let is_opening_node = function
-    _,(OpenedSection _ | OpenedModule _ | OpenedModtype _) -> true
+  | _,(OpenedSection _ | OpenedModule _) -> true
   | _ -> false
 
+let is_opening_node_or_lib = function
+  | _,(CompilingLibrary _ | OpenedSection _ | OpenedModule _) -> true
+  | _ -> false
 
 let current_mod_id () =
-  try match find_entry_p is_opening_node with
-    | oname,OpenedModule (_,_,fs) ->
-	basename (fst oname)
-    | oname,OpenedModtype (_,fs) ->
-	basename (fst oname)
+  try match find_entry_p is_opening_node_or_lib with
+    | oname,OpenedModule (_,_,_,fs) -> basename (fst oname)
+    | oname,CompilingLibrary _ -> basename (fst oname)
     | _ -> error "you are not in a module"
-  with Not_found ->
-    error "no opened modules"
+  with Not_found -> error "no opened modules"
 
 
-let start_module export id mp fs =
+let start_mod is_type export id mp fs =
   let dir = add_dirpath_suffix (fst !path_prefix) id in
   let prefix = dir,(mp,Names.empty_dirpath) in
-  let oname = make_path id, make_kn id in
-  if Nametab.exists_module dir then
-    errorlabstrm "open_module" (pr_id id ++ str " already exists") ;
-  add_entry oname (OpenedModule (export,prefix,fs));
+  let sp = make_path id in
+  let oname = sp, make_kn id in
+  let exists =
+    if is_type then Nametab.exists_cci sp else Nametab.exists_module dir
+  in
+  if exists then
+    errorlabstrm "open_module" (pr_id id ++ str " already exists");
+  add_entry oname (OpenedModule (is_type,export,prefix,fs));
   path_prefix := prefix;
   prefix
 (*  add_frozen_state () must be called in declaremods *)
 
+let start_module = start_mod false
+let start_modtype = start_mod true None
+
 let error_still_opened string oname =
   let id = basename (fst oname) in
-  errorlabstrm "" (str string ++ spc () ++ pr_id id ++ str " is still opened.")
+  errorlabstrm ""
+    (str ("The "^string^" ") ++ pr_id id ++ str " is still opened.")
 
-let end_module () =
+let end_mod is_type =
   let oname,fs =
     try match find_entry_p is_opening_node with
-      | oname,OpenedModule (_,_,fs) -> oname,fs
-      | oname,OpenedModtype _ -> error_still_opened "Module Type" oname
-      | oname,OpenedSection _ -> error_still_opened "Section" oname
+      | oname,OpenedModule (ty,_,_,fs) ->
+	if ty = is_type then oname,fs
+	else error_still_opened (module_kind ty) oname
+      | oname,OpenedSection _ -> error_still_opened "section" oname
       | _ -> assert false
-    with Not_found ->
-      error "No opened modules."
+    with Not_found -> error "No opened modules."
   in
   let (after,mark,before) = split_lib_at_opening oname in
   lib_stk := before;
   add_entry oname (ClosedModule (List.rev (mark::after)));
   let prefix = !path_prefix in
-  (* LEM: This module business seems more complicated than sections;
-          shouldn't a backtrack into a closed module also do something
-          with global.ml, given that closing a module does?
-     TODO
-   *)
   recalc_path_prefix ();
   (* add_frozen_state must be called after processing the module,
      because we cannot recache interactive modules  *)
   (oname, prefix, fs, after)
 
-let start_modtype id mp fs =
-  let dir = add_dirpath_suffix (fst !path_prefix) id in
-  let prefix = dir,(mp,Names.empty_dirpath) in
-  let sp = make_path id in
-  let name = sp, make_kn id in
-  if Nametab.exists_cci sp then
-    errorlabstrm "open_modtype" (pr_id id ++ str " already exists") ;
-  add_entry name (OpenedModtype (prefix,fs));
-  path_prefix := prefix;
-  prefix
-
-let end_modtype () =
-  let oname,fs =
-    try match find_entry_p is_opening_node with
-      | oname,OpenedModtype (_,fs) -> oname,fs
-      | oname,OpenedModule _ -> error_still_opened "Module" oname
-      | oname,OpenedSection _ -> error_still_opened "Section" oname
-      | _ -> assert false
-    with Not_found ->
-      error "no opened module types"
-  in
-  let (after,mark,before) = split_lib_at_opening oname in
-  lib_stk := before;
-  add_entry oname (ClosedModtype (List.rev (mark::after)));
-  let dir = !path_prefix in
-  recalc_path_prefix ();
-  (* add_frozen_state must be called after processing the module type.
-     This is because we cannot recache interactive module types *)
-  (oname,dir,fs,after)
-
+let end_module () = end_mod false
+let end_modtype () = end_mod true
 
 let contents_after = function
   | None -> !lib_stk
   | Some sp -> let (after,_,_) = split_lib sp in after
 
 (* Modules. *)
-
-let check_for_comp_unit () =
-  let is_decl = function (_,FrozenState _) -> false | _ -> true in
-  try
-    let _ = find_entry_p is_decl in
-    error "a module cannot be started after some declarations"
-  with Not_found -> ()
 
 (* TODO: use check_for_module ? *)
 let start_compilation s mp =
@@ -374,21 +336,18 @@ let end_compilation dir =
   let _ =
     try match snd (find_entry_p is_opening_node) with
       | OpenedSection _ -> error "There are some open sections."
-      | OpenedModule _ -> error "There are some open modules."
-      | OpenedModtype _ -> error "There are some open module types."
+      | OpenedModule (ty,_,_,_) ->
+	error ("There are some open "^module_kind ty^"s.")
       | _ -> assert false
-    with
-	Not_found -> ()
+    with Not_found -> ()
   in
-  let module_p =
-    function (_,CompilingLibrary _) -> true | x -> is_opening_node x
+  let is_opening_lib = function _,CompilingLibrary _ -> true | _ -> false
   in
   let oname =
-    try match find_entry_p module_p with
-	(oname, CompilingLibrary prefix) -> oname
+    try match find_entry_p is_opening_lib with
+      |	(oname, CompilingLibrary prefix) -> oname
       | _ -> assert false
-    with
-	Not_found -> anomaly "No module declared"
+    with Not_found -> anomaly "No module declared"
   in
   let _ =
     match !comp_name with
@@ -399,31 +358,23 @@ let end_compilation dir =
 	       " and not " ^ (Names.string_of_dirpath m));
   in
   let (after,mark,before) = split_lib_at_opening oname in
-    comp_name := None;
-    !path_prefix,after
+  comp_name := None;
+  !path_prefix,after
 
-(* Returns true if we are inside an opened module type *)
-let is_modtype () =
-  let opened_p = function
-    | _, OpenedModtype _ -> true
+(* Returns true if we are inside an opened module or module type *)
+
+let is_module_gen which =
+  let test = function
+    | _, OpenedModule (ty,_,_,_) -> which ty
     | _ -> false
   in
-    try
-      let _ = find_entry_p opened_p in true
-    with
-	Not_found -> false
+  try
+    let _ = find_entry_p test in true
+  with Not_found -> false
 
-(* Returns true if we are inside an opened module *)
-let is_module () =
-  let opened_p = function
-    | _, OpenedModule _ -> true
-    | _ -> false
-  in
-    try
-      let _ = find_entry_p opened_p in true
-    with
-	Not_found -> false
-
+let is_module_or_modtype () = is_module_gen (fun _ -> true)
+let is_modtype () = is_module_gen (fun b -> b)
+let is_module () = is_module_gen (fun b -> not b)
 
 (* Returns the opening node of a given name *)
 let find_opening_node id =
@@ -495,8 +446,6 @@ let add_section_constant kn =
 
 let replacement_context () = pi2 (List.hd !sectab)
 
-let variables_context () = pi1 (List.hd !sectab)
-
 let section_segment_of_constant con =
   Names.Cmap.find con (fst (pi3 (List.hd !sectab)))
 
@@ -563,8 +512,8 @@ let discharge_item ((sp,_ as oname),e) =
   | Leaf lobj ->
       Option.map (fun o -> (basename sp,o)) (discharge_object (oname,lobj))
   | FrozenState _ -> None
-  | ClosedSection _ | ClosedModtype _ | ClosedModule _ -> None
-  | OpenedSection _ | OpenedModtype _ | OpenedModule _ | CompilingLibrary _ ->
+  | ClosedSection _ | ClosedModule _ -> None
+  | OpenedSection _ | OpenedModule _ | CompilingLibrary _ ->
       anomaly "discharge_item"
 
 let close_section () =
@@ -590,8 +539,8 @@ let close_section () =
 (*****************)
 (* Backtracking. *)
 
-let (inLabel,outLabel) =
-  declare_object {(default_object "DOT") with
+let (inLabel : int -> obj), (outLabel : obj -> int) =
+  declare_object_full {(default_object "DOT") with
 				classify_function = (fun _ -> Dispose)}
 
 let recache_decl = function
@@ -603,13 +552,6 @@ let recache_context ctx =
   List.iter recache_decl ctx
 
 let is_frozen_state = function (_,FrozenState _) -> true | _ -> false
-
-let has_top_frozen_state () =
-  let rec aux = function
-  | (sp, FrozenState _)::_ -> Some sp
-  | (sp, Leaf o)::t when object_tag o = "DOT" -> aux t
-  | _ -> None
-  in aux !lib_stk
 
 let set_lib_stk new_lib_stk =
   lib_stk := new_lib_stk;
@@ -630,106 +572,43 @@ let reset_to_gen test =
 
 let reset_to sp = reset_to_gen (fun x -> fst x = sp)
 
-let reset_to_state sp =
-  let (_,eq,before) = split_lib sp in
-  (* if eq a frozen state, we'll reset to it *)
-  match eq with
-  | [_,FrozenState f] -> lib_stk := eq@before; recalc_path_prefix (); unfreeze_summaries f
-  | _ -> error "Not a frozen state"
+let first_command_label = 1
 
-
-(* LEM: TODO
- * We will need to muck with frozen states in after, too!
- * Not only FrozenState, but also those embedded in Opened(Section|Module|Modtype)
- *)
-let delete_gen test =
-  let (after,equal,before) = split_lib_gen test in
-  let rec chop_at_dot = function
-    | [] as l -> l
-    | (_, Leaf o)::t when object_tag o = "DOT" -> t
-    | _::t -> chop_at_dot t
-  and chop_before_dot = function
-    | [] as l -> l
-    | (_, Leaf o)::t as l when object_tag o = "DOT" -> l
-    | _::t -> chop_before_dot t
- in
-  set_lib_stk (List.rev_append (chop_at_dot after) (chop_before_dot before))
-
-let delete sp = delete_gen (fun x -> fst x = sp)
-
-let reset_name (loc,id) =
-  let (sp,_) =
-    try
-      find_entry_p (fun (sp,_) -> let (_,spi) = repr_path (fst sp) in id = spi)
-    with Not_found ->
-      user_err_loc (loc,"reset_name",pr_id id ++ str ": no such entry")
-  in
-  reset_to sp
-
-let remove_name (loc,id) =
-  let (sp,_) =
-    try
-      find_entry_p (fun (sp,_) -> let (_,spi) = repr_path (fst sp) in id = spi)
-    with Not_found ->
-      user_err_loc (loc,"remove_name",pr_id id ++ str ": no such entry")
-  in
-    delete sp
-
-let is_mod_node = function
-  | OpenedModule _ | OpenedModtype _ | OpenedSection _
-  | ClosedModule _ | ClosedModtype _ | ClosedSection _  -> true
-  | Leaf o -> let t = object_tag o in t = "MODULE" || t = "MODULE TYPE"
-	|| t = "MODULE ALIAS"
-  | _ -> false
-
-(* Reset on a module or section name in order to bypass constants with
-   the same name *)
-
-let reset_mod (loc,id) =
-  let (_,before) =
-    try
-      find_split_p (fun (sp,node) ->
-                    let (_,spi) = repr_path (fst sp) in id = spi
-                    && is_mod_node node)
-    with Not_found ->
-      user_err_loc (loc,"reset_mod",pr_id id ++ str ": no such entry")
-  in
-  set_lib_stk before
-
-let mark_end_of_command, current_command_label, set_command_label =
-  let n = ref 0 in
+let mark_end_of_command, current_command_label, reset_command_label =
+  let n = ref (first_command_label-1) in
   (fun () ->
     match !lib_stk with
         (_,Leaf o)::_ when object_tag o = "DOT" -> ()
       | _ -> incr n;add_anonymous_leaf (inLabel !n)),
   (fun () -> !n),
-  (fun x -> n:=x)
+  (fun x -> n:=x;add_anonymous_leaf (inLabel x))
 
 let is_label_n n x =
   match x with
     | (sp,Leaf o) when object_tag o = "DOT" && n = outLabel o -> true
     | _ -> false
 
-(* Reset the label registered by [mark_end_of_command()] with number n. *)
+(** Reset the label registered by [mark_end_of_command()] with number n,
+    which should be strictly in the past. *)
+
 let reset_label n =
-  let current = current_command_label() in
-  if n < current then
-    let res = reset_to_gen (is_label_n n) in
-    set_command_label (n-1); (* forget state numbers after n only if reset succeeded *)
-    res
-  else (* optimisation to avoid recaching when not necessary (why is it so long??) *)
-    match !lib_stk with
-      | [] -> ()
-      | x :: ls -> (lib_stk := ls;set_command_label (n-1))
+  if n >= current_command_label () then
+    error "Cannot backtrack to the current label or a future one";
+  reset_to_gen (is_label_n n);
+  (* forget state numbers after n only if reset succeeded *)
+  reset_command_label n
 
-let rec back_stk n stk =
-  match stk with
-      (sp,Leaf o)::tail when object_tag o = "DOT" ->
-        if n=0 then sp else back_stk (n-1) tail
-    | _::tail -> back_stk n tail
-    | [] -> error "Reached begin of command history"
+(** Search the last label registered before defining [id] *)
 
-let back n = reset_to (back_stk n !lib_stk)
+let label_before_name (loc,id) =
+  let found = ref false in
+  let search = function
+    | (_,Leaf o) when !found && object_tag o = "DOT" -> true
+    | (sp,_) -> (if id = snd (repr_path (fst sp)) then found := true); false
+  in
+  match find_entry_p search with
+    | (_,Leaf o) -> outLabel o
+    | _ -> raise Not_found
 
 (* State and initialization. *)
 
@@ -748,29 +627,6 @@ let init () =
   comp_name := None;
   path_prefix := initial_prefix;
   init_summaries()
-
-(* Initial state. *)
-
-let initial_state = ref None
-
-let declare_initial_state () =
-  let name = add_anonymous_entry (FrozenState (freeze_summaries())) in
-  initial_state := Some name
-
-let reset_initial () =
-  match !initial_state with
-    | None ->
-        error "Resetting to the initial state is possible only interactively"
-    | Some sp ->
-  	begin match split_lib sp with
-	  | (_,[_,FrozenState fs as hd],before) ->
-	      lib_stk := hd::before;
-	      recalc_path_prefix ();
-			set_command_label 0;
-	      unfreeze_summaries fs
-	  | _ -> assert false
-	end
-
 
 (* Misc *)
 
@@ -793,7 +649,7 @@ let rec split_mp mp =
     | Names.MPdot (prfx, lbl) ->
 	let mprec, dprec = split_mp prfx in
 	  mprec, Names.make_dirpath (Names.id_of_string (Names.string_of_label lbl) :: (Names.repr_dirpath dprec))
-    | Names.MPbound mbid -> let (_, id, dp) = Names.repr_mbid mbid in  library_dp(), Names.make_dirpath [Names.id_of_string id]
+    | Names.MPbound mbid -> let (_, id, dp) = Names.repr_mbid mbid in  library_dp(), Names.make_dirpath [id]
 
 let split_modpath mp =
   let rec aux = function

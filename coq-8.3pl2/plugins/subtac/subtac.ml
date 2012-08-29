@@ -1,13 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: subtac.ml 13492 2010-10-04 21:20:01Z herbelin $ *)
-
+open Compat
 open Global
 open Pp
 open Util
@@ -27,7 +26,7 @@ open List
 open Recordops
 open Evarutil
 open Pretype_errors
-open Rawterm
+open Glob_term
 open Evarconv
 open Pattern
 open Vernacexpr
@@ -50,7 +49,7 @@ open Tacinterp
 open Tacexpr
 
 let solve_tccs_in_type env id isevars evm c typ =
-  if not (evm = Evd.empty) then
+  if not (Evd.is_empty evm) then
     let stmt_id = Nameops.add_suffix id "_stmt" in
     let obls, _, c', t' = eterm_obligations env stmt_id !isevars evm 0 ~status:Expand c typ in
       match Subtac_obligations.add_definition stmt_id ~term:c' typ obls with
@@ -83,13 +82,11 @@ let start_proof_com env isevars sopt kind (bl,t) hook =
       Impargs.declare_manual_implicits (loc = Local) gr ~enriching:true [imps];
       hook loc gr)
 
-let print_subgoals () = Flags.if_verbose (fun () -> msg (Printer.pr_open_subgoals ())) ()
-
 let start_proof_and_print env isevars idopt k t hook =
   start_proof_com env isevars idopt k t hook;
-  print_subgoals ()
+  Vernacentries.print_subgoals ()
 
-let _ = Detyping.set_detype_anonymous (fun loc n -> RVar (loc, id_of_string ("Anonymous_REL_" ^ string_of_int n)))
+let _ = Detyping.set_detype_anonymous (fun loc n -> GVar (loc, id_of_string ("Anonymous_REL_" ^ string_of_int n)))
 
 let assumption_message id =
   Flags.if_verbose message ((string_of_id id) ^ " is assumed")
@@ -142,12 +139,12 @@ let subtac (loc, command) =
 	    (fun _ _ -> ())
       | DefineBody (bl, _, c, tycon) ->
 	  ignore(Subtac_pretyping.subtac_proof defkind hook env isevars id bl c tycon))
-  | VernacFixpoint (l, b) ->
+  | VernacFixpoint l ->
       List.iter (fun ((lid, _, _, _, _), _) ->
 	check_fresh lid;
 	Dumpglob.dump_definition lid false "fix") l;
       let _ = trace (str "Building fixpoint") in
-	ignore(Subtac_command.build_recursive l b)
+	ignore(Subtac_command.build_recursive l)
 
   | VernacStartTheoremProof (thkind, [Some id, (bl,t,guard)], lettop, hook) ->
       if guard <> None then 
@@ -172,10 +169,10 @@ let subtac (loc, command) =
 	error "Declare Instance not supported here.";
       ignore(Subtac_classes.new_instance ~global:glob sup is props pri)
 
-  | VernacCoFixpoint (l, b) ->
+  | VernacCoFixpoint l ->
       if Dumpglob.dump () then
 	List.iter (fun ((lid, _, _, _), _) -> Dumpglob.dump_definition lid false "cofix") l;
-      ignore(Subtac_command.build_corecursive l b)
+      ignore(Subtac_command.build_corecursive l)
 
   (*| VernacEndProof e ->
     subtac_end_proof e*)
@@ -219,6 +216,11 @@ let subtac (loc, command) =
 
   | Type_errors.TypeError (env, exn) as e -> raise e
 
-  | Pretype_errors.PretypeError (env, exn) as e -> raise e
+  | Pretype_errors.PretypeError (env, _, exn) as e -> raise e
 
-  | e -> raise e
+  | (Loc.Exc_located (loc, Proof_type.LtacLocated (_,e')) |
+     Loc.Exc_located (loc, e') as e) -> raise e
+
+  | e -> 
+      (*       msg_warning (str "Uncaught exception: " ++ Errors.print e); *)
+      raise e

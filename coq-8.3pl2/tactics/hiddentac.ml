@@ -1,18 +1,16 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: hiddentac.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 open Term
 open Proof_type
 open Tacmach
 
-open Rawterm
+open Glob_term
 open Refiner
 open Genarg
 open Tacexpr
@@ -63,9 +61,16 @@ let h_generalize cl =
     cl)
 let h_generalize_dep c =
   abstract_tactic (TacGeneralizeDep c) (generalize_dep c)
-let h_let_tac b na c cl =
-  let with_eq = if b then None else Some (true,(dummy_loc,IntroAnonymous)) in
-  abstract_tactic (TacLetTac (na,c,cl,b)) (letin_tac with_eq na c None cl)
+let h_let_tac b na c cl eqpat =
+  let id = Option.default (dummy_loc,IntroAnonymous) eqpat in
+  let with_eq = if b then None else Some (true,id) in
+  abstract_tactic (TacLetTac (na,c,cl,b,eqpat))
+    (letin_tac with_eq na c None cl)
+let h_let_pat_tac b na c cl eqpat =
+  let id = Option.default (dummy_loc,IntroAnonymous) eqpat in
+  let with_eq = if b then None else Some (true,id) in
+  abstract_tactic (TacLetTac (na,snd c,cl,b,eqpat))
+    (letin_pat_tac with_eq na c None cl)
 
 (* Derived basic tactics *)
 let h_simple_induction_destruct isrec h =
@@ -74,11 +79,18 @@ let h_simple_induction_destruct isrec h =
 let h_simple_induction = h_simple_induction_destruct true
 let h_simple_destruct = h_simple_induction_destruct false
 
+let out_indarg = function
+  | ElimOnConstr (_,c) -> ElimOnConstr c
+  | ElimOnIdent id -> ElimOnIdent id
+  | ElimOnAnonHyp n -> ElimOnAnonHyp n
+
 let h_induction_destruct isrec ev lcl =
-  abstract_tactic (TacInductionDestruct (isrec,ev,lcl))
+  let lcl' = on_pi1 (List.map (fun (a,b) ->(out_indarg a,b))) lcl in
+  abstract_tactic (TacInductionDestruct (isrec,ev,lcl'))
     (induction_destruct isrec ev lcl)
-let h_new_induction ev c e idl cl = h_induction_destruct true ev ([c,e,idl],cl)
-let h_new_destruct ev c e idl cl = h_induction_destruct false ev ([c,e,idl],cl)
+let h_new_induction ev c idl e cl =
+  h_induction_destruct true ev ([c,idl],e,cl)
+let h_new_destruct ev c idl e cl = h_induction_destruct false ev ([c,idl],e,cl)
 
 let h_specialize n d = abstract_tactic (TacSpecialize (n,d)) (specialize n d)
 let h_lapply c = abstract_tactic (TacLApply c) (cut_and_apply c)
@@ -102,9 +114,9 @@ let h_any_constructor t =
   abstract_tactic (TacAnyConstructor t) (any_constructor t)
 *)
 let h_constructor ev n l =
-  abstract_tactic (TacConstructor(ev,AI n,l))(constructor_tac ev None n l)
+  abstract_tactic (TacConstructor(ev,ArgArg n,l))(constructor_tac ev None n l)
 let h_one_constructor n =
-  abstract_tactic (TacConstructor(false,AI n,NoBindings)) (one_constructor n NoBindings)
+  abstract_tactic (TacConstructor(false,ArgArg n,NoBindings)) (one_constructor n NoBindings)
 let h_simplest_left   = h_left false NoBindings
 let h_simplest_right  = h_right false NoBindings
 

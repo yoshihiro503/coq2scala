@@ -1,12 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: system.ml 13750 2010-12-24 09:55:54Z letouzey $ *)
+(* $Id$ *)
 
 open Pp
 open Util
@@ -33,7 +33,7 @@ let home =
       try Sys.getenv "USERPROFILE" with Not_found ->
 	warning ("Cannot determine user home directory, using '.' .");
 	flush_all ();
-	"."
+	Filename.current_dir_name
 
 let safe_getenv n = safe_getenv_def n ("$"^n)
 
@@ -72,20 +72,49 @@ type load_path = physical_path list
 let physical_path_of_string s = s
 let string_of_physical_path p = p
 
+(* 
+ * Split a path into a list of directories. A one-liner with Str, but Coq
+ * doesn't seem to use this library at all, so here is a slighly longer version.
+ *)
+
+let lpath_from_path path path_separator =
+  let n = String.length path in
+  let rec aux i l =
+    if i < n then
+      let j =
+        try String.index_from path i path_separator
+        with Not_found -> n
+      in
+      let dir = String.sub path i (j-i) in
+      aux (j+1) (dir::l)
+    else
+      l
+  in List.rev (aux 0 [])
+
 (* Hints to partially detects if two paths refer to the same repertory *)
 let rec remove_path_dot p =
   let curdir = Filename.concat Filename.current_dir_name "" in (* Unix: "./" *)
   let n = String.length curdir in
-  if String.length p > n && String.sub p 0 n = curdir then
-    remove_path_dot (String.sub p n (String.length p - n))
+  let l = String.length p in
+  if l > n && String.sub p 0 n = curdir then
+    let n' =
+      let sl = String.length Filename.dir_sep in
+      let i = ref n in
+	while !i <= l - sl && String.sub p !i sl = Filename.dir_sep do i := !i + sl done; !i in
+    remove_path_dot (String.sub p n' (l - n'))
   else
     p
 
 let strip_path p =
   let cwd = Filename.concat (Sys.getcwd ()) "" in (* Unix: "`pwd`/" *)
   let n = String.length cwd in
-  if String.length p > n && String.sub p 0 n = cwd then
-    remove_path_dot (String.sub p n (String.length p - n))
+  let l = String.length p in
+  if l > n && String.sub p 0 n = cwd then
+    let n' =
+      let sl = String.length Filename.dir_sep in
+      let i = ref n in
+	while !i <= l - sl && String.sub p !i sl = Filename.dir_sep do i := !i + sl done; !i in
+    remove_path_dot (String.sub p n' (l - n'))
   else
     remove_path_dot p
 
@@ -103,7 +132,7 @@ let canonical_path_name p =
 (* All subdirectories, recursively *)
 
 let exists_dir dir =
-  try let _ = opendir dir in true with Unix_error _ -> false
+  try let _ = closedir (opendir dir) in true with Unix_error _ -> false
 
 let skipped_dirnames = ref ["CVS"; "_darcs"]
 
@@ -178,6 +207,14 @@ let find_file_in_path ?(warn=true) paths filename =
 let is_in_path lpath filename =
   try ignore (where_in_path ~warn:false lpath filename); true
   with Not_found -> false
+
+let path_separator = if Sys.os_type = "Unix" then ':' else ';'
+
+let is_in_system_path filename =
+  let path = try Sys.getenv "PATH" 
+             with Not_found -> error "system variable PATH not found" in
+  let lpath = lpath_from_path path path_separator in
+  is_in_path lpath filename
 
 let make_suffix name suffix =
   if Filename.check_suffix name suffix then name else (name ^ suffix)
@@ -300,33 +337,9 @@ let run_command converter f c =
   done;
   (Unix.close_process_full (cin,cout,cerr),  Buffer.contents result)
 
-let path_separator = if Sys.os_type = "Unix" then ':' else ';'
-
-let search_exe_in_path exe =
-  try
-    let path = Sys.getenv "PATH" in
-    let n = String.length path in
-    let rec aux i =
-      if i < n then
-        let j =
-          try String.index_from path i path_separator
-          with Not_found -> n
-        in
-        let dir = String.sub path i (j-i) in
-        let exe = Filename.concat dir exe in
-        if Sys.file_exists exe then Some exe else aux (i+1)
-      else
-        None
-    in aux 0
-  with Not_found -> None
-
 (* Time stamps. *)
 
 type time = float * float * float
-
-let process_time () =
-  let t = times ()  in
-  (t.tms_utime, t.tms_stime)
 
 let get_time () =
   let t = times ()  in

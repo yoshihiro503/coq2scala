@@ -1,24 +1,24 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: Relation_Operators.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 (************************************************************************)
-(** *                   Bruno Barras, Cristina Cornes                   *)
+(** * Some operators on relations                                       *)
+(************************************************************************)
+(** * Initial authors: Bruno Barras, Cristina Cornes                    *)
 (** *                                                                   *)
-(** * Some of these definitions were taken from :                       *)
+(** * Some of the initial definitions were taken from :                 *)
 (** *    Constructing Recursion Operators in Type Theory                *)
 (** *    L. Paulson  JSC (1986) 2, 325-355                              *)
+(** *                                                                   *)
+(** * Further extensions by Pierre Castéran                             *)
 (************************************************************************)
 
 Require Import Relation_Definitions.
-
-(** * Some operators to build relations *)
 
 (** ** Transitive closure *)
 
@@ -149,13 +149,13 @@ Section Lexicographic_Product.
   Variable leA : A -> A -> Prop.
   Variable leB : forall x:A, B x -> B x -> Prop.
 
-  Inductive lexprod : sigS B -> sigS B -> Prop :=
+  Inductive lexprod : sigT B -> sigT B -> Prop :=
     | left_lex :
       forall (x x':A) (y:B x) (y':B x'),
-        leA x x' -> lexprod (existS B x y) (existS B x' y')
+        leA x x' -> lexprod (existT B x y) (existT B x' y')
     | right_lex :
       forall (x:A) (y y':B x),
-        leB x y y' -> lexprod (existS B x y) (existS B x y').
+        leB x y y' -> lexprod (existT B x y) (existT B x y').
 
 End Lexicographic_Product.
 

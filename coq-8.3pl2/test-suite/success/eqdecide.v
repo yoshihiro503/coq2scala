@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -16,12 +16,7 @@ Qed.
 
 Lemma lem2 : forall x y : T, {x = y} + {x <> y}.
 intros x y.
- decide equality x y.
-Qed.
-
-Lemma lem3 : forall x y : T, {x = y} + {x <> y}.
-intros x y.
- decide equality y x.
+ decide equality.
 Qed.
 
 Lemma lem4 : forall x y : T, {x = y} + {x <> y}.

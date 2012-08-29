@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,12 +8,10 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: NAdd.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Export NBase.
 
-Module NAddPropFunct (Import N : NAxiomsSig').
-Include NBasePropFunct N.
+Module NAddProp (Import N : NAxiomsMiniSig').
+Include NBaseProp N.
 
 (** For theorems about [add] that are both valid for [N] and [Z], see [NZAdd] *)
 (** Now comes theorems valid for natural numbers but not for Z *)
@@ -24,9 +22,9 @@ intros n m; induct n.
 nzsimpl; intuition.
 intros n IH. nzsimpl.
 setoid_replace (S (n + m) == 0) with False by
- (apply -> neg_false; apply neq_succ_0).
+ (apply neg_false; apply neq_succ_0).
 setoid_replace (S n == 0) with False by
- (apply -> neg_false; apply neq_succ_0). tauto.
+ (apply neg_false; apply neq_succ_0). tauto.
 Qed.
 
 Theorem eq_add_succ :
@@ -47,13 +45,13 @@ Qed.
 Theorem eq_add_1 : forall n m,
   n + m == 1 -> n == 1 /\ m == 0 \/ n == 0 /\ m == 1.
 Proof.
-intros n m H.
+intros n m. rewrite one_succ. intro H.
 assert (H1 : exists p, n + m == S p) by now exists 0.
-apply -> eq_add_succ in H1. destruct H1 as [[n' H1] | [m' H1]].
+apply eq_add_succ in H1. destruct H1 as [[n' H1] | [m' H1]].
 left. rewrite H1 in H; rewrite add_succ_l in H; apply succ_inj in H.
-apply -> eq_add_0 in H. destruct H as [H2 H3]; rewrite H2 in H1; now split.
+apply eq_add_0 in H. destruct H as [H2 H3]; rewrite H2 in H1; now split.
 right. rewrite H1 in H; rewrite add_succ_r in H; apply succ_inj in H.
-apply -> eq_add_0 in H. destruct H as [H2 H3]; rewrite H3 in H1; now split.
+apply eq_add_0 in H. destruct H as [H2 H3]; rewrite H3 in H1; now split.
 Qed.
 
 Theorem succ_add_discr : forall n m, m ~= S (n + m).
@@ -77,5 +75,5 @@ intros n m H; rewrite (add_comm n (P m));
 rewrite (add_comm n m); now apply add_pred_l.
 Qed.
 
-End NAddPropFunct.
+End NAddProp.
 

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -28,7 +28,7 @@ type csdp_certificate = S of Sos_types.positivstellensatz option | F of string
 type provername = string * int option
 
 
-let debug = true
+let debug = false
 let flags = [Open_append;Open_binary;Open_creat]
 
 let chan = open_out_gen flags 0o666 "trace"

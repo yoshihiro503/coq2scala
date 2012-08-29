@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: ground.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Formula
 open Sequent
@@ -17,32 +15,6 @@ open Tacmach
 open Tactics
 open Tacticals
 open Libnames
-
-(*
-let old_search=ref !Auto.searchtable
-
-(* I use this solution as a means to know whether hints have changed,
-but this prevents the GC from collecting the previous table,
-resulting in some limited space wasting*)
-
-let update_flags ()=
-  if not ( !Auto.searchtable == !old_search ) then
-    begin
-      old_search:=!Auto.searchtable;
-      let predref=ref Names.KNpred.empty in
-      let f p_a_t =
-	match p_a_t.Auto.code with
-	    Auto.Unfold_nth (ConstRef kn)->
-	      predref:=Names.KNpred.add kn !predref
-	  | _ ->() in
-      let g _ l=List.iter f l in
-      let h _ hdb=Auto.Hint_db.iter g hdb in
-	Util.Stringmap.iter h !Auto.searchtable;
-	red_flags:=
-	Closure.RedFlags.red_add_transparent
-	  Closure.betaiotazeta (Names.Idpred.full,!predref)
-    end
-*)
 
 let update_flags ()=
   let predref=ref Names.Cpred.empty in
@@ -61,7 +33,7 @@ let ground_tac solver startseq gl=
   update_flags ();
   let rec toptac skipped seq gl=
     if Tacinterp.get_debug()=Tactic_debug.DebugOn 0
-    then Pp.msgnl (Printer.pr_goal (sig_it gl));
+    then Pp.msgnl (Printer.pr_goal gl);
     tclORELSE (axiom_tac seq.gl seq)
       begin
 	try

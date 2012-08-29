@@ -1,22 +1,20 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i camlp4use: "pa_extend.cmo" i*)
-
-(*i $Id: g_prim.ml4 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 open Pcoq
 open Names
 open Libnames
 open Topconstr
+open Tok
+open Compat
 
 let prim_kw = ["{"; "}"; "["; "]"; "("; ")"; "'"]
-let _ = List.iter (fun s -> Lexer.add_token("",s)) prim_kw
+let _ = List.iter Lexer.add_keyword prim_kw
 
 open Prim
 open Nametab
@@ -45,7 +43,7 @@ GEXTEND Gram
     [ [ s = IDENT -> id_of_string s ] ]
   ;
   pattern_ident:
-    [ [ s = LEFTQMARK; id = ident -> id ] ]
+    [ [ LEFTQMARK; id = ident -> id ] ]
   ;
   pattern_identref:
     [ [ id = pattern_ident -> (loc, id) ] ]

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -60,7 +60,7 @@ Proof.
 Qed.
 
 
-(*Definition Zeval_expr :=  eval_pexpr 0 Zplus Zmult Zminus Zopp  (fun x => x) (fun x => Z_of_N x) (Zpower).*)
+(*Definition Zeval_expr :=  eval_pexpr 0 Z.add Z.mul Z.sub Z.opp  (fun x => x) (fun x => Z.of_N x) (Z.pow).*)
 Require Import EnvRing.
 
 Fixpoint Qeval_expr (env: PolEnv Q) (e: PExpr Q) : Q :=
@@ -71,7 +71,7 @@ Fixpoint Qeval_expr (env: PolEnv Q) (e: PExpr Q) : Q :=
     | PEsub pe1 pe2 => (Qeval_expr env pe1) - (Qeval_expr env pe2)
     | PEmul pe1 pe2 => (Qeval_expr env pe1) * (Qeval_expr env pe2)
     | PEopp pe1 => - (Qeval_expr env pe1)
-    | PEpow pe1 n => Qpower (Qeval_expr env pe1)  (Z_of_N n)
+    | PEpow pe1 n => Qpower (Qeval_expr env pe1)  (Z.of_N n)
   end.
 
 Lemma Qeval_expr_simpl : forall env e,
@@ -83,7 +83,7 @@ Lemma Qeval_expr_simpl : forall env e,
     | PEsub pe1 pe2 => (Qeval_expr env pe1) - (Qeval_expr env pe2)
     | PEmul pe1 pe2 => (Qeval_expr env pe1) * (Qeval_expr env pe2)
     | PEopp pe1 => - (Qeval_expr env pe1)
-    | PEpow pe1 n => Qpower (Qeval_expr env pe1)  (Z_of_N n)
+    | PEpow pe1 n => Qpower (Qeval_expr env pe1)  (Z.of_N n)
   end.
 Proof.
   destruct e ; reflexivity.
@@ -91,7 +91,7 @@ Qed.
 
 Definition Qeval_expr' := eval_pexpr  Qplus Qmult Qminus Qopp (fun x => x) (fun x => x) (pow_N 1 Qmult).
 
-Lemma QNpower : forall r n, r ^ Z_of_N n = pow_N 1 Qmult r n.
+Lemma QNpower : forall r n, r ^ Z.of_N n = pow_N 1 Qmult r n.
 Proof.
   destruct n ; reflexivity.
 Qed.
@@ -173,8 +173,15 @@ Require Import Tauto.
 Definition Qnormalise := @cnf_normalise Q 0 1 Qplus Qmult Qminus Qopp Qeq_bool.
 Definition Qnegate := @cnf_negate Q 0 1 Qplus Qmult Qminus Qopp Qeq_bool.
 
+Definition qunsat := check_inconsistent 0 Qeq_bool Qle_bool.
+
+Definition qdeduce := nformula_plus_nformula 0 Qplus Qeq_bool.
+
+
+
 Definition QTautoChecker (f : BFormula (Formula Q)) (w: list QWitness)  : bool :=
   @tauto_checker (Formula Q) (NFormula Q)
+  qunsat qdeduce
   Qnormalise
   Qnegate QWitness QWeakChecker f w.
 
@@ -186,6 +193,11 @@ Proof.
   unfold QTautoChecker.
   apply (tauto_checker_sound  Qeval_formula Qeval_nformula).
   apply Qeval_nformula_dec.
+  intros until env.
+  unfold eval_nformula. unfold RingMicromega.eval_nformula.
+  destruct t.
+  apply (check_inconsistent_sound Qsor QSORaddon) ; auto.
+  unfold qdeduce. apply (nformula_plus_nformula_correct Qsor QSORaddon).
   intros. rewrite Qeval_formula_compat. unfold Qeval_formula'. now  apply (cnf_normalise_correct Qsor QSORaddon).
   intros. rewrite Qeval_formula_compat. unfold Qeval_formula'. now apply (cnf_negate_correct Qsor QSORaddon).
   intros t w0.

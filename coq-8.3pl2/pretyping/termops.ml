@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: termops.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Pp
 open Util
@@ -34,7 +32,6 @@ let pr_name = function
   | Name id -> pr_id id
   | Anonymous -> str "_"
 
-let pr_path sp = str(string_of_kn sp)
 let pr_con sp = str(string_of_con sp)
 
 let rec pr_constr c = match kind_of_term c with
@@ -149,11 +146,13 @@ let print_env env =
 
 let set_module m = current_module := m*)
 
-let new_univ =
+let new_univ_level =
   let univ_gen = ref 0 in
   (fun sp ->
     incr univ_gen;
-    Univ.make_univ (Lib.library_dp(),!univ_gen))
+    Univ.make_universe_level (Lib.library_dp(),!univ_gen))
+
+let new_univ () = Univ.make_universe (new_univ_level ())
 let new_Type () = mkType (new_univ ())
 let new_Type_sort () = Type (new_univ ())
 
@@ -238,18 +237,18 @@ let mkProd_wo_LetIn (na,body,t) c =
     | None -> mkProd (na,  t, c)
     | Some b -> subst1 b c
 
-let it_mkProd ~init = List.fold_left (fun c (n,t)  -> mkProd (n, t, c)) init
-let it_mkLambda ~init = List.fold_left (fun c (n,t)  -> mkLambda (n, t, c)) init
+let it_mkProd init = List.fold_left (fun c (n,t)  -> mkProd (n, t, c)) init
+let it_mkLambda init = List.fold_left (fun c (n,t)  -> mkLambda (n, t, c)) init
 
 let it_named_context_quantifier f ~init =
   List.fold_left (fun c d -> f d c) init
 
-let it_mkProd_or_LetIn = it_named_context_quantifier mkProd_or_LetIn
-let it_mkProd_wo_LetIn = it_named_context_quantifier mkProd_wo_LetIn
-let it_mkLambda_or_LetIn = it_named_context_quantifier mkLambda_or_LetIn
-let it_mkNamedProd_or_LetIn = it_named_context_quantifier mkNamedProd_or_LetIn
-let it_mkNamedProd_wo_LetIn = it_named_context_quantifier mkNamedProd_wo_LetIn
-let it_mkNamedLambda_or_LetIn = it_named_context_quantifier mkNamedLambda_or_LetIn
+let it_mkProd_or_LetIn init = it_named_context_quantifier mkProd_or_LetIn ~init
+let it_mkProd_wo_LetIn init = it_named_context_quantifier mkProd_wo_LetIn ~init
+let it_mkLambda_or_LetIn init = it_named_context_quantifier mkLambda_or_LetIn ~init
+let it_mkNamedProd_or_LetIn init = it_named_context_quantifier mkNamedProd_or_LetIn ~init
+let it_mkNamedProd_wo_LetIn init = it_named_context_quantifier mkNamedProd_wo_LetIn ~init
+let it_mkNamedLambda_or_LetIn init = it_named_context_quantifier mkNamedLambda_or_LetIn ~init
 
 (* *)
 
@@ -265,10 +264,44 @@ let rec strip_head_cast c = match kind_of_term c with
   | Cast (c,_,_) -> strip_head_cast c
   | _ -> c
 
+let rec drop_extra_implicit_args c = match kind_of_term c with
+  (* Removed trailing extra implicit arguments, what improves compatibility
+     for constants with recently added maximal implicit arguments *)
+  | App (f,args) when isEvar (array_last args) ->
+      drop_extra_implicit_args
+	(mkApp (f,fst (array_chop (Array.length args - 1) args)))
+  | _ -> c
+
 (* Get the last arg of an application *)
 let last_arg c = match kind_of_term c with
   | App (f,cl) -> array_last cl
   | _ -> anomaly "last_arg"
+
+(* Get the last arg of an application *)
+let decompose_app_vect c =
+  match kind_of_term c with
+  | App (f,cl) -> (f, cl)
+  | _ -> (c,[||])
+
+let adjust_app_list_size f1 l1 f2 l2 =
+  let len1 = List.length l1 and len2 = List.length l2 in
+  if len1 = len2 then (f1,l1,f2,l2)
+  else if len1 < len2 then
+   let extras,restl2 = list_chop (len2-len1) l2 in
+    (f1, l1, applist (f2,extras), restl2)
+  else
+    let extras,restl1 = list_chop (len1-len2) l1 in
+    (applist (f1,extras), restl1, f2, l2)
+
+let adjust_app_array_size f1 l1 f2 l2 =
+  let len1 = Array.length l1 and len2 = Array.length l2 in
+  if len1 = len2 then (f1,l1,f2,l2)
+  else if len1 < len2 then
+    let extras,restl2 = array_chop (len2-len1) l2 in
+    (f1, l1, appvect (f2,extras), restl2)
+  else
+    let extras,restl1 = array_chop (len1-len2) l1 in
+    (appvect (f1,extras), restl1, f2, l2)
 
 (* [map_constr_with_named_binders g f l c] maps [f l] on the immediate
    subterms of [c]; it carries an extra data [l] (typically a name
@@ -523,6 +556,14 @@ let collect_metas c =
   in
   List.rev (collrec [] c)
 
+(* collects all vars; warning: this is only visible vars, not dependencies in
+   all section variables; for the latter, use global_vars_set *)
+let collect_vars c =
+  let rec aux vars c = match kind_of_term c with
+  | Var id -> Idset.add id vars
+  | _ -> fold_constr aux vars c in
+  aux Idset.empty c
+
 (* Tests whether [m] is a subterm of [t]:
    [m] is appropriately lifted through abstractions of [t] *)
 
@@ -545,6 +586,25 @@ let dependent_main noevar m t =
 
 let dependent = dependent_main false
 let dependent_no_evar = dependent_main true
+
+let count_occurrences m t =
+  let n = ref 0 in
+  let rec countrec m t =
+    if eq_constr m t then
+      incr n
+    else
+      match kind_of_term m, kind_of_term t with
+	| App (fm,lm), App (ft,lt) when Array.length lm < Array.length lt ->
+	    countrec m (mkApp (ft,Array.sub lt 0 (Array.length lm)));
+	    Array.iter (countrec m)
+	      (Array.sub lt
+		(Array.length lm) ((Array.length lt) - (Array.length lm)))
+	| _, Cast (c,_,_) when isMeta c -> ()
+	| _, Evar _ -> ()
+	| _ -> iter_constr_with_binders (lift 1) countrec m t
+  in
+  countrec m t;
+  !n
 
 (* Synonymous *)
 let occur_term = dependent
@@ -592,10 +652,9 @@ let my_prefix_application eq_fun (k,c) (by_c : constr) (t : constr) =
 	  None
     | _ -> None
 
-(* Recognizing occurrences of a given (closed) subterm in a term for Pattern :
-   [subst_term c t] substitutes [(Rel 1)] for all occurrences of (closed)
-   term [c] in a term [t] *)
-(*i Bizarre : si on cherche un sous terme clos, pourquoi le lifter ? i*)
+(* Recognizing occurrences of a given subterm in a term: [subst_term c t]
+   substitutes [(Rel 1)] for all occurrences of term [c] in a term [t];
+   works if [c] has rels *)
 
 let subst_term_gen eq_fun c t =
   let rec substrec (k,c as kc) t =
@@ -608,10 +667,11 @@ let subst_term_gen eq_fun c t =
   in
   substrec (1,c) t
 
-(* Recognizing occurrences of a given (closed) subterm in a term :
-   [replace_term c1 c2 t] substitutes [c2] for all occurrences of (closed)
-   term [c1] in a term [t] *)
-(*i Meme remarque : a priori [c] n'est pas forcement clos i*)
+let subst_term = subst_term_gen eq_constr
+
+(* Recognizing occurrences of a given subterm in a term :
+   [replace_term c1 c2 t] substitutes [c2] for all occurrences of
+   term [c1] in a term [t]; works if [c1] and [c2] have rels *)
 
 let replace_term_gen eq_fun c by_c in_t =
   let rec substrec (k,c as kc) t =
@@ -624,14 +684,17 @@ let replace_term_gen eq_fun c by_c in_t =
   in
   substrec (0,c) in_t
 
-let subst_term = subst_term_gen eq_constr
-
 let replace_term = replace_term_gen eq_constr
 
 (* Substitute only at a list of locations or excluding a list of
    locations; in the occurrences list (b,l), b=true means no
    occurrence except the ones in l and b=false, means all occurrences
    except the ones in l *)
+
+type hyp_location_flag = (* To distinguish body and type of local defs *)
+  | InHyp
+  | InHypTypeOnly
+  | InHypValueOnly
 
 type occurrences = bool * int list
 let all_occurrences = (false,[])
@@ -643,57 +706,127 @@ let error_invalid_occurrence l =
     (str ("Invalid occurrence " ^ plural (List.length l) "number" ^": ") ++
      prlist_with_sep spc int l ++ str ".")
 
-let subst_term_occ_gen (nowhere_except_in,locs) occ c t =
+let pr_position (cl,pos) =
+  let clpos = match cl with
+    | None -> str " of the goal"
+    | Some (id,InHyp) -> str " of hypothesis " ++ pr_id id
+    | Some (id,InHypTypeOnly) -> str " of the type of hypothesis " ++ pr_id id
+    | Some (id,InHypValueOnly) -> str " of the body of hypothesis " ++ pr_id id in
+  int pos ++ clpos
+
+let error_cannot_unify_occurrences nested (cl2,pos2,t2) (cl1,pos1,t1) (nowhere_except_in,locs) =
+  let s = if nested then "Found nested occurrences of the pattern"
+    else "Found incompatible occurrences of the pattern" in
+  errorlabstrm ""
+    (str s ++ str ":" ++
+     spc () ++ str "Matched term " ++ quote (print_constr t2) ++
+     strbrk " at position " ++ pr_position (cl2,pos2) ++ 
+     strbrk " is not compatible with matched term " ++
+     quote (print_constr t1) ++ strbrk " at position " ++ 
+     pr_position (cl1,pos1) ++ str ".")
+
+let is_selected pos (nowhere_except_in,locs) =
+  nowhere_except_in && List.mem pos locs ||
+  not nowhere_except_in && not (List.mem pos locs)
+
+exception NotUnifiable
+
+type 'a testing_function = {
+  match_fun : constr -> 'a;
+  merge_fun : 'a -> 'a -> 'a;
+  mutable testing_state : 'a;
+  mutable last_found : ((identifier * hyp_location_flag) option * int * constr) option
+}
+
+let subst_closed_term_occ_gen_modulo (nowhere_except_in,locs as plocs) test cl occ t =
   let maxocc = List.fold_right max locs 0 in
   let pos = ref occ in
-  assert (List.for_all (fun x -> x >= 0) locs);
-  let rec substrec (k,c as kc) t =
-    if nowhere_except_in & !pos > maxocc then t
-    else
-    if eq_constr c t then
-      let r =
-	if nowhere_except_in then
-	  if List.mem !pos locs then (mkRel k) else t
-	else
-	  if List.mem !pos locs then t else (mkRel k)
-      in incr pos; r
-    else
-      map_constr_with_binders_left_to_right
-	(fun d (k,c) -> (k+1,lift 1 c))
-        substrec kc t
+  let nested = ref false in
+  let add_subst t subst =
+    try
+      test.testing_state <- test.merge_fun subst test.testing_state;
+      test.last_found <- Some (cl,!pos,t)
+    with NotUnifiable ->
+      let lastpos = Option.get test.last_found in
+      error_cannot_unify_occurrences !nested (cl,!pos,t) lastpos plocs in
+  let rec substrec k t =
+    if nowhere_except_in & !pos > maxocc then t else
+    try
+      let subst = test.match_fun t in
+      if is_selected !pos plocs then
+        (add_subst t subst; incr pos;
+         (* Check nested matching subterms *)
+         nested := true; ignore (subst_below k t); nested := false;
+         (* Do the effective substitution *)
+         mkRel k)
+      else
+        (incr pos; subst_below k t)
+    with NotUnifiable ->
+      subst_below k t
+  and subst_below k t =
+    map_constr_with_binders_left_to_right (fun d k -> k+1) substrec k t
   in
-  let t' = substrec (1,c) t in
+  let t' = substrec 1 t in
   (!pos, t')
 
-let subst_term_occ (nowhere_except_in,locs as plocs) c t =
-  if locs = [] then if nowhere_except_in then t else subst_term c t
-  else
-    let (nbocc,t') = subst_term_occ_gen plocs 1 c t in
-    let rest = List.filter (fun o -> o >= nbocc) locs in
-    if rest <> [] then error_invalid_occurrence rest;
-    t'
+let is_nowhere (nowhere_except_in,locs) = nowhere_except_in && locs = [] 
 
-type hyp_location_flag = (* To distinguish body and type of local defs *)
-  | InHyp
-  | InHypTypeOnly
-  | InHypValueOnly
+let check_used_occurrences nbocc (nowhere_except_in,locs) =
+  let rest = List.filter (fun o -> o >= nbocc) locs in
+  if rest <> [] then error_invalid_occurrence rest
 
-let subst_term_occ_decl ((nowhere_except_in,locs as plocs),hloc) c (id,bodyopt,typ as d) =
-  match bodyopt,hloc with
-  | None, InHypValueOnly -> errorlabstrm "" (pr_id id ++ str " has no value")
-  | None, _ -> (id,None,subst_term_occ plocs c typ)
-  | Some body, InHypTypeOnly -> (id,Some body,subst_term_occ plocs c typ)
-  | Some body, InHypValueOnly -> (id,Some (subst_term_occ plocs c body),typ)
+let proceed_with_occurrences f plocs x =
+  if is_nowhere plocs then (* optimization *) x else
+  begin
+    assert (List.for_all (fun x -> x >= 0) (snd plocs));
+    let (nbocc,x) = f 1 x in
+    check_used_occurrences nbocc plocs;
+    x
+  end
+
+let make_eq_test c = {
+  match_fun = (fun c' -> if eq_constr c c' then () else raise NotUnifiable);
+  merge_fun = (fun () () -> ());
+  testing_state = ();
+  last_found = None
+} 
+
+let subst_closed_term_occ_gen plocs pos c t =
+  subst_closed_term_occ_gen_modulo plocs (make_eq_test c) None pos t
+
+let subst_closed_term_occ plocs c t =
+  proceed_with_occurrences (fun occ -> subst_closed_term_occ_gen plocs occ c)
+    plocs t
+
+let subst_closed_term_occ_modulo plocs test cl t =
+  proceed_with_occurrences
+    (subst_closed_term_occ_gen_modulo plocs test cl) plocs t
+
+let map_named_declaration_with_hyploc f hyploc acc (id,bodyopt,typ) =
+  let f = f (Some (id,hyploc)) in
+  match bodyopt,hyploc with
+  | None, InHypValueOnly ->
+      errorlabstrm "" (pr_id id ++ str " has no value.")
+  | None, _ | Some _, InHypTypeOnly ->
+      let acc,typ = f acc typ in acc,(id,bodyopt,typ)
+  | Some body, InHypValueOnly ->
+      let acc,body = f acc body in acc,(id,Some body,typ)
   | Some body, InHyp ->
-	if locs = [] then
-	  if nowhere_except_in then d
-	  else (id,Some (subst_term c body),subst_term c typ)
-	else
-	  let (nbocc,body') = subst_term_occ_gen plocs 1 c body in
-	  let (nbocc',t') = subst_term_occ_gen plocs nbocc c typ in
-	  let rest = List.filter (fun o -> o >= nbocc') locs in
-	  if rest <> [] then error_invalid_occurrence rest;
-	  (id,Some body',t')
+      let acc,body = f acc body in
+      let acc,typ = f acc typ in
+      acc,(id,Some body,typ)
+
+let subst_closed_term_occ_decl (plocs,hyploc) c d =
+  proceed_with_occurrences
+    (map_named_declaration_with_hyploc
+       (fun _ occ -> subst_closed_term_occ_gen plocs occ c) hyploc) plocs d
+
+let subst_closed_term_occ_decl_modulo (plocs,hyploc) test d =
+  proceed_with_occurrences
+    (map_named_declaration_with_hyploc
+       (subst_closed_term_occ_gen_modulo plocs test)
+       hyploc)
+    plocs d
 
 let vars_of_env env =
   let s =
@@ -965,7 +1098,7 @@ let on_judgment_value f j = { j with uj_val = f j.uj_val }
 let on_judgment_type f j = { j with uj_type = f j.uj_type }
 
 (* Cut a context ctx in 2 parts (ctx1,ctx2) with ctx1 containing k
-     variables *)
+     variables; skips let-in's *)
 let context_chop k ctx =
   let rec chop_aux acc = function
     | (0, l2) -> (List.rev acc, l2)
@@ -974,3 +1107,28 @@ let context_chop k ctx =
     | (_, []) -> anomaly "context_chop"
   in chop_aux [] (k,ctx)
 
+(* Do not skip let-in's *)
+let env_rel_context_chop k env =
+  let rels = rel_context env in
+  let ctx1,ctx2 = list_chop k rels in
+  push_rel_context ctx2 (reset_with_named_context (named_context_val env) env),
+  ctx1
+
+(*******************************************)
+(* Functions to deal with impossible cases *)
+(*******************************************)
+let impossible_default_case = ref None
+
+let set_impossible_default_clause c = impossible_default_case := Some c
+
+let coq_unit_judge =
+  let na1 = Name (id_of_string "A") in
+  let na2 = Name (id_of_string "H") in
+  fun () ->
+    match !impossible_default_case with
+    | Some (id,type_of_id) ->
+	make_judge id type_of_id
+    | None ->
+	(* In case the constants id/ID are not defined *)
+	make_judge (mkLambda (na1,mkProp,mkLambda(na2,mkRel 1,mkRel 1)))
+                 (mkProd (na1,mkProp,mkArrow (mkRel 1) (mkRel 2)))

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: declare.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 (** This module is about the low-level declaration of logical objects *)
 
@@ -80,7 +78,10 @@ let discharge_variable (_,o) = match o with
   | Inr (id,_) -> Some (Inl (variable_constraints id))
   | Inl _ -> Some o
 
-let (inVariable,_) =
+type variable_obj =
+    (Univ.constraints, identifier * variable_declaration) union
+
+let inVariable : variable_obj -> obj =
   declare_object { (default_object "VARIABLE") with
     cache_function = cache_variable;
     discharge_function = discharge_variable;
@@ -105,20 +106,26 @@ type constant_declaration = constant_entry * logical_kind
 let load_constant i ((sp,kn),(_,_,kind)) =
   if Nametab.exists_cci sp then
     alreadydeclared (pr_id (basename sp) ++ str " already exists");
-  let con = Global.constant_of_delta (constant_of_kn kn) in
+  let con = Global.constant_of_delta_kn kn in
   Nametab.push (Nametab.Until i) sp (ConstRef con);
   add_constant_kind con kind
 
 (* Opening means making the name without its module qualification available *)
 let open_constant i ((sp,kn),_) =
-  let con = Global.constant_of_delta (constant_of_kn kn) in
+  let con = Global.constant_of_delta_kn kn in
     Nametab.push (Nametab.Exactly i) sp (ConstRef con)
+
+let exists_name id =
+  variable_exists id or Global.exists_objlabel (label_of_id id)
+
+let check_exists sp =
+  let id = basename sp in
+  if exists_name id then alreadydeclared (pr_id id ++ str " already exists")
 
 let cache_constant ((sp,kn),(cdt,dhyps,kind)) =
   let id = basename sp in
   let _,dir,_ = repr_kn kn in
-  if variable_exists id or Nametab.exists_cci sp then
-    alreadydeclared (pr_id id ++ str " already exists");
+  check_exists sp;
   let kn' = Global.add_constant dir id cdt in
   assert (kn' = constant_of_kn kn);
   Nametab.push (Nametab.Until 1) sp (ConstRef (constant_of_kn kn));
@@ -141,13 +148,16 @@ let discharge_constant ((sp,kn),(cdt,dhyps,kind)) =
   Some (GlobalRecipe recipe,(discharged_hyps kn sechyps)@dhyps,kind)
 
 (* Hack to reduce the size of .vo: we keep only what load/open needs *)
-let dummy_constant_entry = ConstantEntry (ParameterEntry (mkProp,false))
+let dummy_constant_entry = ConstantEntry (ParameterEntry (None,mkProp,None))
 
 let dummy_constant (ce,_,mk) = dummy_constant_entry,[],mk
 
 let classify_constant cst = Substitute (dummy_constant cst)
 
-let (inConstant,_) =
+type constant_obj =
+    global_declaration * Dischargedhypsmap.discharged_hyps * logical_kind
+
+let inConstant : constant_obj -> obj =
   declare_object { (default_object "CONSTANT") with
     cache_function = cache_constant;
     load_function = load_constant;
@@ -156,34 +166,18 @@ let (inConstant,_) =
     subst_function = ident_subst_function;
     discharge_function = discharge_constant }
 
-let hcons_constant_declaration = function
-  | DefinitionEntry ce when !Flags.hash_cons_proofs ->
-      let (hcons1_constr,_) = hcons_constr (hcons_names()) in
-      DefinitionEntry
-       { const_entry_body = hcons1_constr ce.const_entry_body;
-	 const_entry_type = Option.map hcons1_constr ce.const_entry_type;
-         const_entry_opaque = ce.const_entry_opaque;
-         const_entry_boxed = ce.const_entry_boxed }
-  | cd -> cd
-
 let declare_constant_common id dhyps (cd,kind) =
   let (sp,kn) = add_leaf id (inConstant (cd,dhyps,kind)) in
-  let c = Global.constant_of_delta (constant_of_kn kn) in
+  let c = Global.constant_of_delta_kn kn in
   declare_constant_implicits c;
   Heads.declare_head (EvalConstRef c);
   Notation.declare_ref_arguments_scope (ConstRef c);
   c
 
-let declare_constant_gen internal id (cd,kind) =
-  let cd = hcons_constant_declaration cd in
+let declare_constant ?(internal = UserVerbose) id (cd,kind) =
   let kn = declare_constant_common id [] (ConstantEntry cd,kind) in
   !xml_declare_constant (internal,kn);
   kn
-
-(* TODO: add a third function to distinguish between KernelVerbose
- * and user Verbose *)
-let declare_internal_constant = declare_constant_gen KernelSilent
-let declare_constant = declare_constant_gen UserVerbose
 
 (** Declaration of inductive blocks *)
 
@@ -196,7 +190,7 @@ let declare_inductive_argument_scopes kn mie =
 
 let inductive_names sp kn mie =
   let (dp,_) = repr_path sp in
-  let kn = Global.mind_of_delta (mind_of_kn kn) in
+  let kn = Global.mind_of_delta_kn kn in
   let names, _ =
     List.fold_left
       (fun (names, n) ind ->
@@ -215,16 +209,8 @@ let inductive_names sp kn mie =
       ([], 0) mie.mind_entry_inds
   in names
 
-let check_exists_inductive (sp,_) =
-  (if variable_exists (basename sp) then
-    alreadydeclared (pr_id (basename sp) ++ str " already exists"));
-  if Nametab.exists_cci sp then
-    let (_,id) = repr_path sp in
-    alreadydeclared (pr_id id ++ str " already exists")
-
 let load_inductive i ((sp,kn),(_,mie)) =
   let names = inductive_names sp kn mie in
-  List.iter check_exists_inductive names;
   List.iter (fun (sp, ref) -> Nametab.push (Nametab.Until i) sp ref ) names
 
 let open_inductive i ((sp,kn),(_,mie)) =
@@ -233,7 +219,7 @@ let open_inductive i ((sp,kn),(_,mie)) =
 
 let cache_inductive ((sp,kn),(dhyps,mie)) =
   let names = inductive_names sp kn mie in
-  List.iter check_exists_inductive names;
+  List.iter check_exists (List.map fst names);
   let id = basename sp in
   let _,dir,_ = repr_kn kn in
   let kn' = Global.add_mind dir id mie in
@@ -245,7 +231,7 @@ let cache_inductive ((sp,kn),(dhyps,mie)) =
 
 
 let discharge_inductive ((sp,kn),(dhyps,mie)) =
-  let mind = (Global.mind_of_delta (mind_of_kn kn)) in
+  let mind = Global.mind_of_delta_kn kn in
   let mie = Global.lookup_mind mind in
   let repl = replacement_context () in
   let sechyps = section_segment_of_mutual_inductive mind in
@@ -266,7 +252,9 @@ let dummy_inductive_entry (_,m) = ([],{
   mind_entry_finite = true;
   mind_entry_inds = List.map dummy_one_inductive_entry m.mind_entry_inds })
 
-let (inInductive,_) =
+type inductive_obj = Dischargedhypsmap.discharged_hyps * mutual_inductive_entry
+
+let inInductive : inductive_obj -> obj =
   declare_object {(default_object "INDUCTIVE") with
     cache_function = cache_inductive;
     load_function = load_inductive;
@@ -281,7 +269,7 @@ let declare_mind isrecord mie =
     | ind::_ -> ind.mind_entry_typename
     | [] -> anomaly "cannot declare an empty list of inductives" in
   let (sp,kn as oname) = add_leaf id (inInductive ([],mie)) in
-  let mind = (Global.mind_of_delta (mind_of_kn kn)) in
+  let mind = Global.mind_of_delta_kn kn in
   declare_mib_implicits mind;
   declare_inductive_argument_scopes mind mie;
   !xml_declare_inductive (isrecord,oname);

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: ring.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 (* ML part of the Ring tactic *)
 
@@ -21,7 +19,6 @@ open Reductionops
 open Tacticals
 open Tacexpr
 open Tacmach
-open Proof_trees
 open Printer
 open Equality
 open Vernacinterp
@@ -138,7 +135,7 @@ let mkLApp(fc,v) = mkApp(Lazy.force fc, v)
 module OperSet =
   Set.Make (struct
 	      type t = global_reference
-	      let compare = (Pervasives.compare : t->t->int)
+	      let compare = (RefOrdered.compare : t->t->int)
 	    end)
 
 type morph =
@@ -169,7 +166,7 @@ type theory =
 (* Theories are stored in a table which is synchronised with the Reset
    mechanism. *)
 
-module Cmap = Map.Make(struct type t = constr let compare = compare end)
+module Cmap = Map.Make(struct type t = constr let compare = constr_ord end)
 
 let theories_map = ref Cmap.empty
 
@@ -265,7 +262,7 @@ let subst_th (subst,(c,th as obj)) =
       (c',th')
 
 
-let (theory_to_obj, obj_to_theory) =
+let theory_to_obj : constr * theory -> obj =
   let cache_th (_,(c, th)) = theories_map_add (c,th) in
   declare_object {(default_object "tactic-ring-theory") with
 		    open_function = (fun i o -> if i=1 then cache_th o);
@@ -380,8 +377,14 @@ Builds
 
 *)
 
+module Constrhash = Hashtbl.Make
+  (struct type t = constr
+	  let equal = eq_constr
+	  let hash = hash_constr
+   end)
+
 let build_spolynom gl th lc =
-  let varhash  = (Hashtbl.create 17 : (constr, constr) Hashtbl.t) in
+  let varhash  = (Constrhash.create 17 : constr Constrhash.t) in
   let varlist = ref ([] : constr list) in (* list of variables *)
   let counter = ref 1 in (* number of variables created + 1 *)
   (* aux creates the spolynom p by a recursive destructuration of c
@@ -395,14 +398,14 @@ let build_spolynom gl th lc =
       | _ when closed_under th.th_closed c ->
 	  mkLApp(coq_SPconst, [|th.th_a; c |])
       | _ ->
-	  try Hashtbl.find varhash c
+	  try Constrhash.find varhash c
 	  with Not_found ->
 	    let newvar =
               mkLApp(coq_SPvar, [|th.th_a; (path_of_int !counter) |]) in
 	    begin
 	      incr counter;
 	      varlist := c :: !varlist;
-	      Hashtbl.add varhash c newvar;
+	      Constrhash.add varhash c newvar;
 	      newvar
 	    end
   in
@@ -437,7 +440,7 @@ Builds
 *)
 
 let build_polynom gl th lc =
-  let varhash  = (Hashtbl.create 17 : (constr, constr) Hashtbl.t) in
+  let varhash  = (Constrhash.create 17 : constr Constrhash.t) in
   let varlist = ref ([] : constr list) in (* list of variables *)
   let counter = ref 1 in (* number of variables created + 1 *)
   let rec aux c =
@@ -446,7 +449,7 @@ let build_polynom gl th lc =
 	  mkLApp(coq_Pplus, [|th.th_a; aux c1; aux c2 |])
       | App (binop, [|c1; c2|]) when safe_pf_conv_x gl binop th.th_mult ->
 	  mkLApp(coq_Pmult, [|th.th_a; aux c1; aux c2 |])
-      (* The special case of Zminus *)
+      (* The special case of Z.sub *)
       | App (binop, [|c1; c2|])
 	  when safe_pf_conv_x gl c
             (mkApp (th.th_plus, [|c1; mkApp(unbox th.th_opp, [|c2|])|])) ->
@@ -458,14 +461,14 @@ let build_polynom gl th lc =
       | _ when closed_under th.th_closed c ->
 	  mkLApp(coq_Pconst, [|th.th_a; c |])
       | _ ->
-	  try Hashtbl.find varhash c
+	  try Constrhash.find varhash c
 	  with Not_found ->
 	    let newvar =
               mkLApp(coq_Pvar, [|th.th_a; (path_of_int !counter) |]) in
 	    begin
 	      incr counter;
 	      varlist := c :: !varlist;
-	      Hashtbl.add varhash c newvar;
+	      Constrhash.add varhash c newvar;
 	      newvar
 	    end
   in
@@ -501,7 +504,7 @@ Builds
 *)
 
 let build_aspolynom gl th lc =
-  let varhash  = (Hashtbl.create 17 : (constr, constr) Hashtbl.t) in
+  let varhash  = (Constrhash.create 17 : constr Constrhash.t) in
   let varlist = ref ([] : constr list) in (* list of variables *)
   let counter = ref 1 in (* number of variables created + 1 *)
   (* aux creates the aspolynom p by a recursive destructuration of c
@@ -515,13 +518,13 @@ let build_aspolynom gl th lc =
       | _ when safe_pf_conv_x gl c th.th_zero -> Lazy.force coq_ASP0
       | _ when safe_pf_conv_x gl c th.th_one -> Lazy.force coq_ASP1
       | _ ->
-	  try Hashtbl.find varhash c
+	  try Constrhash.find varhash c
 	  with Not_found ->
 	    let newvar = mkLApp(coq_ASPvar, [|(path_of_int !counter) |]) in
 	    begin
 	      incr counter;
 	      varlist := c :: !varlist;
-	      Hashtbl.add varhash c newvar;
+	      Constrhash.add varhash c newvar;
 	      newvar
 	    end
   in
@@ -555,7 +558,7 @@ Builds
 *)
 
 let build_apolynom gl th lc =
-  let varhash  = (Hashtbl.create 17 : (constr, constr) Hashtbl.t) in
+  let varhash  = (Constrhash.create 17 : constr Constrhash.t) in
   let varlist = ref ([] : constr list) in (* list of variables *)
   let counter = ref 1 in (* number of variables created + 1 *)
   let rec aux c =
@@ -564,7 +567,7 @@ let build_apolynom gl th lc =
 	  mkLApp(coq_APplus, [| aux c1; aux c2 |])
       | App (binop, [|c1; c2|]) when safe_pf_conv_x gl binop th.th_mult ->
 	  mkLApp(coq_APmult, [| aux c1; aux c2 |])
-      (* The special case of Zminus *)
+      (* The special case of Z.sub *)
       | App (binop, [|c1; c2|])
 	  when safe_pf_conv_x gl c
             (mkApp(th.th_plus, [|c1; mkApp(unbox th.th_opp,[|c2|]) |])) ->
@@ -575,14 +578,14 @@ let build_apolynom gl th lc =
       | _ when safe_pf_conv_x gl c th.th_zero -> Lazy.force coq_AP0
       | _ when safe_pf_conv_x gl c th.th_one -> Lazy.force coq_AP1
       | _ ->
-	  try Hashtbl.find varhash c
+	  try Constrhash.find varhash c
 	  with Not_found ->
 	    let newvar =
               mkLApp(coq_APvar, [| path_of_int !counter |]) in
 	    begin
 	      incr counter;
 	      varlist := c :: !varlist;
-	      Hashtbl.add varhash c newvar;
+	      Constrhash.add varhash c newvar;
 	      newvar
 	    end
   in
@@ -616,7 +619,7 @@ Builds
 *)
 
 let build_setpolynom gl th lc =
-  let varhash  = (Hashtbl.create 17 : (constr, constr) Hashtbl.t) in
+  let varhash  = (Constrhash.create 17 : constr Constrhash.t) in
   let varlist = ref ([] : constr list) in (* list of variables *)
   let counter = ref 1 in (* number of variables created + 1 *)
   let rec aux c =
@@ -625,7 +628,7 @@ let build_setpolynom gl th lc =
 	  mkLApp(coq_SetPplus, [|th.th_a; aux c1; aux c2 |])
       | App (binop, [|c1; c2|]) when safe_pf_conv_x gl binop th.th_mult ->
 	  mkLApp(coq_SetPmult, [|th.th_a; aux c1; aux c2 |])
-      (* The special case of Zminus *)
+      (* The special case of Z.sub *)
       | App (binop, [|c1; c2|])
 	  when safe_pf_conv_x gl c
 	    (mkApp(th.th_plus, [|c1; mkApp(unbox th.th_opp,[|c2|])|])) ->
@@ -637,14 +640,14 @@ let build_setpolynom gl th lc =
       | _ when closed_under th.th_closed c ->
 	  mkLApp(coq_SetPconst, [| th.th_a; c |])
       | _ ->
-	  try Hashtbl.find varhash c
+	  try Constrhash.find varhash c
 	  with Not_found ->
 	    let newvar =
               mkLApp(coq_SetPvar, [| th.th_a; path_of_int !counter |]) in
 	    begin
 	      incr counter;
 	      varlist := c :: !varlist;
-	      Hashtbl.add varhash c newvar;
+	      Constrhash.add varhash c newvar;
 	      newvar
 	    end
   in
@@ -683,7 +686,7 @@ Builds
 *)
 
 let build_setspolynom gl th lc =
-  let varhash  = (Hashtbl.create 17 : (constr, constr) Hashtbl.t) in
+  let varhash  = (Constrhash.create 17 : constr Constrhash.t) in
   let varlist = ref ([] : constr list) in (* list of variables *)
   let counter = ref 1 in (* number of variables created + 1 *)
   let rec aux c =
@@ -695,14 +698,14 @@ let build_setspolynom gl th lc =
       | _ when closed_under th.th_closed c ->
 	  mkLApp(coq_SetSPconst, [| th.th_a; c |])
       | _ ->
-	  try Hashtbl.find varhash c
+	  try Constrhash.find varhash c
 	  with Not_found ->
 	    let newvar =
               mkLApp(coq_SetSPvar, [|th.th_a; path_of_int !counter |]) in
 	    begin
 	      incr counter;
 	      varlist := c :: !varlist;
-	      Hashtbl.add varhash c newvar;
+	      Constrhash.add varhash c newvar;
 	      newvar
 	    end
   in
@@ -823,9 +826,9 @@ let raw_polynom th op lc gl =
 	      (tclTHENS
 		 (tclORELSE
                    (Equality.general_rewrite true
-		     Termops.all_occurrences false c'i_eq_c''i)
+		     Termops.all_occurrences true false c'i_eq_c''i)
                    (Equality.general_rewrite false
-		     Termops.all_occurrences false c'i_eq_c''i))
+		     Termops.all_occurrences true false c'i_eq_c''i))
                  [tac]))
 	 else
            (tclORELSE

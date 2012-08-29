@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: QSig.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Import QArith Qpower Qminmax Orders RelationPairs GenericMinMax.
 
@@ -117,7 +115,7 @@ Ltac solve_wd2 := intros x x' Hx y y' Hy; qify; now rewrite Hx, Hy.
 Local Obligation Tactic := solve_wd2 || solve_wd1.
 
 Instance : Measure to_Q.
-Instance eq_equiv : Equivalence eq.
+Instance eq_equiv : Equivalence eq := {}.
 
 Program Instance lt_wd : Proper (eq==>eq==>iff) lt.
 Program Instance le_wd : Proper (eq==>eq==>iff) le.
@@ -137,13 +135,13 @@ Program Instance power_wd : Proper (eq==>Logic.eq==>eq) power.
 
 (** Let's implement [HasCompare] *)
 
-Lemma compare_spec : forall x y, CompSpec eq lt x y (compare x y).
+Lemma compare_spec : forall x y, CompareSpec (x==y) (x<y) (y<x) (compare x y).
 Proof. intros. qify. destruct (Qcompare_spec [x] [y]); auto. Qed.
 
 (** Let's implement [TotalOrder] *)
 
 Definition lt_compat := lt_wd.
-Instance lt_strorder : StrictOrder lt.
+Instance lt_strorder : StrictOrder lt := {}.
 
 Lemma le_lteq : forall x y, x<=y <-> x<y \/ x==y.
 Proof. intros. qify. apply Qle_lteq. Qed.

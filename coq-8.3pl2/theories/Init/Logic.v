@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Logic.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Set Implicit Arguments.
 
@@ -64,6 +62,9 @@ Inductive or (A B:Prop) : Prop :=
 
 where "A \/ B" := (or A B) : type_scope.
 
+Arguments or_introl [A B] _, [A] B _.
+Arguments or_intror [A B] _, A [B] _.
+
 (** [iff A B], written [A <-> B], expresses the equivalence of [A] and [B] *)
 
 Definition iff (A B:Prop) := (A -> B) /\ (B -> A).
@@ -95,53 +96,53 @@ Hint Unfold iff: extcore.
 
 Theorem neg_false : forall A : Prop, ~ A <-> (A <-> False).
 Proof.
-intro A; unfold not; split.
-intro H; split; [exact H | intro H1; elim H1].
-intros [H _]; exact H.
+  intro A; unfold not; split.
+  - intro H; split; [exact H | intro H1; elim H1].
+  - intros [H _]; exact H.
 Qed.
 
 Theorem and_cancel_l : forall A B C : Prop,
   (B -> A) -> (C -> A) -> ((A /\ B <-> A /\ C) <-> (B <-> C)).
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 Theorem and_cancel_r : forall A B C : Prop,
   (B -> A) -> (C -> A) -> ((B /\ A <-> C /\ A) <-> (B <-> C)).
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 Theorem and_comm : forall A B : Prop, A /\ B <-> B /\ A.
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 Theorem and_assoc : forall A B C : Prop, (A /\ B) /\ C <-> A /\ B /\ C.
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 Theorem or_cancel_l : forall A B C : Prop,
   (B -> ~ A) -> (C -> ~ A) -> ((A \/ B <-> A \/ C) <-> (B <-> C)).
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 Theorem or_cancel_r : forall A B C : Prop,
   (B -> ~ A) -> (C -> ~ A) -> ((B \/ A <-> C \/ A) <-> (B <-> C)).
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 Theorem or_comm : forall A B : Prop, (A \/ B) <-> (B \/ A).
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 Theorem or_assoc : forall A B C : Prop, (A \/ B) \/ C <-> A \/ B \/ C.
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 (** Backward direction of the equivalences above does not need assumptions *)
@@ -149,35 +150,35 @@ Qed.
 Theorem and_iff_compat_l : forall A B C : Prop,
   (B <-> C) -> (A /\ B <-> A /\ C).
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 Theorem and_iff_compat_r : forall A B C : Prop,
   (B <-> C) -> (B /\ A <-> C /\ A).
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 Theorem or_iff_compat_l : forall A B C : Prop,
   (B <-> C) -> (A \/ B <-> A \/ C).
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 Theorem or_iff_compat_r : forall A B C : Prop,
   (B <-> C) -> (B \/ A <-> C \/ A).
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 Lemma iff_and : forall A B : Prop, (A <-> B) -> (A -> B) /\ (B -> A).
 Proof.
-intros A B []; split; trivial.
+  intros A B []; split; trivial.
 Qed.
 
 Lemma iff_to_and : forall A B : Prop, (A <-> B) <-> (A -> B) /\ (B -> A).
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 (** [(IF_then_else P Q R)], written [IF P then Q else R] denotes
@@ -218,11 +219,9 @@ Definition all (A:Type) (P:A -> Prop) := forall x:A, P x.
 
 (* Rule order is important to give printing priority to fully typed exists *)
 
-Notation "'exists' x , p" := (ex (fun x => p))
-  (at level 200, x ident, right associativity) : type_scope.
-Notation "'exists' x : t , p" := (ex (fun x:t => p))
-  (at level 200, x ident, right associativity,
-    format "'[' 'exists'  '/  ' x  :  t ,  '/  ' p ']'")
+Notation "'exists' x .. y , p" := (ex (fun x => .. (ex (fun y => p)) ..))
+  (at level 200, x binder, right associativity,
+   format "'[' 'exists'  '/  ' x  ..  y ,  '/  ' p ']'")
   : type_scope.
 
 Notation "'exists2' x , p & q" := (ex2 (fun x => p) (fun x => q))
@@ -241,12 +240,12 @@ Section universal_quantification.
 
   Theorem inst : forall x:A, all (fun x => P x) -> P x.
   Proof.
-    unfold all in |- *; auto.
+    unfold all; auto.
   Qed.
 
   Theorem gen : forall (B:Prop) (f:forall y:A, B -> P y), B -> all P.
   Proof.
-    red in |- *; auto.
+    red; auto.
   Qed.
 
 End universal_quantification.
@@ -271,11 +270,12 @@ Notation "x = y" := (x = y :>_) : type_scope.
 Notation "x <> y  :> T" := (~ x = y :>T) : type_scope.
 Notation "x <> y" := (x <> y :>_) : type_scope.
 
-Implicit Arguments eq [ [A] ].
+Arguments eq {A} x _.
+Arguments eq_refl {A x} , [A] x.
 
-Implicit Arguments eq_ind [A].
-Implicit Arguments eq_rec [A].
-Implicit Arguments eq_rect [A].
+Arguments eq_ind [A] x P _ y _.
+Arguments eq_rec [A] x P _ y _.
+Arguments eq_rect [A] x P _ y _.
 
 Hint Resolve I conj or_introl or_intror eq_refl: core.
 Hint Resolve ex_intro ex_intro2: core.
@@ -284,7 +284,7 @@ Section Logic_lemmas.
 
   Theorem absurd : forall A C:Prop, A -> ~ A -> C.
   Proof.
-    unfold not in |- *; intros A C h1 h2.
+    unfold not; intros A C h1 h2.
     destruct (h2 h1).
   Qed.
 
@@ -313,7 +313,7 @@ Section Logic_lemmas.
 
     Theorem not_eq_sym : x <> y -> y <> x.
     Proof.
-      red in |- *; intros h1 h2; apply h1; destruct h2; trivial.
+      red; intros h1 h2; apply h1; destruct h2; trivial.
     Qed.
 
   End equality.
@@ -333,6 +333,15 @@ Section Logic_lemmas.
     intros A x P H y H0; elim eq_sym with (1 := H0); assumption.
   Defined.
 End Logic_lemmas.
+
+Module EqNotations.
+  Notation "'rew' H 'in' H'" := (eq_rect _ _ H' _ H)
+    (at level 10, H' at level 10).
+  Notation "'rew' <- H 'in' H'" := (eq_rect_r _ H' H)
+    (at level 10, H' at level 10).
+  Notation "'rew' -> H 'in' H'" := (eq_rect _ _ H' _ H)
+    (at level 10, H' at level 10, only parsing).
+End EqNotations.
 
 Theorem f_equal2 :
   forall (A1 A2 B:Type) (f:A1 -> A2 -> B) (x1 y1:A1)
@@ -369,14 +378,14 @@ Qed.
 
 (* Aliases *)
 
-Notation sym_eq := eq_sym (only parsing).
-Notation trans_eq := eq_trans (only parsing).
-Notation sym_not_eq := not_eq_sym (only parsing).
+Notation sym_eq := eq_sym (compat "8.3").
+Notation trans_eq := eq_trans (compat "8.3").
+Notation sym_not_eq := not_eq_sym (compat "8.3").
 
-Notation refl_equal := eq_refl (only parsing).
-Notation sym_equal := eq_sym (only parsing).
-Notation trans_equal := eq_trans (only parsing).
-Notation sym_not_equal := not_eq_sym (only parsing).
+Notation refl_equal := eq_refl (compat "8.3").
+Notation sym_equal := eq_sym (compat "8.3").
+Notation trans_equal := eq_trans (compat "8.3").
+Notation sym_not_equal := not_eq_sym (compat "8.3").
 
 Hint Immediate eq_sym not_eq_sym: core.
 
@@ -392,25 +401,46 @@ Definition uniqueness (A:Type) (P:A->Prop) := forall x y, P x -> P y -> x = y.
 
 (** Unique existence *)
 
-Notation "'exists' ! x , P" := (ex (unique (fun x => P)))
-  (at level 200, x ident, right associativity,
-    format "'[' 'exists' !  '/  ' x ,  '/  ' P ']'") : type_scope.
-Notation "'exists' ! x : A , P" :=
-  (ex (unique (fun x:A => P)))
-  (at level 200, x ident, right associativity,
-    format "'[' 'exists' !  '/  ' x  :  A ,  '/  ' P ']'") : type_scope.
+Notation "'exists' ! x .. y , p" :=
+  (ex (unique (fun x => .. (ex (unique (fun y => p))) ..)))
+  (at level 200, x binder, right associativity,
+   format "'[' 'exists'  !  '/  ' x  ..  y ,  '/  ' p ']'")
+  : type_scope.
 
 Lemma unique_existence : forall (A:Type) (P:A->Prop),
   ((exists x, P x) /\ uniqueness P) <-> (exists! x, P x).
 Proof.
   intros A P; split.
-  intros ((x,Hx),Huni); exists x; red; auto.
-  intros (x,(Hx,Huni)); split.
-  exists x; assumption.
-  intros x' x'' Hx' Hx''; transitivity x.
-  symmetry; auto.
-  auto.
+  - intros ((x,Hx),Huni); exists x; red; auto.
+  - intros (x,(Hx,Huni)); split.
+    + exists x; assumption.
+    + intros x' x'' Hx' Hx''; transitivity x.
+      symmetry; auto.
+      auto.
 Qed.
+
+Lemma forall_exists_unique_domain_coincide :
+  forall A (P:A->Prop), (exists! x, P x) ->
+  forall Q:A->Prop, (forall x, P x -> Q x) <-> (exists x, P x /\ Q x).
+Proof.
+  intros A P (x & Hp & Huniq); split.
+  - intro; exists x; auto.
+  - intros (x0 & HPx0 & HQx0) x1 HPx1.
+    replace x1 with x0 by (transitivity x; [symmetry|]; auto).
+    assumption.
+Qed.   
+
+Lemma forall_exists_coincide_unique_domain :
+  forall A (P:A->Prop),
+  (forall Q:A->Prop, (forall x, P x -> Q x) <-> (exists x, P x /\ Q x))
+  -> (exists! x, P x).
+Proof.
+  intros A P H.
+  destruct H with (Q:=P) as ((x & Hx & _),_); [trivial|].
+  exists x. split; [trivial|].
+  destruct H with (Q:=fun x'=>x=x') as (_,Huniq).
+  apply Huniq. exists x; auto.
+Qed.       
 
 (** * Being inhabited *)
 
@@ -436,7 +466,7 @@ Qed.
 
 Lemma eq_stepl : forall (A : Type) (x y z : A), x = y -> x = z -> z = y.
 Proof.
-intros A x y z H1 H2. rewrite <- H2; exact H1.
+  intros A x y z H1 H2. rewrite <- H2; exact H1.
 Qed.
 
 Declare Left Step eq_stepl.
@@ -444,7 +474,7 @@ Declare Right Step eq_trans.
 
 Lemma iff_stepl : forall A B C : Prop, (A <-> B) -> (A <-> C) -> (C <-> B).
 Proof.
-intros; tauto.
+  intros; tauto.
 Qed.
 
 Declare Left Step iff_stepl.

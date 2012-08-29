@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: type_errors.ml 8845 2006-05-23 07:41:58Z herbelin $ *)
 
 open Names
 open Term
@@ -22,7 +20,7 @@ type guard_error =
   (* Fixpoints *)
   | NotEnoughAbstractionInFixBody
   | RecursionNotOnInductiveType of constr
-  | RecursionOnIllegalTerm of int * constr * int list * int list
+  | RecursionOnIllegalTerm of int * (env * constr) * int list * int list
   | NotEnoughArgumentsForFixCall of int
   (* CoFixpoints *)
   | CodomainNotInductiveType of constr
@@ -93,9 +91,6 @@ let error_number_branches env cj expn =
 let error_ill_formed_branch env c i actty expty =
   raise (TypeError (env,
     IllFormedBranch (c,i,nf_betaiota actty, nf_betaiota expty)))
-
-let error_generalization env nvar c =
-  raise (TypeError (env, Generalization (nvar,c)))
 
 let error_actual_type env j expty =
   raise (TypeError (env, ActualType (j,expty)))

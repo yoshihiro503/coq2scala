@@ -1,18 +1,16 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: genarg.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 open Util
 open Names
 open Term
 open Libnames
-open Rawterm
+open Glob_term
 open Pattern
 open Topconstr
 open Term
@@ -26,15 +24,15 @@ type 'a or_by_notation =
 
 val loc_of_or_by_notation : ('a -> loc) -> 'a or_by_notation -> loc
 
-(* In globalize tactics, we need to keep the initial [constr_expr] to recompute*)
-(* in the environment by the effective calls to Intro, Inversion, etc *)
-(* The [constr_expr] field is [None] in TacDef though *)
-type rawconstr_and_expr = rawconstr * constr_expr option
+(** In globalize tactics, we need to keep the initial [constr_expr] to recompute
+   in the environment by the effective calls to Intro, Inversion, etc 
+   The [constr_expr] field is [None] in TacDef though *)
+type glob_constr_and_expr = glob_constr * constr_expr option
 
 type open_constr_expr = unit * constr_expr
-type open_rawconstr = unit * rawconstr_and_expr
+type open_glob_constr = unit * glob_constr_and_expr
 
-type rawconstr_pattern_and_expr = rawconstr_and_expr * constr_pattern
+type glob_constr_pattern_and_expr = glob_constr_and_expr * constr_pattern
 
 type 'a with_ebindings = 'a * open_constr bindings
 
@@ -51,40 +49,41 @@ and or_and_intro_pattern_expr = (loc * intro_pattern_expr) list list
 val pr_intro_pattern : intro_pattern_expr located -> Pp.std_ppcmds
 val pr_or_and_intro_pattern : or_and_intro_pattern_expr -> Pp.std_ppcmds
 
-(* The route of a generic argument, from parsing to evaluation
+(** The route of a generic argument, from parsing to evaluation.
+In the following diagram, "object" can be tactic_expr, constr, tactic_arg, etc.
 
-\begin{verbatim}
-             parsing        in_raw                              out_raw
-   char stream ----> rawtype ----> constr_expr generic_argument --------|
-                          encapsulation                         decaps  |
-                                                                        |
-                                                                        V
-                                                                     rawtype
-                                                                        |
-                                                         globalization  |
-                                                                        V
-                                                                    glob_type
-                                                                        |
-                                                                 encaps |
-                                                                in_glob |
-                                                                        V
-                                                     rawconstr generic_argument
-                                                                        |
-        out                          in                        out_glob |
-  type <--- constr generic_argument <---- type <------ rawtype <--------|
-    |  decaps                       encaps      interp           decaps
+{% \begin{%}verbatim{% }%}
+             parsing          in_raw                            out_raw
+   char stream ---> raw_object ---> raw_object generic_argument -------+
+                          encapsulation                          decaps|
+                                                                       |
+                                                                       V
+                                                                   raw_object
+                                                                       |
+                                                         globalization |
+                                                                       V
+                                                                   glob_object
+                                                                       |
+                                                                encaps |
+                                                               in_glob |
+                                                                       V
+                                                           glob_object generic_argument
+                                                                       |
+          out                          in                     out_glob |
+  object <--- object generic_argument <--- object <--- glob_object <---+
+    |   decaps                       encaps      interp           decaps
     |
     V
 effective use
-\end{verbatim}
+{% \end{%}verbatim{% }%}
 
 To distinguish between the uninterpreted (raw), globalized and
 interpreted worlds, we annotate the type [generic_argument] by a
-phantom argument which is either [constr_expr], [rawconstr] or
+phantom argument which is either [constr_expr], [glob_constr] or
 [constr].
 
 Transformation for each type :
-\begin{verbatim}
+{% \begin{%}verbatim{% }%}
 tag                            raw open type            cooked closed type
 
 BoolArgType                    bool                      bool
@@ -107,10 +106,10 @@ List0ArgType of argument_type
 List1ArgType of argument_type
 OptArgType of argument_type
 ExtraArgType of string         '_a                      '_b
-\end{verbatim}
+{% \end{%}verbatim{% }%}
 *)
 
-(* All of [rlevel], [glevel] and [tlevel] must be non convertible
+(** All of [rlevel], [glevel] and [tlevel] must be non convertible
    to ensure the injectivity of the type inference from type
    ['co generic_argument] to [('a,'co) abstract_argument_type];
    this guarantees that, for 'co fixed, the type of
@@ -172,40 +171,40 @@ val rawwit_quant_hyp : (quantified_hypothesis,rlevel) abstract_argument_type
 val globwit_quant_hyp : (quantified_hypothesis,glevel) abstract_argument_type
 val wit_quant_hyp : (quantified_hypothesis,tlevel) abstract_argument_type
 
-val rawwit_sort : (rawsort,rlevel) abstract_argument_type
-val globwit_sort : (rawsort,glevel) abstract_argument_type
+val rawwit_sort : (glob_sort,rlevel) abstract_argument_type
+val globwit_sort : (glob_sort,glevel) abstract_argument_type
 val wit_sort : (sorts,tlevel) abstract_argument_type
 
 val rawwit_constr : (constr_expr,rlevel) abstract_argument_type
-val globwit_constr : (rawconstr_and_expr,glevel) abstract_argument_type
+val globwit_constr : (glob_constr_and_expr,glevel) abstract_argument_type
 val wit_constr : (constr,tlevel) abstract_argument_type
 
 val rawwit_constr_may_eval : ((constr_expr,reference or_by_notation,constr_expr) may_eval,rlevel) abstract_argument_type
-val globwit_constr_may_eval : ((rawconstr_and_expr,evaluable_global_reference and_short_name or_var,rawconstr_pattern_and_expr) may_eval,glevel) abstract_argument_type
+val globwit_constr_may_eval : ((glob_constr_and_expr,evaluable_global_reference and_short_name or_var,glob_constr_pattern_and_expr) may_eval,glevel) abstract_argument_type
 val wit_constr_may_eval : (constr,tlevel) abstract_argument_type
 
 val rawwit_open_constr_gen : bool -> (open_constr_expr,rlevel) abstract_argument_type
-val globwit_open_constr_gen : bool -> (open_rawconstr,glevel) abstract_argument_type
+val globwit_open_constr_gen : bool -> (open_glob_constr,glevel) abstract_argument_type
 val wit_open_constr_gen : bool -> (open_constr,tlevel) abstract_argument_type
 
 val rawwit_open_constr : (open_constr_expr,rlevel) abstract_argument_type
-val globwit_open_constr : (open_rawconstr,glevel) abstract_argument_type
+val globwit_open_constr : (open_glob_constr,glevel) abstract_argument_type
 val wit_open_constr : (open_constr,tlevel) abstract_argument_type
 
 val rawwit_casted_open_constr : (open_constr_expr,rlevel) abstract_argument_type
-val globwit_casted_open_constr : (open_rawconstr,glevel) abstract_argument_type
+val globwit_casted_open_constr : (open_glob_constr,glevel) abstract_argument_type
 val wit_casted_open_constr : (open_constr,tlevel) abstract_argument_type
 
 val rawwit_constr_with_bindings : (constr_expr with_bindings,rlevel) abstract_argument_type
-val globwit_constr_with_bindings : (rawconstr_and_expr with_bindings,glevel) abstract_argument_type
+val globwit_constr_with_bindings : (glob_constr_and_expr with_bindings,glevel) abstract_argument_type
 val wit_constr_with_bindings : (constr with_bindings sigma,tlevel) abstract_argument_type
 
 val rawwit_bindings : (constr_expr bindings,rlevel) abstract_argument_type
-val globwit_bindings : (rawconstr_and_expr bindings,glevel) abstract_argument_type
+val globwit_bindings : (glob_constr_and_expr bindings,glevel) abstract_argument_type
 val wit_bindings : (constr bindings sigma,tlevel) abstract_argument_type
 
 val rawwit_red_expr : ((constr_expr,reference or_by_notation,constr_expr) red_expr_gen,rlevel) abstract_argument_type
-val globwit_red_expr : ((rawconstr_and_expr,evaluable_global_reference and_short_name or_var,rawconstr_pattern_and_expr) red_expr_gen,glevel) abstract_argument_type
+val globwit_red_expr : ((glob_constr_and_expr,evaluable_global_reference and_short_name or_var,glob_constr_pattern_and_expr) red_expr_gen,glevel) abstract_argument_type
 val wit_red_expr : ((constr,evaluable_global_reference,constr_pattern) red_expr_gen,tlevel) abstract_argument_type
 
 val wit_list0 :
@@ -222,7 +221,7 @@ val wit_pair :
   ('b,'co) abstract_argument_type ->
       ('a * 'b,'co) abstract_argument_type
 
-(* ['a generic_argument] = (Sigma t:type. t[[constr/'a]]) *)
+(** ['a generic_argument] = (Sigma t:type. t[[constr/'a]]) *)
 type 'a generic_argument
 
 val fold_list0 :
@@ -238,7 +237,7 @@ val fold_pair :
  ('a generic_argument -> 'a generic_argument -> 'c) ->
       'a generic_argument -> 'c
 
-(* [app_list0] fails if applied to an argument not of tag [List0 t]
+(** [app_list0] fails if applied to an argument not of tag [List0 t]
     for some [t]; it's the responsability of the caller to ensure it *)
 
 val app_list0 : ('a generic_argument -> 'b generic_argument) ->
@@ -255,9 +254,10 @@ val app_pair :
       ('a generic_argument -> 'b generic_argument)
    -> 'a generic_argument -> 'b generic_argument
 
-(* create a new generic type of argument: force to associate
+(** create a new generic type of argument: force to associate
    unique ML types at each of the three levels *)
-val create_arg : string ->
+val create_arg : 'rawa option ->
+    string ->
       ('a,tlevel) abstract_argument_type
       * ('globa,glevel) abstract_argument_type
       * ('rawa,rlevel) abstract_argument_type
@@ -265,7 +265,7 @@ val create_arg : string ->
 val exists_argtype : string -> bool
 
 type argument_type =
-  (* Basic types *)
+  (** Basic types *)
   | BoolArgType
   | IntArgType
   | IntOrVarArgType
@@ -275,7 +275,7 @@ type argument_type =
   | IdentArgType of bool
   | VarArgType
   | RefArgType
-  (* Specific types *)
+  (** Specific types *)
   | SortArgType
   | ConstrArgType
   | ConstrMayEvalArgType
@@ -299,8 +299,7 @@ val in_gen :
 val out_gen :
   ('a,'co) abstract_argument_type -> 'co generic_argument -> 'a
 
-
-(* [in_generic] is used in combination with camlp4 [Gramext.action] magic
+(** [in_generic] is used in combination with camlp4 [Gramext.action] magic
 
    [in_generic: !l:type, !a:argument_type -> |a|_l -> 'l generic_argument]
 
@@ -313,3 +312,5 @@ type an_arg_of_this_type
 
 val in_generic :
   argument_type -> an_arg_of_this_type -> 'co generic_argument
+
+val default_empty_value : ('a,rlevel) abstract_argument_type -> 'a option

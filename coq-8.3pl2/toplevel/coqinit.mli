@@ -1,19 +1,16 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: coqinit.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
-(* Initialization. *)
+(** Initialization. *)
 
 val set_debug : unit -> unit
 
 val set_rcfile : string -> unit
-val set_rcuser : string -> unit
 
 val no_load_rc : unit -> unit
 val load_rcfile : unit -> unit
@@ -25,3 +22,5 @@ val init_load_path : unit -> unit
 val init_library_roots : unit -> unit
 
 val init_ocaml_path : unit -> unit
+
+val get_compat_version : string -> Flags.compat_version

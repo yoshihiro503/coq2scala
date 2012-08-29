@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: indschemes.ml 13396 2010-09-02 16:52:15Z vsiles $ *)
 
 (* Created by Hugo Herbelin from contents related to inductive schemes
    initially developed by Christine Paulin (induction schemes), Vincent
@@ -49,6 +47,7 @@ let elim_flag = ref true
 let _ =
   declare_bool_option
     { optsync  = true;
+      optdepr  = false;
       optname  = "automatic declaration of induction schemes";
       optkey   = ["Elimination";"Schemes"];
       optread  = (fun () -> !elim_flag) ;
@@ -58,6 +57,7 @@ let case_flag = ref false
 let _ =
   declare_bool_option
     { optsync  = true;
+      optdepr  = false;
       optname  = "automatic declaration of case analysis schemes";
       optkey   = ["Case";"Analysis";"Schemes"];
       optread  = (fun () -> !case_flag) ;
@@ -67,6 +67,7 @@ let eq_flag = ref false
 let _ =
   declare_bool_option
     { optsync  = true;
+      optdepr  = false;
       optname  = "automatic declaration of boolean equality";
       optkey   = ["Boolean";"Equality";"Schemes"];
       optread  = (fun () -> !eq_flag) ;
@@ -74,6 +75,7 @@ let _ =
 let _ = (* compatibility *)
   declare_bool_option
     { optsync  = true;
+      optdepr  = true;
       optname  = "automatic declaration of boolean equality";
       optkey   = ["Equality";"Scheme"];
       optread  = (fun () -> !eq_flag) ;
@@ -81,10 +83,11 @@ let _ = (* compatibility *)
 
 let is_eq_flag () = !eq_flag && Flags.version_strictly_greater Flags.V8_2
 
-let eq_dec_flag = ref false
+let eq_dec_flag = ref false 
 let _ =
   declare_bool_option
     { optsync  = true;
+      optdepr  = false;
       optname  = "automatic declaration of decidable equality";
       optkey   = ["Decidable";"Equality";"Schemes"];
       optread  = (fun () -> !eq_dec_flag) ;
@@ -94,6 +97,7 @@ let rewriting_flag = ref false
 let _ =
   declare_bool_option
     { optsync  = true;
+      optdepr  = false;
       optname  ="automatic declaration of rewriting schemes for equality types";
       optkey   = ["Rewriting";"Schemes"];
       optread  = (fun () -> !rewriting_flag) ;
@@ -102,16 +106,13 @@ let _ =
 (* Util *)
 
 let define id internal c t =
-  (* TODO: specify even more by distinguish KernelVerbose and UserVerbose *)
-  let f = match internal with
-   | KernelSilent -> declare_internal_constant
-   | _ -> declare_constant in
+  let f = declare_constant ~internal in
   let kn = f id
     (DefinitionEntry
       { const_entry_body = c;
+        const_entry_secctx = None;
         const_entry_type = t;
-        const_entry_opaque = false;
-	const_entry_boxed = Flags.boxed_definitions() },
+        const_entry_opaque = false },
       Decl_kinds.IsDefinition Scheme) in
   definition_message id;
   kn
@@ -127,7 +128,7 @@ let alarm what internal msg =
   | KernelVerbose 
   | KernelSilent ->
     (if debug then
-      Flags.if_verbose Pp.msg_warning
+      Flags.if_warn Pp.msg_warning
 	(hov 0 msg ++ fnl () ++ what ++ str " not defined."))
   | _ -> errorlabstrm "" msg
 
@@ -158,7 +159,7 @@ let try_declare_scheme what f internal names kn =
 	  (strbrk "Required constant " ++ str s ++ str " undefined.")
     | AlreadyDeclared msg ->
         alarm what internal (msg ++ str ".")
-    | _ ->
+    | _ -> 
 	alarm what internal
 	  (str "Unknown exception during scheme creation.")
 
@@ -173,7 +174,7 @@ let declare_beq_scheme_with l kn =
   try_declare_scheme (beq_scheme_msg kn) declare_beq_scheme_gen UserVerbose l kn
 
 let try_declare_beq_scheme kn =
-  (* TODO: handle Fix, see e.g. TheoryList.In_spec, eventually handle
+  (* TODO: handle Fix, eventually handle
       proof-irrelevance; improve decidability by depending on decidability
       for the parameters rather than on the bl and lb properties *)
   try_declare_scheme (beq_scheme_msg kn) declare_beq_scheme_gen KernelVerbose [] kn
@@ -295,34 +296,34 @@ requested
 *)
   | (None,t)::q ->
       let l1,l2 = split_scheme q in
-      let names inds recs x y z =
+      let names inds recs isdep y z =
         let ind = smart_global_inductive y in
-        let sort_of_ind = Retyping.get_sort_family_of env Evd.empty (mkInd ind) in
+        let sort_of_ind = inductive_sort_family (snd (lookup_mind_specif env ind)) in
         let z' = family_of_sort (interp_sort z) in
         let suffix = (
           match sort_of_ind with
           | InProp ->
-              if x then (match z' with
-              | InProp -> inds ^ "_nodep"
-              | InSet -> recs ^ "_nodep"
-              | InType -> recs ^ "t_nodep")
+              if isdep then (match z' with
+              | InProp -> inds ^ "_dep"
+              | InSet  -> recs ^ "_dep"
+              | InType -> recs ^ "t_dep")
               else ( match z' with
               | InProp -> inds
               | InSet -> recs
               | InType -> recs ^ "t" )
           | _ ->
-              if x then (match z' with
+              if isdep then (match z' with
               | InProp -> inds
               | InSet -> recs
               | InType -> recs ^ "t" )
               else (match z' with
-              | InProp -> inds ^ "_dep"
-              | InSet  -> recs ^ "_dep"
-              | InType -> recs ^ "t_dep")
+              | InProp -> inds ^ "_nodep"
+              | InSet -> recs ^ "_nodep"
+              | InType -> recs ^ "t_nodep")
         ) in
         let newid = add_suffix (basename_of_global (IndRef ind)) suffix in
         let newref = (dummy_loc,newid) in
-          ((newref,x,ind,z)::l1),l2
+          ((newref,isdep,ind,z)::l1),l2
       in
 	match t with
 	| CaseScheme (x,y,z) -> names "_case" "_case" x y z

@@ -6,8 +6,6 @@
 (*         *       GNU Lesser General Public License Version 2.1       *)
 (***********************************************************************)
 
-(* $Id: FMapList.v 12458 2009-11-02 18:50:33Z letouzey $ *)
-
 (** * Finite map library *)
 
 (** This file proposes an implementation of the non-dependant interface

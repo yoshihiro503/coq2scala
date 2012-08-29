@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id:$ *)
 
 (*i*)
 open Pp
@@ -181,8 +179,10 @@ let declare_record_instance gr ctx params =
   let ident = make_instance_ident gr in
   let def = it_mkLambda_or_LetIn (applistc (constr_of_global gr) params) ctx in
   let def = deep_refresh_universes def in
-  let ce = { const_entry_body=def; const_entry_type=None;
-	     const_entry_opaque=false; const_entry_boxed=false } in
+  let ce = { const_entry_body= def;
+             const_entry_secctx = None;
+	     const_entry_type=None;
+	     const_entry_opaque=false } in
   let cst = Declare.declare_constant ident
     (DefinitionEntry ce,Decl_kinds.IsDefinition Decl_kinds.StructureComponent) in
   new_instance_message ident (Typeops.type_of_constant (Global.env()) cst) def
@@ -191,18 +191,20 @@ let declare_class_instance gr ctx params =
   let ident = make_instance_ident gr in
   let cl = Typeclasses.class_info gr in
   let (def,typ) = Typeclasses.instance_constructor cl params in
-  let (def,typ) = it_mkLambda_or_LetIn def ctx, it_mkProd_or_LetIn typ ctx in
+  let (def,typ) = it_mkLambda_or_LetIn (Option.get def) ctx, it_mkProd_or_LetIn typ ctx in
   let def = deep_refresh_universes def in
   let typ = deep_refresh_universes typ in
   let ce = Entries.DefinitionEntry
-    {  const_entry_type=Some typ; const_entry_body=def;
-       const_entry_opaque=false; const_entry_boxed=false } in
+    {  const_entry_type = Some typ;
+       const_entry_secctx = None;
+       const_entry_body= def;
+       const_entry_opaque=false } in
   try
   let cst = Declare.declare_constant ident
     (ce,Decl_kinds.IsDefinition Decl_kinds.Instance) in
   Typeclasses.add_instance (Typeclasses.new_instance cl (Some 100) true (ConstRef cst));
   new_instance_message ident typ def
-  with e -> msgnl (str"Error defining instance := "++pr_constr def++str" : "++pr_constr typ++str"  "++Cerrors.explain_exn e)
+  with e -> msgnl (str"Error defining instance := "++pr_constr def++str" : "++pr_constr typ++str"  "++Errors.print e)
 
 let rec iter_under_prod (f:rel_context->constr->unit) (ctx:rel_context) t = f ctx t;
   match kind_of_term t with
@@ -255,7 +257,7 @@ let gen_sort_topo l evm =
 (* register real typeclass instance given a totally defined evd *)
 let declare_instance (k:global_reference -> rel_context -> constr list -> unit)
     (cl,gen,evm:signature) =
-  let evm = Evarutil.nf_evars evm in
+  let evm = Evarutil.nf_evar_map evm in
   let gen = gen_sort_topo gen evm in
   let (evm,gen) = List.fold_right
     (fun ev (evm,gen) ->
@@ -310,6 +312,7 @@ let end_autoinstance () =
 let _ =
   Goptions.declare_bool_option
     { Goptions.optsync=true;
+      Goptions.optdepr=false;
       Goptions.optkey=["Autoinstance"];
       Goptions.optname="automatic typeclass instance recognition";
       Goptions.optread=(fun () -> !autoinstance_opt);

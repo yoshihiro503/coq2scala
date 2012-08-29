@@ -1,19 +1,17 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: genarg.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Pp
 open Util
 open Names
 open Nameops
 open Nametab
-open Rawterm
+open Glob_term
 open Topconstr
 open Term
 open Evd
@@ -53,11 +51,11 @@ let loc_of_or_by_notation f = function
   | AN c -> f c
   | ByNotation (loc,s,_) -> loc
 
-type rawconstr_and_expr = rawconstr * constr_expr option
+type glob_constr_and_expr = glob_constr * constr_expr option
 type open_constr_expr = unit * constr_expr
-type open_rawconstr = unit * rawconstr_and_expr
+type open_glob_constr = unit * glob_constr_and_expr
 
-type rawconstr_pattern_and_expr = rawconstr_and_expr * Pattern.constr_pattern
+type glob_constr_pattern_and_expr = glob_constr_and_expr * Pattern.constr_pattern
 
 type 'a with_ebindings = 'a * open_constr bindings
 
@@ -65,22 +63,9 @@ type 'a with_ebindings = 'a * open_constr bindings
 
 type 'a generic_argument = argument_type * Obj.t
 
-let dyntab = ref ([] : string list)
-
 type rlevel
 type glevel
 type tlevel
-
-type ('a,'b) abstract_argument_type = argument_type
-
-let create_arg s =
-  if List.mem s !dyntab then
-    anomaly ("Genarg.create: already declared generic argument " ^ s);
-  dyntab := s :: !dyntab;
-  let t = ExtraArgType s in
-  (t,t,t)
-
-let exists_argtype s = List.mem s !dyntab
 
 type intro_pattern_expr =
   | IntroOrAndPattern of or_and_intro_pattern_expr
@@ -261,3 +246,32 @@ let unquote x = x
 type an_arg_of_this_type = Obj.t
 
 let in_generic t x = (t, Obj.repr x)
+
+let dyntab = ref ([] : (string * glevel generic_argument option) list)
+
+type ('a,'b) abstract_argument_type = argument_type
+
+let create_arg v s =
+  if List.mem_assoc s !dyntab then
+    anomaly ("Genarg.create: already declared generic argument " ^ s);
+  let t = ExtraArgType s in
+  dyntab := (s,Option.map (in_gen t) v) :: !dyntab;
+  (t,t,t)
+
+let exists_argtype s = List.mem_assoc s !dyntab
+
+let default_empty_argtype_value s = List.assoc s !dyntab
+
+let default_empty_value t =
+  let rec aux = function
+  | List0ArgType _ -> Some (in_gen t [])
+  | OptArgType _ -> Some (in_gen t None)
+  | PairArgType(t1,t2) ->
+      (match aux t1, aux t2 with
+      | Some (_,v1), Some (_,v2) -> Some (in_gen t (v1,v2))
+      | _ -> None)
+  | ExtraArgType s -> default_empty_argtype_value s
+  | _ -> None in
+  match aux t with
+  | Some v -> Some (out_gen t v)
+  | None -> None

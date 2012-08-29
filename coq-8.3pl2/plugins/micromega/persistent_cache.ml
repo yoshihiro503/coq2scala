@@ -1,14 +1,14 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 (*                                                                      *)
-(* A persistent hashtable                                               *)
+(*  A persistent hashtable                                              *)
 (*                                                                      *)
-(*  Frédéric Besson (Inria Rennes) 2009                                 *)
+(*  Frédéric Besson (Inria Rennes) 2009-2011                            *)
 (*                                                                      *)
 (************************************************************************)
 
@@ -20,8 +20,7 @@ module type PHashtable =
 
     val create : int -> string -> 'a t
     (** [create i f] creates an empty persistent table
-	with initial size i
-	associated with file [f] *)
+	with initial size i associated with file [f] *)
 
 
     val open_in : string -> 'a t
@@ -40,7 +39,7 @@ module type PHashtable =
     val close : 'a t -> unit
     (** [close tbl] is closing the table.
 	Once closed, a table cannot be used.
-	i.e, copy, find,add will raise UnboundTable *)
+	i.e, find,add will raise UnboundTable *)
 
     val memo : string -> (key -> 'a) -> (key -> 'a)
       (** [memo cache f] returns a memo function for [f] using file [cache] as persistent table.
@@ -52,19 +51,16 @@ open Hashtbl
 
 module PHashtable(Key:HashedType) : PHashtable with type key = Key.t  =
 struct
+  open Unix
 
   type key = Key.t
 
   module Table = Hashtbl.Make(Key)
 
-
-
   exception InvalidTableFormat
   exception UnboundTable
 
-
   type mode = Closed | Open
-
 
   type 'a t =
       {
@@ -75,8 +71,9 @@ struct
 
 
 let create i f =
+  let flags = [O_WRONLY; O_TRUNC;O_CREAT] in
   {
-    outch = open_out_bin f ;
+    outch = out_channel_of_descr (openfile f flags 0o666);
     status = Open ;
     htbl = Table.create i
   }
@@ -98,10 +95,30 @@ let read_key_elem inch =
     | End_of_file -> None
     |    _        -> raise InvalidTableFormat
 
+(** In win32, it seems that we should unlock the exact zone
+    that has been locked, and not the whole file *)
+
+let locked_start = ref 0
+
+let lock fd =
+  locked_start := lseek fd 0 SEEK_CUR;
+  lockf fd F_LOCK 0
+
+let rlock fd =
+  locked_start := lseek fd 0 SEEK_CUR;
+  lockf fd F_RLOCK 0
+
+let unlock fd =
+  let pos = lseek fd 0 SEEK_CUR in
+  ignore (lseek fd !locked_start SEEK_SET);
+  lockf fd F_ULOCK 0;
+  ignore (lseek fd pos SEEK_SET)
+
 let open_in f =
-  let flags = [Open_rdonly;Open_binary;Open_creat] in
-  let inch = open_in_gen flags 0o666 f in
-  let htbl = Table.create 10 in
+  let flags = [O_RDONLY ; O_CREAT] in
+  let finch = openfile f flags 0o666 in
+  let inch  = in_channel_of_descr finch in
+  let htbl = Table.create 100 in
 
   let rec xload () =
     match read_key_elem inch with
@@ -109,27 +126,38 @@ let open_in f =
       | Some (key,elem) ->
 	  Table.add htbl key elem ;
 	  xload () in
-
     try
-      finally (fun () -> xload () ) (fun () -> close_in inch) ;
+      (* Locking of the (whole) file while reading *)
+      rlock finch;
+      finally 
+	(fun () -> xload () ) 
+	(fun () -> 
+	   unlock finch ;
+	   close_in_noerr inch ; 
+	) ;
       {
-	outch = begin
-	  let flags = [Open_append;Open_binary;Open_creat] in
-	    open_out_gen flags 0o666 f
-	end ;
+	outch = out_channel_of_descr (openfile f [O_WRONLY;O_APPEND;O_CREAT] 0o666) ;
 	status = Open ;
 	htbl = htbl
       }
     with InvalidTableFormat ->
       (* Try to keep as many entries as possible *)
       begin
-	let flags = [Open_wronly; Open_trunc;Open_binary;Open_creat] in
-	let outch = open_out_gen flags 0o666 f in
-	  Table.iter (fun k e -> Marshal.to_channel outch (k,e) [Marshal.No_sharing]) htbl;
-	  { outch = outch ;
-	    status = Open ;
-	    htbl   = htbl
-	  }
+	let flags = [O_WRONLY; O_TRUNC;O_CREAT] in
+	let out =  (openfile f flags 0o666) in
+	let outch = out_channel_of_descr out in
+	  lock out;
+	  (try 
+	    Table.iter 
+	      (fun k e -> Marshal.to_channel outch (k,e) [Marshal.No_sharing]) htbl;
+	    flush outch ; 
+	  with  _ -> () )
+	    ;
+	    unlock out ; 
+	    { outch = outch ;
+	      status = Open ;
+	      htbl   = htbl
+	    }
       end
 
 
@@ -147,9 +175,14 @@ let add t k e =
     if status = Closed
     then raise UnboundTable
     else
+      let fd = descr_of_out_channel outch in
       begin
 	Table.add tbl k e ;
-	Marshal.to_channel outch (k,e) [Marshal.No_sharing]
+	lock fd;
+	ignore (lseek fd 0 SEEK_END);
+	Marshal.to_channel outch (k,e) [Marshal.No_sharing] ;
+	flush outch ;
+	unlock fd
       end
 
 let find t k =

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,25 +8,25 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: ZNatPairs.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
-Require Import NProperties. (* The most complete file for N *)
-Require Export ZProperties. (* The most complete file for Z *)
+Require Import NSub ZAxioms.
 Require Export Ring.
 
 Notation "s #1" := (fst s) (at level 9, format "s '#1'") : pair_scope.
 Notation "s #2" := (snd s) (at level 9, format "s '#2'") : pair_scope.
-Open Local Scope pair_scope.
+Local Open Scope pair_scope.
 
-Module ZPairsAxiomsMod (Import N : NAxiomsSig) <: ZAxiomsSig.
-Module Import NPropMod := NPropFunct N. (* Get all properties of N *)
+Module ZPairsAxiomsMod (Import N : NAxiomsMiniSig) <: ZAxiomsMiniSig.
+ Module Import NProp.
+   Include NSubProp N.
+ End NProp.
 
 Delimit Scope NScope with N.
 Bind Scope NScope with N.t.
 Infix "=="  := N.eq (at level 70) : NScope.
 Notation "x ~= y" := (~ N.eq x y) (at level 70) : NScope.
 Notation "0" := N.zero : NScope.
-Notation "1" := (N.succ N.zero) : NScope.
+Notation "1" := N.one : NScope.
+Notation "2" := N.two : NScope.
 Infix "+" := N.add : NScope.
 Infix "-" := N.sub : NScope.
 Infix "*" := N.mul : NScope.
@@ -44,6 +44,8 @@ Module Z.
 
 Definition t := (N.t * N.t)%type.
 Definition zero : t := (0, 0).
+Definition one : t := (1,0).
+Definition two : t := (2,0).
 Definition eq (p q : t) := (p#1 + q#2 == q#1 + p#2).
 Definition succ (n : t) : t := (N.succ n#1, n#2).
 Definition pred (n : t) : t := (n#1, N.succ n#2).
@@ -57,7 +59,7 @@ Definition le (n m : t) := n#1 + m#2 <= m#1 + n#2.
 Definition min (n m : t) : t := (min (n#1 + m#2) (m#1 + n#2), n#2 + m#2).
 Definition max (n m : t) : t := (max (n#1 + m#2) (m#1 + n#2), n#2 + m#2).
 
-(** NB : We do not have [Zpred (Zsucc n) = n] but only [Zpred (Zsucc n) == n].
+(** NB : We do not have [Z.pred (Z.succ n) = n] but only [Z.pred (Z.succ n) == n].
     It could be possible to consider as canonical only pairs where
     one of the elements is 0, and make all operations convert
     canonical values into other canonical values. In that case, we
@@ -74,7 +76,8 @@ Bind Scope ZScope with Z.t.
 Infix "=="  := Z.eq (at level 70) : ZScope.
 Notation "x ~= y" := (~ Z.eq x y) (at level 70) : ZScope.
 Notation "0" := Z.zero : ZScope.
-Notation "1" := (Z.succ Z.zero) : ZScope.
+Notation "1" := Z.one : ZScope.
+Notation "2" := Z.two : ZScope.
 Infix "+" := Z.add : ZScope.
 Infix "-" := Z.sub : ZScope.
 Infix "*" := Z.mul : ZScope.
@@ -128,15 +131,14 @@ Qed.
 
 Instance sub_wd : Proper (Z.eq ==> Z.eq ==> Z.eq) Z.sub.
 Proof.
-intros n1 m1 H1 n2 m2 H2. rewrite 2 sub_add_opp.
-apply add_wd, opp_wd; auto.
+intros n1 m1 H1 n2 m2 H2. rewrite 2 sub_add_opp. now do 2 f_equiv.
 Qed.
 
 Lemma mul_comm : forall n m, n*m == m*n.
 Proof.
 intros (n1,n2) (m1,m2); compute.
 rewrite (add_comm (m1*n2)%N).
-apply N.add_wd; apply N.add_wd; apply mul_comm.
+do 2 f_equiv; apply mul_comm.
 Qed.
 
 Instance mul_wd : Proper (Z.eq ==> Z.eq ==> Z.eq) Z.mul.
@@ -160,20 +162,22 @@ Hypothesis A_wd : Proper (Z.eq==>iff) A.
 Theorem bi_induction :
   A 0 -> (forall n, A n <-> A (Z.succ n)) -> forall n, A n.
 Proof.
+Open Scope NScope.
 intros A0 AS n; unfold Z.zero, Z.succ, Z.eq in *.
 destruct n as [n m].
-cut (forall p, A (p, 0%N)); [intro H1 |].
-cut (forall p, A (0%N, p)); [intro H2 |].
+cut (forall p, A (p, 0)); [intro H1 |].
+cut (forall p, A (0, p)); [intro H2 |].
 destruct (add_dichotomy n m) as [[p H] | [p H]].
-rewrite (A_wd (n, m) (0%N, p)) by (rewrite add_0_l; now rewrite add_comm).
+rewrite (A_wd (n, m) (0, p)) by (rewrite add_0_l; now rewrite add_comm).
 apply H2.
-rewrite (A_wd (n, m) (p, 0%N)) by now rewrite add_0_r. apply H1.
+rewrite (A_wd (n, m) (p, 0)) by now rewrite add_0_r. apply H1.
 induct p. assumption. intros p IH.
-apply -> (A_wd (0%N, p) (1%N, N.succ p)) in IH; [| now rewrite add_0_l, add_1_l].
-now apply <- AS.
+apply (A_wd (0, p) (1, N.succ p)) in IH; [| now rewrite add_0_l, add_1_l].
+rewrite one_succ in IH. now apply AS.
 induct p. assumption. intros p IH.
-replace 0%N with (snd (p, 0%N)); [| reflexivity].
-replace (N.succ p) with (N.succ (fst (p, 0%N))); [| reflexivity]. now apply -> AS.
+replace 0 with (snd (p, 0)); [| reflexivity].
+replace (N.succ p) with (N.succ (fst (p, 0))); [| reflexivity]. now apply -> AS.
+Close Scope NScope.
 Qed.
 
 End Induction.
@@ -188,6 +192,16 @@ Qed.
 Theorem succ_pred : forall n, Z.succ (Z.pred n) == n.
 Proof.
 intro n; unfold Z.succ, Z.pred, Z.eq; simpl; now nzsimpl.
+Qed.
+
+Theorem one_succ : 1 == Z.succ 0.
+Proof.
+unfold Z.eq; simpl. now nzsimpl'.
+Qed.
+
+Theorem two_succ : 2 == Z.succ 1.
+Proof.
+unfold Z.eq; simpl. now nzsimpl'.
 Qed.
 
 Theorem opp_0 : - 0 == 0.
@@ -298,6 +312,8 @@ Qed.
 Definition t := Z.t.
 Definition eq := Z.eq.
 Definition zero := Z.zero.
+Definition one := Z.one.
+Definition two := Z.two.
 Definition succ := Z.succ.
 Definition pred := Z.pred.
 Definition add := Z.add.

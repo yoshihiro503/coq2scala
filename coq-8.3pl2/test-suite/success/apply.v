@@ -8,8 +8,8 @@ Qed.
 
 Require Import ZArith.
 Goal (forall x y z, ~ z <= 0 -> x * z < y * z -> x <= y)%Z.
-intros; apply Znot_le_gt, Zgt_lt in H.
-apply Zmult_lt_reg_r, Zlt_le_weak in H0; auto.
+intros; apply Znot_le_gt, Z.gt_lt in H.
+apply Zmult_lt_reg_r, Z.lt_le_incl in H0; auto.
 Qed.
 
 (* Test application under tuples *)
@@ -97,13 +97,14 @@ Qed.
 
 (* Check use of unification of bindings types in specialize *)
 
+Module Type Test.
 Variable P : nat -> Prop.
 Variable L : forall (l : nat), P l -> P l.
 Goal P 0 -> True.
 intros.
 specialize L with (1:=H).
 Abort.
-Reset P.
+End Test.
 
 (* Two examples that show that hnf_constr is used when unifying types
    of bindings (a simplification of a script from Field_Theory) *)
@@ -202,6 +203,13 @@ try apply H.
 unfold ID; apply H0.
 Qed.
 
+(* Test hyp in "apply -> ... in hyp" is correctly instantiated by Ltac *)
+
+Goal (True <-> False) -> True -> False.
+intros Heq H.
+match goal with [ H : True |- _ ] => apply -> Heq in H end.
+Abort.
+
 (* Test coercion below product and on non meta-free terms in with bindings *)
 (* Cf wishes #1408 from E. Makarov *)
 
@@ -258,7 +266,7 @@ Qed.
   (* This works because unfold calls clos_norm_flags which calls nf_evar *)
 
 Lemma eapply_evar_unfold : let x:=O in O=x -> 0=O.
-intros x H; eapply trans_equal;
+intros x H; eapply eq_trans;
 [apply H | unfold x;match goal with |- ?x = ?x => reflexivity end].
 Qed.
 
@@ -326,13 +334,12 @@ exact (refl_equal 4).
 Qed.
 
 (* From 12612, descent in conjunctions is more powerful *)
-(* The following, which was failing badly in bug 1980, is now accepted
-   (even if somehow surprising) *)
+(* The following, which was failing badly in bug 1980, is now
+   properly rejected, as descend in conjunctions builds an
+   ill-formed elimination from Prop to Type. *)
 
 Goal True.
-eapply ex_intro.
-instantiate (2:=fun _ :True => True).
-instantiate (1:=I).
+Fail eapply ex_intro.
 exact I.
 Qed.
 
@@ -391,3 +398,35 @@ intro x;
 apply x.
 
 *)
+
+Section A.
+
+Variable map : forall (T1 T2 : Type) (f : T1 -> T2) (t11 t12 : T1),
+  identity (f t11) (f t12).
+
+Variable mapfuncomp : forall (X Y Z : Type) (f : X -> Y) (g : Y -> Z) (x x' : X),
+  identity (map Y Z g (f x) (f x')) (map X Z (fun x0 : X => g (f x0)) x x').
+
+Goal forall X:Type, forall Y:Type, forall f:X->Y, forall x : X, forall x' : X, 
+  forall g : Y -> X,
+  let gf := (fun x : X => g (f x)) : X -> X in
+   identity (map Y X g (f x) (f x')) (map X X gf x x').
+intros.
+apply mapfuncomp.
+Abort.
+
+End A.
+
+(* Check "with" clauses refer to names as they are printed *)
+
+Definition hide p := forall n:nat, p = n.
+
+Goal forall n, (forall n, n=0) -> hide n -> n=0.
+unfold hide.
+intros n H H'.
+(* H is displayed as (forall n, n=0) *)
+apply H with (n:=n).
+Undo.
+(* H' is displayed as (forall n0, n=n0) *)
+apply H' with (n0:=0).
+Qed.

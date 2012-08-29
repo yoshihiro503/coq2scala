@@ -1,84 +1,74 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: coq.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
+(** Coq : Interaction with the Coq toplevel *)
 
-open Names
-open Term
-open Environ
-open Evd
+(** * Version and date *)
 
 val short_version : unit -> string
 val version : unit -> string
 
-type printing_state = {
-  mutable printing_implicit : bool;
-  mutable printing_coercions : bool;
-  mutable printing_raw_matching : bool;
-  mutable printing_no_notation : bool;
-  mutable printing_all : bool;
-  mutable printing_evar_instances : bool;
-  mutable printing_universes : bool;
-  mutable printing_full_all : bool
-}
+(** * Launch a test coqtop processes, ask for a correct coqtop if it fails.
+    @return the list of arguments that coqtop did not understand
+    (the files probably ..). This command may terminate coqide in
+    case of trouble.  *)
+val filter_coq_opts : string list -> string list
 
-val printing_state : printing_state
+(** Launch a coqtop with the user args in order to be sure that it works,
+    checking in particular that initial.coq is found. This command
+    may terminate coqide in case of trouble *)
+val check_connection : string list -> unit
 
-type reset_info
+(** * The structure describing a coqtop sub-process *)
 
-val reset_initial : unit -> unit
+type coqtop
 
-val init : unit -> string list
-val interp : bool -> string -> reset_info
-val interp_last : Util.loc * Vernacexpr.vernac_expr -> unit
-val interp_and_replace : string ->
-      reset_info * string
+(** * Count of all active coqtops *)
 
-val push_phrase : ('a * reset_info) Stack.t -> reset_info -> 'a -> unit
+val coqtop_zombies : unit -> int
 
-val rewind : reset_info list -> ('a * reset_info) Stack.t -> unit
+(** * Starting / signaling / ending a real coqtop sub-process *)
 
-val is_vernac_tactic_command : Vernacexpr.vernac_expr -> bool
-val is_vernac_state_preserving_command : Vernacexpr.vernac_expr -> bool
-val is_vernac_goal_starting_command : Vernacexpr.vernac_expr -> bool
-val is_vernac_proof_ending_command : Vernacexpr.vernac_expr -> bool
+val spawn_coqtop : string list -> coqtop
+val respawn_coqtop : coqtop -> coqtop
+val kill_coqtop : coqtop -> unit
+val break_coqtop : coqtop -> unit
 
-(* type hyp = (identifier * constr option * constr) * string *)
+(** In win32, we'll use a different kill function than Unix.kill *)
 
-type hyp = env * evar_map *
-           ((identifier*string) * constr option * constr) * (string * string)
-type meta = env * evar_map * string
-type concl = env * evar_map * constr * string
-type goal = hyp list * concl
+val killer : (int -> unit) ref
+val interrupter : (int -> unit) ref
 
-val get_current_goals : unit -> goal list
+(** * Calls to Coqtop, cf [Ide_intf] for more details *)
 
-val get_current_pm_goal : unit -> goal
+val interp :
+  coqtop -> ?raw:bool -> ?verbose:bool -> string -> string Interface.value
+val rewind : coqtop -> int -> int Interface.value
+val status : coqtop -> Interface.status Interface.value
+val goals : coqtop -> Interface.goals option Interface.value
+val evars : coqtop -> Interface.evar list option Interface.value
+val hints : coqtop -> (Interface.hint list * Interface.hint) option Interface.value
+val inloadpath : coqtop -> string -> bool Interface.value
+val mkcases : coqtop -> string -> string list list Interface.value
 
-val print_no_goal : unit -> string
+(** A specialized version of [raw_interp] dedicated to
+    set/unset options. *)
 
-val process_exn : exn -> string*(Util.loc option)
+module PrintOpt :
+sig
+  type t
+  val implicit : t
+  val coercions : t
+  val raw_matching : t
+  val notations : t
+  val all_basic : t
+  val existential : t
+  val universes : t
 
-val hyp_menu : hyp -> (string * string) list
-val concl_menu : concl -> (string * string) list
-
-val is_in_coq_lib : string -> bool
-val is_in_coq_path : string -> bool
-val is_in_loadpath : string -> bool
-
-val make_cases : string -> string list list
-
-
-type tried_tactic =
-  | Interrupted
-  | Success of int (* nb of goals after *)
-  | Failed
-
-(* Message to display in lower status bar. *)
-
-val current_status : unit -> string
+  val set : coqtop -> (t * bool) list -> unit
+end

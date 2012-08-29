@@ -74,3 +74,22 @@ destruct H.
 destruct H0.
 reflexivity.
 Qed.
+
+(* These did not work before 8.4 *)
+
+Goal (exists x, x=0) -> True.
+destruct 1 as (_,_); exact I.
+Abort.
+
+Goal (exists x, x=0 /\ True) -> True.
+destruct 1 as (_,(_,H)); exact H.
+Abort.
+
+Goal (exists x, x=0 /\ True) -> True.
+destruct 1 as (_,(_,x)); exact x.
+Abort.
+
+Goal let T:=nat in forall (x:nat) (g:T -> nat), g x = 0.
+intros.
+destruct (g _). (* This was failing in at least r14571 *)
+Abort.

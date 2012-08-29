@@ -1,13 +1,17 @@
 (* -*- coding: utf-8 -*- *)
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: EqdepFacts.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
+(* File Eqdep.v created by Christine Paulin-Mohring in Coq V5.6, May 1992 *)
+(* Further documentation and variants of eq_rect_eq by Hugo Herbelin,
+   Apr 2003 *)
+(* Abstraction with respect to the eq_rect_eq axiom and renaming to
+   EqdepFacts.v by Hugo Herbelin, Mar 2006 *)
 
 (** This file defines dependent equality and shows its equivalence with
     equality on dependent pairs (inhabiting sigma-types). It derives
@@ -33,7 +37,8 @@
 
 Table of contents:
 
-1. Definition of dependent equality and equivalence with equality
+1. Definition of dependent equality and equivalence with equality of
+   dependent pairs and with dependent pair of equalities
 
 2. Eq_rect_eq <-> Eq_dep_eq <-> UIP <-> UIP_refl <-> K
 
@@ -44,6 +49,8 @@ Table of contents:
 
 (************************************************************************)
 (** * Definition of dependent equality and equivalence with equality of dependent pairs *)
+
+Import EqNotations.
 
 Section Dependent_Equality.
 
@@ -75,11 +82,11 @@ Section Dependent_Equality.
 
   Scheme eq_indd := Induction for eq Sort Prop.
 
-  (** Equivalent definition of dependent equality expressed as a non
-      dependent inductive type *)
+  (** Equivalent definition of dependent equality as a dependent pair of
+      equalities *)
 
   Inductive eq_dep1 (p:U) (x:P p) (q:U) (y:P q) : Prop :=
-    eq_dep1_intro : forall h:q = p, x = eq_rect q P y p h -> eq_dep1 p x q y.
+    eq_dep1_intro : forall h:q = p, x = rew h in y -> eq_dep1 p x q y.
 
   Lemma eq_dep1_dep :
     forall (p:U) (x:P p) (q:U) (y:P q), eq_dep1 p x q y -> eq_dep p x q y.
@@ -94,14 +101,14 @@ Section Dependent_Equality.
     forall (p q:U) (x:P p) (y:P q), eq_dep p x q y -> eq_dep1 p x q y.
   Proof.
     destruct 1.
-    apply eq_dep1_intro with (refl_equal p).
-    simpl in |- *; trivial.
+    apply eq_dep1_intro with (eq_refl p).
+    simpl; trivial.
   Qed.
 
 End Dependent_Equality.
 
-Implicit Arguments eq_dep [U P].
-Implicit Arguments eq_dep1 [U P].
+Arguments eq_dep  [U P] p x q _.
+Arguments eq_dep1 [U P] p x q y.
 
 (** Dependent equality is equivalent to equality on dependent pairs *)
 
@@ -114,18 +121,7 @@ Proof.
   apply eq_dep_intro.
 Qed.
 
-Notation eq_sigS_eq_dep := eq_sigT_eq_dep (only parsing). (* Compatibility *)
-
-Lemma equiv_eqex_eqdep :
-  forall (U:Type) (P:U -> Type) (p q:U) (x:P p) (y:P q),
-   existT P p x = existT P q y <-> eq_dep p x q y.
-Proof.
-  split.
-  (* -> *)
-  apply eq_sigT_eq_dep.
-  (* <- *)
-  destruct 1; reflexivity.
-Qed.
+Notation eq_sigS_eq_dep := eq_sigT_eq_dep (compat "8.2"). (* Compatibility *)
 
 Lemma eq_dep_eq_sigT :
   forall (U:Type) (P:U -> Type) (p q:U) (x:P p) (y:P q),
@@ -133,6 +129,96 @@ Lemma eq_dep_eq_sigT :
 Proof.
   destruct 1; reflexivity.
 Qed.
+
+Lemma eq_sigT_iff_eq_dep :
+  forall (U:Type) (P:U -> Type) (p q:U) (x:P p) (y:P q),
+    existT P p x = existT P q y <-> eq_dep p x q y.
+Proof.
+  split; auto using eq_sigT_eq_dep, eq_dep_eq_sigT.
+Qed.
+
+Notation equiv_eqex_eqdep := eq_sigT_iff_eq_dep (only parsing). (* Compat *)
+
+Lemma eq_sig_eq_dep :
+  forall (U:Prop) (P:U -> Prop) (p q:U) (x:P p) (y:P q),
+    exist P p x = exist P q y -> eq_dep p x q y.
+Proof.
+  intros.
+  dependent rewrite H.
+  apply eq_dep_intro.
+Qed.
+
+Lemma eq_dep_eq_sig :
+  forall (U:Prop) (P:U -> Prop) (p q:U) (x:P p) (y:P q),
+    eq_dep p x q y -> exist P p x = exist P q y.
+Proof.
+  destruct 1; reflexivity.
+Qed.
+
+Lemma eq_sig_iff_eq_dep :
+  forall (U:Prop) (P:U -> Prop) (p q:U) (x:P p) (y:P q),
+    exist P p x = exist P q y <-> eq_dep p x q y.
+Proof.
+  split; auto using eq_sig_eq_dep, eq_dep_eq_sig.
+Qed.
+
+(** Dependent equality is equivalent to a dependent pair of equalities *)
+
+Set Implicit Arguments.
+
+Lemma eq_sigT_sig_eq : forall X P (x1 x2:X) H1 H2, existT P x1 H1 = existT P x2 H2 <-> {H:x1=x2 | rew H in H1 = H2}.
+Proof.
+  intros; split; intro H.
+  - change x2 with (projT1 (existT P x2 H2)).
+    change H2 with (projT2 (existT P x2 H2)) at 5.
+    destruct H. simpl.
+    exists eq_refl.
+    reflexivity.
+  - destruct H as (->,<-).
+    reflexivity.
+Defined.
+
+Lemma eq_sigT_fst :
+  forall X P (x1 x2:X) H1 H2 (H:existT P x1 H1 = existT P x2 H2), x1 = x2.
+Proof.
+  intros.
+  change x2 with (projT1 (existT P x2 H2)).
+  destruct H.
+  reflexivity.
+Defined.
+
+Lemma eq_sigT_snd :
+  forall X P (x1 x2:X) H1 H2 (H:existT P x1 H1 = existT P x2 H2), rew (eq_sigT_fst H) in H1 = H2.
+Proof.
+  intros.
+  unfold eq_sigT_fst.
+  change x2 with (projT1 (existT P x2 H2)).
+  change H2 with (projT2 (existT P x2 H2)) at 3.
+  destruct H.
+  reflexivity.
+Defined.
+
+Lemma eq_sig_fst :
+  forall X P (x1 x2:X) H1 H2 (H:exist P x1 H1 = exist P x2 H2), x1 = x2.
+Proof.
+  intros.
+  change x2 with (proj1_sig (exist P x2 H2)).
+  destruct H.
+  reflexivity.
+Defined.
+
+Lemma eq_sig_snd :
+  forall X P (x1 x2:X) H1 H2 (H:exist P x1 H1 = exist P x2 H2), rew (eq_sig_fst H) in H1 = H2.
+Proof.
+  intros.
+  unfold eq_sig_fst, eq_ind.
+  change x2 with (proj1_sig (exist P x2 H2)).
+  change H2 with (proj2_sig (exist P x2 H2)) at 3.
+  destruct H.
+  reflexivity.
+Defined.
+
+Unset Implicit Arguments.
 
 (** Exported hints *)
 
@@ -164,12 +250,12 @@ Section Equivalences.
   (** Uniqueness of Reflexive Identity Proofs *)
 
   Definition UIP_refl_ :=
-    forall (x:U) (p:x = x), p = refl_equal x.
+    forall (x:U) (p:x = x), p = eq_refl x.
 
   (** Streicher's axiom K *)
 
   Definition Streicher_K_ :=
-    forall (x:U) (P:x = x -> Prop), P (refl_equal x) -> forall p:x = x, P p.
+    forall (x:U) (P:x = x -> Prop), P (eq_refl x) -> forall p:x = x, P p.
 
   (** Injectivity of Dependent Equality is a consequence of *)
   (** Invariance by Substitution of Reflexive Equality Proof *)
@@ -303,14 +389,14 @@ Proof (eq_dep_eq__UIP U eq_dep_eq).
 
 (** Uniqueness of Reflexive Identity Proofs is a direct instance of UIP *)
 
-Lemma UIP_refl : forall (x:U) (p:x = x), p = refl_equal x.
+Lemma UIP_refl : forall (x:U) (p:x = x), p = eq_refl x.
 Proof (UIP__UIP_refl U UIP).
 
 (** Streicher's axiom K is a direct consequence of Uniqueness of
     Reflexive Identity Proofs *)
 
 Lemma Streicher_K :
-  forall (x:U) (P:x = x -> Prop), P (refl_equal x) -> forall p:x = x, P p.
+  forall (x:U) (P:x = x -> Prop), P (eq_refl x) -> forall p:x = x, P p.
 Proof (UIP_refl__Streicher_K U UIP_refl).
 
 End Axioms.
@@ -326,5 +412,5 @@ Notation inj_pairT2 := inj_pair2.
 
 End EqdepTheory.
 
-Implicit Arguments eq_dep [].
-Implicit Arguments eq_dep1 [].
+Arguments eq_dep  U P p x q _ : clear implicits.
+Arguments eq_dep1 U P p x q y : clear implicits.

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -16,7 +16,6 @@ open Tacticals
 open Tactics
 open Indfun_common
 open Tacmach
-open Termops
 open Sign
 open Hiddentac
 
@@ -24,17 +23,17 @@ open Hiddentac
 
 let pr_binding prc  =
   function
-    | loc, Rawterm.NamedHyp id, c -> hov 1 (Ppconstr.pr_id id ++ str " := " ++ Pp.cut () ++ prc c)
-    | loc, Rawterm.AnonHyp n, c -> hov 1 (int n ++ str " := " ++ Pp.cut () ++ prc c)
+    | loc, Glob_term.NamedHyp id, c -> hov 1 (Ppconstr.pr_id id ++ str " := " ++ Pp.cut () ++ prc c)
+    | loc, Glob_term.AnonHyp n, c -> hov 1 (int n ++ str " := " ++ Pp.cut () ++ prc c)
 
 let pr_bindings prc prlc = function
-  | Rawterm.ImplicitBindings l ->
+  | Glob_term.ImplicitBindings l ->
       brk (1,1) ++ str "with" ++ brk (1,1) ++
       Util.prlist_with_sep spc prc l
-  | Rawterm.ExplicitBindings l ->
+  | Glob_term.ExplicitBindings l ->
       brk (1,1) ++ str "with" ++ brk (1,1) ++
         Util.prlist_with_sep spc (fun b -> str"(" ++ pr_binding prlc b ++ str")") l
-  | Rawterm.NoBindings -> mt ()
+  | Glob_term.NoBindings -> mt ()
 
 
 let pr_with_bindings prc prlc (c,bl) =
@@ -60,12 +59,13 @@ let observennl strm =
 
 
 let do_observe_tac s tac g =
-  let goal = begin try (Printer.pr_goal (sig_it g)) with _ -> assert false end in
+  let goal = begin try (Printer.pr_goal g) with _ -> assert false end in
   try
     let v = tac g in msgnl (goal ++ fnl () ++ s ++(str " ")++(str "finished")); v
   with e ->
+    let e' = Cerrors.process_vernac_interp_error e in
     msgnl (str "observation "++ s++str " raised exception " ++
-	     Cerrors.explain_exn e ++ str " on goal " ++ goal );
+	     Errors.print e' ++ str " on goal " ++ goal );
     raise e;;
 
 
@@ -84,7 +84,7 @@ let nf_zeta =
 (* [id_to_constr id] finds the term associated to [id] in the global environment *)
 let id_to_constr id =
   try
-    Tacinterp.constr_of_id (Global.env ())  id
+    Constrintern.global_reference id
   with Not_found ->
     raise (UserError ("",str "Cannot find " ++ Ppconstr.pr_id id))
 
@@ -248,7 +248,7 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
 	     | [] | [_] | [_;_] -> anomaly "bad context"
 	     | hres::res::(x,_,t)::ctxt ->
 		 Termops.it_mkLambda_or_LetIn
-		   ~init:(Termops.it_mkProd_or_LetIn ~init:concl [hres;res])
+		   (Termops.it_mkProd_or_LetIn concl [hres;res])
 		   ((x,None,t)::ctxt)
 	)
 	lemmas_types_infos
@@ -313,7 +313,7 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
 		 | None -> (id::pre_args,pre_tac)
 		 | Some b ->
 		     (pre_args,
-		      tclTHEN (h_reduce (Rawterm.Unfold([Rawterm.all_occurrences_expr,EvalVarRef id])) allHyps) pre_tac
+		      tclTHEN (h_reduce (Glob_term.Unfold([Glob_term.all_occurrences_expr,EvalVarRef id])) allHyps) pre_tac
 		     )
 
 	     else (pre_args,pre_tac)
@@ -395,10 +395,10 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
 	    observe_tac "unfolding" pre_tac;
 	    (* $zeta$ normalizing of the conclusion *)
 	    h_reduce
-	      (Rawterm.Cbv
-		 { Rawterm.all_flags with
-		     Rawterm.rDelta = false ;
-		     Rawterm.rConst = []
+	      (Glob_term.Cbv
+		 { Glob_term.all_flags with
+		     Glob_term.rDelta = false ;
+		     Glob_term.rConst = []
 		 }
 	      )
 	      onConcl;
@@ -424,7 +424,7 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
 	List.fold_left2
 	  (fun (bindings,avoid) (x,_,_) p ->
 	     let id = Namegen.next_ident_away (Nameops.out_name x) avoid in
-	     (dummy_loc,Rawterm.NamedHyp id,p)::bindings,id::avoid
+	     (dummy_loc,Glob_term.NamedHyp id,p)::bindings,id::avoid
 	  )
 	  ([],pf_ids_of_hyps g)
 	  princ_infos.params
@@ -434,12 +434,12 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
 	List.rev (fst  (List.fold_left2
 	  (fun (bindings,avoid) (x,_,_) p ->
 	     let id = Namegen.next_ident_away (Nameops.out_name x) avoid in
-	     (dummy_loc,Rawterm.NamedHyp id,(nf_zeta p))::bindings,id::avoid)
+	     (dummy_loc,Glob_term.NamedHyp id,(nf_zeta p))::bindings,id::avoid)
 	  ([],avoid)
 	  princ_infos.predicates
 	  (lemmas)))
       in
-      Rawterm.ExplicitBindings (params_bindings@lemmas_bindings)
+      Glob_term.ExplicitBindings (params_bindings@lemmas_bindings)
     in
     tclTHENSEQ
       [ observe_tac "intro args_names" (tclMAP h_intro args_names);
@@ -504,6 +504,15 @@ and intros_with_rewrite_aux : tactic =
 				     intros_with_rewrite
 				   ]
 			  g
+		      else if isVar args.(2) 
+		      then 
+			let id = pf_get_new_id (id_of_string "y") g  in
+			tclTHENSEQ [ h_intro id;
+				     generalize_dependent_of (destVar args.(2)) id;
+				     tclTRY (Equality.rewriteRL (mkVar id));
+				     intros_with_rewrite
+				   ]
+			  g
 		      else
 			begin
 			  let id = pf_get_new_id (id_of_string "y") g  in
@@ -517,15 +526,15 @@ and intros_with_rewrite_aux : tactic =
 		      Tauto.tauto g
 		  | Case(_,_,v,_) ->
 		      tclTHENSEQ[
-			h_case false (v,Rawterm.NoBindings);
+			h_case false (v,Glob_term.NoBindings);
 			intros_with_rewrite
 		      ] g
 		  | LetIn _ ->
 		      tclTHENSEQ[
 			h_reduce
-			  (Rawterm.Cbv
-			     {Rawterm.all_flags
-			      with Rawterm.rDelta = false;
+			  (Glob_term.Cbv
+			     {Glob_term.all_flags
+			      with Glob_term.rDelta = false;
 			     })
 			  onConcl
 			;
@@ -538,9 +547,9 @@ and intros_with_rewrite_aux : tactic =
 	  | LetIn _ ->
 	      tclTHENSEQ[
 		h_reduce
-		  (Rawterm.Cbv
-		     {Rawterm.all_flags
-		      with Rawterm.rDelta = false;
+		  (Glob_term.Cbv
+		     {Glob_term.all_flags
+		      with Glob_term.rDelta = false;
 		     })
 		  onConcl
 		;
@@ -554,7 +563,7 @@ let rec reflexivity_with_destruct_cases g =
       match kind_of_term (snd (destApp (pf_concl g))).(2) with
 	| Case(_,_,v,_) ->
 	    tclTHENSEQ[
-	      h_case false (v,Rawterm.NoBindings);
+	      h_case false (v,Glob_term.NoBindings);
 	      intros;
 	      observe_tac "reflexivity_with_destruct_cases" reflexivity_with_destruct_cases
 	    ]
@@ -579,15 +588,15 @@ let rec reflexivity_with_destruct_cases g =
     )
   in
   (tclFIRST
-    [ reflexivity;
-      tclTHEN (tclPROGRESS discr_inject) (destruct_case ());
+    [ observe_tac "reflexivity_with_destruct_cases : reflexivity" reflexivity;
+      observe_tac "reflexivity_with_destruct_cases : destruct_case" ((destruct_case ()));
       (*  We reach this point ONLY if
 	  the same value is matched (at least) two times
 	  along binding path.
 	  In this case, either we have a discriminable hypothesis and we are done,
 	  either at least an injectable one and we do the injection before continuing
       *)
-      tclTHEN (tclPROGRESS discr_inject ) reflexivity_with_destruct_cases
+      observe_tac "reflexivity_with_destruct_cases : others" (tclTHEN (tclPROGRESS discr_inject ) reflexivity_with_destruct_cases)
     ])
     g
 
@@ -627,7 +636,7 @@ let prove_fun_complete funcs graphs schemes lemmas_types_infos i : tactic =
     *)
     let lemmas =
       Array.map
-	(fun (_,(ctxt,concl)) -> nf_zeta (Termops.it_mkLambda_or_LetIn ~init:concl ctxt))
+	(fun (_,(ctxt,concl)) -> nf_zeta (Termops.it_mkLambda_or_LetIn concl ctxt))
 	lemmas_types_infos
     in
     (* We get the constant and the principle corresponding to this lemma *)
@@ -677,16 +686,16 @@ let prove_fun_complete funcs graphs schemes lemmas_types_infos i : tactic =
 	  Equality.rewriteLR (mkConst eq_lemma);
 	  (* Don't forget to $\zeta$ normlize the term since the principles have been $\zeta$-normalized *)
 	  h_reduce
-	    (Rawterm.Cbv
-	       {Rawterm.all_flags
-		with Rawterm.rDelta = false;
+	    (Glob_term.Cbv
+	       {Glob_term.all_flags
+		with Glob_term.rDelta = false;
 	       })
 	    onConcl
 	  ;
 	  h_generalize (List.map mkVar ids);
 	  thin ids
 	]
-      else unfold_in_concl [(all_occurrences,Names.EvalConstRef (destConst f))]
+      else unfold_in_concl [(Termops.all_occurrences, Names.EvalConstRef (destConst f))]
     in
     (* The proof of each branche itself *)
     let ind_number = ref 0 in
@@ -724,7 +733,7 @@ let prove_fun_complete funcs graphs schemes lemmas_types_infos i : tactic =
 	(h_generalize [mkApp(applist(graph_principle,params),Array.map (fun c -> applist(c,params)) lemmas)]);
 	h_intro graph_principle_id;
 	observe_tac "" (tclTHEN_i
-	  (observe_tac "elim" ((elim false (mkVar hres,Rawterm.NoBindings) (Some (mkVar graph_principle_id,Rawterm.NoBindings)))))
+	  (observe_tac "elim" ((elim false (mkVar hres,Glob_term.NoBindings) (Some (mkVar graph_principle_id,Glob_term.NoBindings)))))
 	  (fun i g -> observe_tac "prove_branche" (prove_branche i) g ))
       ]
       g
@@ -743,6 +752,7 @@ let do_save () = Lemmas.save_named false
 *)
 
 let derive_correctness make_scheme functional_induction (funs: constant list) (graphs:inductive list) =
+  let previous_state = States.freeze () in
   let funs = Array.of_list funs and graphs = Array.of_list graphs in
   let funs_constr = Array.map mkConst funs  in
   try
@@ -754,7 +764,7 @@ let derive_correctness make_scheme functional_induction (funs: constant list) (g
 	   let (type_of_lemma_ctxt,type_of_lemma_concl) as type_info =
 	     generate_type false const_of_f graph i
 	   in
-	   let type_of_lemma = Termops.it_mkProd_or_LetIn ~init:type_of_lemma_concl type_of_lemma_ctxt in
+	   let type_of_lemma = Termops.it_mkProd_or_LetIn type_of_lemma_concl type_of_lemma_ctxt in
 	   let type_of_lemma = nf_zeta type_of_lemma in
 	   observe (str "type_of_lemma := " ++ Printer.pr_lconstr type_of_lemma);
 	   type_of_lemma,type_info
@@ -775,7 +785,7 @@ let derive_correctness make_scheme functional_induction (funs: constant list) (g
 	       (fun entry ->
 		  (entry.Entries.const_entry_body, Option.get entry.Entries.const_entry_type )
 	       )
-	       (make_scheme (array_map_to_list (fun const -> const,Rawterm.RType None) funs))
+	       (make_scheme (array_map_to_list (fun const -> const,Glob_term.GType None) funs))
 	    )
     in
     let proving_tac =
@@ -784,22 +794,21 @@ let derive_correctness make_scheme functional_induction (funs: constant list) (g
     Array.iteri
       (fun i f_as_constant ->
 	 let f_id = id_of_label (con_label f_as_constant) in
-	 Lemmas.start_proof
-	   (*i The next call to mk_correct_id is valid since we are constructing the lemma
+	 (*i The next call to mk_correct_id is valid since we are constructing the lemma
 	     Ensures by: obvious
-	     i*)
-	   (mk_correct_id f_id)
+	 i*)
+	 let lem_id = mk_correct_id f_id in
+	 Lemmas.start_proof lem_id
 	   (Decl_kinds.Global,(Decl_kinds.Proof Decl_kinds.Theorem))
 	   (fst lemmas_types_infos.(i))
 	   (fun _ _ -> ());
-	 Pfedit.by (observe_tac ("prove correctness ("^(string_of_id f_id)^")") (proving_tac i));
+	 Pfedit.by
+	   (observe_tac ("prove correctness ("^(string_of_id f_id)^")")
+	      (proving_tac i));
 	 do_save ();
 	 let finfo = find_Function_infos f_as_constant in
-	 update_Function
-	   {finfo with
-	      correctness_lemma = Some (destConst (Tacinterp.constr_of_id (Global.env ())(mk_correct_id f_id)))
-	   }
-
+	 let lem_cst = destConst (Constrintern.global_reference lem_id) in
+	 update_Function {finfo with correctness_lemma = Some lem_cst}
       )
       funs;
     let lemmas_types_infos =
@@ -809,7 +818,7 @@ let derive_correctness make_scheme functional_induction (funs: constant list) (g
 	   let (type_of_lemma_ctxt,type_of_lemma_concl) as type_info =
 	     generate_type true  const_of_f graph i
 	   in
-	   let type_of_lemma = Termops.it_mkProd_or_LetIn ~init:type_of_lemma_concl type_of_lemma_ctxt in
+	   let type_of_lemma = Termops.it_mkProd_or_LetIn type_of_lemma_concl type_of_lemma_ctxt in
 	   let type_of_lemma = nf_zeta type_of_lemma in
 	   observe (str "type_of_lemma := " ++ Printer.pr_lconstr type_of_lemma);
 	   type_of_lemma,type_info
@@ -836,34 +845,27 @@ let derive_correctness make_scheme functional_induction (funs: constant list) (g
     Array.iteri
       (fun i f_as_constant ->
 	 let f_id = id_of_label (con_label f_as_constant) in
-	 Lemmas.start_proof
-	   (*i The next call to mk_complete_id is valid since we are constructing the lemma
+	 (*i The next call to mk_complete_id is valid since we are constructing the lemma
 	     Ensures by: obvious
-	     i*)
-	   (mk_complete_id f_id)
+	   i*)
+	 let lem_id = mk_complete_id f_id in
+	 Lemmas.start_proof lem_id
 	   (Decl_kinds.Global,(Decl_kinds.Proof Decl_kinds.Theorem))
 	   (fst lemmas_types_infos.(i))
 	   (fun _ _ -> ());
-	 Pfedit.by (observe_tac ("prove completeness ("^(string_of_id f_id)^")") (proving_tac i));
+	 Pfedit.by
+	   (observe_tac ("prove completeness ("^(string_of_id f_id)^")")
+	      (proving_tac i));
 	 do_save ();
 	 let finfo = find_Function_infos f_as_constant in
-	 update_Function
-	   {finfo with
-	      completeness_lemma = Some (destConst (Tacinterp.constr_of_id (Global.env ())(mk_complete_id f_id)))
-	   }
+	 let lem_cst = destConst (Constrintern.global_reference lem_id) in
+	 update_Function {finfo with completeness_lemma = Some lem_cst}
       )
       funs;
   with e ->
     (* In case of problem, we reset all the lemmas *)
-    (*i The next call to mk_correct_id is valid since we are erasing the lemmas
-      Ensures by: obvious
-      i*)
-    let first_lemma_id =
-      let f_id = id_of_label (con_label funs.(0)) in
-
-      mk_correct_id f_id
-    in
-     ignore(try Vernacentries.vernac_reset_name (Util.dummy_loc,first_lemma_id) with _ -> ());
+    Pfedit.delete_all_proofs ();
+    States.unfreeze previous_state;
     raise e
 
 
@@ -946,7 +948,7 @@ let functional_inversion kn hid fconst f_correct : tactic =
 	    h_generalize [applist(f_correct,(Array.to_list f_args)@[res;mkVar hid])];
 	    thin [hid];
 	    h_intro hid;
-	    Inv.inv FullInversion None (Rawterm.NamedHyp hid);
+	    Inv.inv FullInversion None (Glob_term.NamedHyp hid);
 	    (fun g ->
 	       let new_ids = List.filter (fun id -> not (Idset.mem id old_ids)) (pf_ids_of_hyps g) in
 	       tclMAP (revert_graph kn pre_tac)  (hid::new_ids)  g

@@ -10,7 +10,6 @@ Elimschemes
 Tactics
 Hiddentac
 Elim
-Dhyp
 Auto
 Equality
 Contradiction
@@ -19,6 +18,4 @@ Leminv
 Tacinterp
 Evar_tactics
 Autorewrite
-Decl_interp
-Decl_proof_instr
 Tactic_option

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -32,11 +32,11 @@ Instance relation_disjunction_morphism : Proper (relation_equivalence (A:=A) ==>
 
 Require Import List.
 
-Lemma predicate_equivalence_pointwise (l : list Type) :
+Lemma predicate_equivalence_pointwise (l : Tlist) :
   Proper (@predicate_equivalence l ==> pointwise_lifting iff l) id.
 Proof. do 2 red. unfold predicate_equivalence. auto. Qed.
 
-Lemma predicate_implication_pointwise (l : list Type) :
+Lemma predicate_implication_pointwise (l : Tlist) :
   Proper (@predicate_implication l ==> pointwise_lifting impl l) id.
 Proof. do 2 red. unfold predicate_implication. auto. Qed.
 
@@ -45,11 +45,11 @@ Proof. do 2 red. unfold predicate_implication. auto. Qed.
 
 Instance relation_equivalence_pointwise :
   Proper (relation_equivalence ==> pointwise_relation A (pointwise_relation A iff)) id.
-Proof. intro. apply (predicate_equivalence_pointwise (cons A (cons A nil))). Qed.
+Proof. intro. apply (predicate_equivalence_pointwise (Tcons A (Tcons A Tnil))). Qed.
 
 Instance subrelation_pointwise :
   Proper (subrelation ==> pointwise_relation A (pointwise_relation A impl)) id.
-Proof. intro. apply (predicate_implication_pointwise (cons A (cons A nil))). Qed.
+Proof. intro. apply (predicate_implication_pointwise (Tcons A (Tcons A Tnil))). Qed.
 
 
 Lemma inverse_pointwise_relation A (R : relation A) :

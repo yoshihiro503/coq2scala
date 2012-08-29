@@ -7,18 +7,16 @@ Flags
 Segmenttree
 Unicodetable
 Util
+Errors
 Bigint
 Hashcons
 Dyn
 System
 Envars
-Bstack
-Edit
-Gset
+Store
 Gmap
 Fset
 Fmap
-Tlm
 Gmapl
 Profile
 Explore
@@ -27,6 +25,7 @@ Rtree
 Heap
 Option
 Dnet
+Hashtbl_alt
 
 Names
 Univ
@@ -67,10 +66,11 @@ Lib
 Goptions
 Decls
 Heads
+Assumptions
 Termops
 Namegen
 Evd
-Rawterm
+Glob_term
 Reductionops
 Inductiveops
 Retyping
@@ -80,6 +80,7 @@ Evarutil
 Term_dnet
 Recordops
 Evarconv
+Arguments_renaming
 Typing
 Pattern
 Matching
@@ -93,8 +94,9 @@ Coercion
 Unification
 Cases
 Pretyping
-Clenv
+Declaremods
 
+Tok
 Lexer
 Ppextend
 Genarg
@@ -103,17 +105,22 @@ Notation
 Dumpglob
 Reserve
 Impargs
-Constrextern
 Syntax_def
 Implicit_quantifiers
 Smartlocate
 Constrintern
-Proof_trees
+Modintern
+Constrextern
 Tacexpr
 Proof_type
+Goal
 Logic
 Refiner
+Clenv
 Evar_refiner
+Proofview
+Proof
+Proof_global
 Pfedit
 Tactic_debug
 Decl_mode

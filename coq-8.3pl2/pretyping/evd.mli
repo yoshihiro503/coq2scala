@@ -1,14 +1,11 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: evd.mli 13902 2011-03-10 15:50:24Z msozeau $ i*)
-
-(*i*)
 open Util
 open Names
 open Term
@@ -17,10 +14,9 @@ open Environ
 open Libnames
 open Mod_subst
 open Termops
-(*i*)
 
-(*********************************************************************)
-(* Meta map *)
+(********************************************************************
+   Meta map *)
 
 module Metamap : Map.S with type key = metavariable
 
@@ -36,17 +32,16 @@ val metavars_of : constr -> Metaset.t
 val mk_freelisted : constr -> constr freelisted
 val map_fl : ('a -> 'b) -> 'a freelisted -> 'b freelisted
 
-(* Status of an instance found by unification wrt to the meta it solves:
+(** Status of an instance found by unification wrt to the meta it solves:
   - a supertype of the meta (e.g. the solution to ?X <= T is a supertype of ?X)
   - a subtype of the meta (e.g. the solution to T <= ?X is a supertype of ?X)
   - a term that can be eta-expanded n times while still being a solution
     (e.g. the solution [P] to [?X u v = P u v] can be eta-expanded twice)
 *)
 
-type instance_constraint =
-    IsSuperType | IsSubType | ConvUpToEta of int | UserGiven
+type instance_constraint = IsSuperType | IsSubType | Conv
 
-(* Status of the unification of the type of an instance against the type of
+(** Status of the unification of the type of an instance against the type of
      the meta it instantiates:
    - CoerceToType means that the unification of types has not been done
      and that a coercion can still be inserted: the meta should not be
@@ -62,11 +57,11 @@ type instance_constraint =
 type instance_typing_status =
     CoerceToType | TypeNotProcessed | TypeProcessed
 
-(* Status of an instance together with the status of its type unification *)
+(** Status of an instance together with the status of its type unification *)
 
 type instance_status = instance_constraint * instance_typing_status
 
-(* Clausal environments *)
+(** Clausal environments *)
 
 type clbinding =
   | Cltyp of name * constr freelisted
@@ -75,17 +70,17 @@ type clbinding =
 val map_clb : (constr -> constr) -> clbinding -> clbinding
 
 
-(*********************************************************************)
-(*** Kinds of existential variables ***)
+(********************************************************************
+  ** Kinds of existential variables ***)
 
-(* Should the obligation be defined (opaque or transparent (default)) or
+(** Should the obligation be defined (opaque or transparent (default)) or
    defined transparent and expanded in the term? *)
 
 type obligation_definition_status = Define of bool | Expand
 
-(* Evars *)
+(** Evars *)
 type hole_kind =
-  | ImplicitArg of global_reference * (int * identifier option) * bool (* Force inference *)
+  | ImplicitArg of global_reference * (int * identifier option) * bool (** Force inference *)
   | BinderType of name
   | QuestionMark of obligation_definition_status
   | CasesType
@@ -95,10 +90,10 @@ type hole_kind =
   | ImpossibleCase
   | MatchingVar of bool * identifier
 
-(*********************************************************************)
-(*** Existential variables and unification states ***)
+(********************************************************************
+  ** Existential variables and unification states ***)
 
-(* A unification state (of type [evar_map]) is primarily a finite mapping
+(** A unification state (of type [evar_map]) is primarily a finite mapping
     from existential variables to records containing the type of the evar
    ([evar_concl]), the context under which it was introduced ([evar_hyps])
    and its definition ([evar_body]). [evar_extra] is used to add any other
@@ -106,7 +101,7 @@ type hole_kind =
    It also contains conversion constraints, debugging information and
    information about meta variables. *)
 
-(* Information about existential variables. *)
+(** Information about existential variables. *)
 type evar = existential_key
 
 val string_of_existential : evar -> string
@@ -122,7 +117,8 @@ type evar_info = {
   evar_body : evar_body;
   evar_filter : bool list;
   evar_source : hole_kind located;
-  evar_extra : Dyn.t option}
+  evar_candidates : constr list option;
+  evar_extra : Store.t }
 
 val eq_evar_info : evar_info -> evar_info -> bool
 
@@ -139,33 +135,42 @@ val evar_env :  evar_info -> env
 (*** Unification state ***)
 type evar_map
 
-(* Unification state and existential variables *)
+(** Unification state and existential variables *)
 
-(* Assuming that the second map extends the first one, this says if
+(** Assuming that the second map extends the first one, this says if
    some existing evar has been refined *)
 val progress_evar_map : evar_map -> evar_map -> bool
 
 val empty : evar_map
 val is_empty : evar_map -> bool
+(** [has_undefined sigma] is [true] if and only if
+    there are uninstantiated evars in [sigma]. *)
+val has_undefined : evar_map -> bool
 
+(** [add sigma ev info] adds [ev] with evar info [info] in sigma.
+    Precondition: ev must not preexist in [sigma]. *)
 val add : evar_map -> evar -> evar_info -> evar_map
 
-val dom : evar_map -> evar list
 val find : evar_map -> evar -> evar_info
+val find_undefined : evar_map -> evar -> evar_info
 val remove : evar_map -> evar -> evar_map
 val mem : evar_map -> evar -> bool
+val undefined_list : evar_map -> (evar * evar_info) list
 val to_list : evar_map -> (evar * evar_info) list
 val fold : (evar -> evar_info -> 'a -> 'a) -> evar_map -> 'a -> 'a
-
+val fold_undefined : (evar -> evar_info -> 'a -> 'a) -> evar_map -> 'a -> 'a
 val merge : evar_map -> evar_map -> evar_map
-
 val define : evar -> constr -> evar_map -> evar_map
 
 val is_evar : evar_map -> evar -> bool
 
 val is_defined : evar_map -> evar -> bool
+val is_undefined : evar_map -> evar -> bool
 
-(*s [existential_value sigma ev] raises [NotInstantiatedEvar] if [ev] has
+val add_constraints : evar_map -> Univ.constraints -> evar_map
+
+(** {6 ... } *)
+(** [existential_value sigma ev] raises [NotInstantiatedEvar] if [ev] has
     no body and [Not_found] if it does not exist in [sigma] *)
 
 exception NotInstantiatedEvar
@@ -173,10 +178,12 @@ val existential_value : evar_map -> existential -> constr
 val existential_type : evar_map -> existential -> types
 val existential_opt_value : evar_map -> existential -> constr option
 
-(* Assume empty universe constraints in [evar_map] and [conv_pbs] *)
+val instantiate_evar : named_context -> constr -> constr list -> constr
+
+(** Assume empty universe constraints in [evar_map] and [conv_pbs] *)
 val subst_evar_defs_light : substitution -> evar_map -> evar_map
 
-(* spiwack: this function seems to somewhat break the abstraction. *)
+(** spiwack: this function seems to somewhat break the abstraction. *)
 val evars_reset_evd  : ?with_conv_pbs:bool -> evar_map ->  evar_map -> evar_map
 
 
@@ -184,34 +191,41 @@ val evars_reset_evd  : ?with_conv_pbs:bool -> evar_map ->  evar_map -> evar_map
                    for moving to evarutils *)
 val is_undefined_evar :  evar_map -> constr -> bool
 val undefined_evars : evar_map -> evar_map
+val defined_evars : evar_map -> evar_map
+(* [fold_undefined f m] iterates ("folds") function [f] over the undefined
+    evars (that is, whose value is [Evar_empty]) of map [m].
+    It optimizes the call of {!Evd.fold} to [f] and [undefined_evars m] *)
+val fold_undefined : (evar -> evar_info -> 'a -> 'a) -> evar_map -> 'a -> 'a
 val evar_declare :
   named_context_val -> evar -> types -> ?src:loc * hole_kind ->
-      ?filter:bool list -> evar_map -> evar_map
-val evar_source : existential_key -> evar_map -> loc * hole_kind
+      ?filter:bool list -> ?candidates:constr list -> evar_map -> evar_map
+val evar_source : existential_key -> evar_map -> hole_kind located
 
-(* spiwack: this function seems to somewhat break the abstraction. *)
-(* [evar_merge evd ev1] extends the evars of [evd] with [evd1] *)
+(* spiwack: this function seems to somewhat break the abstraction. 
+   [evar_merge evd ev1] extends the evars of [evd] with [evd1] *)
 val evar_merge : evar_map -> evar_map -> evar_map
 
-val evar_list : evar_map -> constr -> existential list
-
-(* Unification constraints *)
+(** Unification constraints *)
 type conv_pb = Reduction.conv_pb
 type evar_constraint = conv_pb * env * constr * constr
 val add_conv_pb :  evar_constraint -> evar_map -> evar_map
 
+module ExistentialMap : Map.S with type key = existential_key
 module ExistentialSet : Set.S with type elt = existential_key
 val extract_changed_conv_pbs : evar_map ->
       (ExistentialSet.t -> evar_constraint -> bool) ->
       evar_map * evar_constraint list
 val extract_all_conv_pbs : evar_map -> evar_map * evar_constraint list
 
+val evar_list : evar_map -> constr -> existential list
+val collect_evars : constr -> ExistentialSet.t
 
-(* Metas *)
+(** Metas *)
 val find_meta : evar_map -> metavariable -> clbinding
 val meta_list : evar_map -> (metavariable * clbinding) list
 val meta_defined : evar_map -> metavariable -> bool
-(* [meta_fvalue] raises [Not_found] if meta not in map or [Anomaly] if
+
+(** [meta_fvalue] raises [Not_found] if meta not in map or [Anomaly] if
    meta has no value *)
 val meta_value     : evar_map -> metavariable -> constr
 val meta_fvalue    : evar_map -> metavariable -> constr freelisted * instance_status
@@ -225,7 +239,7 @@ val meta_declare   :
 val meta_assign    : metavariable -> constr * instance_status -> evar_map -> evar_map
 val meta_reassign  : metavariable -> constr * instance_status -> evar_map -> evar_map
 
-(* [meta_merge evd1 evd2] returns [evd2] extended with the metas of [evd1] *)
+(** [meta_merge evd1 evd2] returns [evd2] extended with the metas of [evd1] *)
 val meta_merge : evar_map -> evar_map -> evar_map
 
 val undefined_metas : evar_map -> metavariable list
@@ -237,21 +251,22 @@ type metabinding = metavariable * constr * instance_status
 val retract_coercible_metas : evar_map -> metabinding list * evar_map
 val subst_defined_metas : metabinding list -> constr -> constr option
 
-(**********************************************************)
-(* Sort variables *)
+(*********************************************************
+   Sort variables *)
 
-val new_sort_variable : evar_map -> sorts * evar_map
+val new_univ_variable : evar_map -> evar_map * Univ.universe
+val new_sort_variable : evar_map -> evar_map * sorts
 val is_sort_variable : evar_map -> sorts -> bool
 val whd_sort_variable : evar_map -> constr -> constr
-val set_leq_sort_variable : evar_map -> sorts -> sorts -> evar_map
-val define_sort_variable : evar_map -> sorts -> sorts -> evar_map
+val set_leq_sort : evar_map -> sorts -> sorts -> evar_map
+val set_eq_sort : evar_map -> sorts -> sorts -> evar_map
 
-(*********************************************************************)
-(* constr with holes *)
+(********************************************************************
+   constr with holes *)
 type open_constr = evar_map * constr
 
-(*********************************************************************)
-(* The type constructor ['a sigma] adds an evar map to an object of
+(********************************************************************
+   The type constructor ['a sigma] adds an evar map to an object of
   type ['a] *)
 type 'a sigma = {
   it : 'a ;
@@ -260,22 +275,22 @@ type 'a sigma = {
 val sig_it  : 'a sigma -> 'a
 val sig_sig : 'a sigma -> evar_map
 
-(**********************************************************)
-(* Failure explanation *)
+(*********************************************************
+   Failure explanation *)
 
 type unsolvability_explanation = SeveralInstancesFound of int
 
-(*********************************************************************)
-(* debug pretty-printer: *)
+(********************************************************************
+   debug pretty-printer: *)
 
 val pr_evar_info : evar_info -> Pp.std_ppcmds
-val pr_evar_map : evar_map -> Pp.std_ppcmds
-val pr_sort_constraints : evar_map -> Pp.std_ppcmds
+val pr_evar_map_constraints : evar_map -> Pp.std_ppcmds
+val pr_evar_map : int option -> evar_map -> Pp.std_ppcmds
 val pr_metaset : Metaset.t -> Pp.std_ppcmds
 
 
-(*** /!\Deprecated /!\ ***)
-(* create an [evar_map] with empty meta map: *)
+(*** /!\Deprecated /!\ **
+   create an [evar_map] with empty meta map: *)
 val create_evar_defs      : evar_map -> evar_map
 val create_goal_evar_defs : evar_map -> evar_map
 val is_defined_evar :  evar_map -> existential -> bool

@@ -6,7 +6,7 @@ open Libobject
 open Pattern
 open Matching
 open Pp
-open Rawterm
+open Glob_term
 open Sign
 open Tacred
 open Util
@@ -21,7 +21,6 @@ open Tacmach
 open Tactic_debug
 open Topconstr
 open Term
-open Termops
 open Tacexpr
 open Safe_typing
 open Typing
@@ -53,7 +52,7 @@ let evar_nf isevars c =
   Evarutil.nf_evar !isevars c
 
 let interp_gen kind isevars env
-               ?(impls=[]) ?(allow_patvar=false) ?(ltacvars=([],[]))
+               ?(impls=Constrintern.empty_internalization_env) ?(allow_patvar=false) ?(ltacvars=([],[]))
                c =
   let c' = Constrintern.intern_gen (kind=IsType) ~impls ~allow_patvar ~ltacvars ( !isevars) env c in
   let c' = SPretyping.understand_tcc_evars isevars env kind c' in
@@ -62,13 +61,13 @@ let interp_gen kind isevars env
 let interp_constr isevars env c =
   interp_gen (OfType None) isevars env c
 
-let interp_type_evars isevars env ?(impls=[]) c =
+let interp_type_evars isevars env ?(impls=Constrintern.empty_internalization_env) c =
   interp_gen IsType isevars env ~impls c
 
-let interp_casted_constr isevars env ?(impls=[]) c typ =
+let interp_casted_constr isevars env ?(impls=Constrintern.empty_internalization_env) c typ =
   interp_gen (OfType (Some typ)) isevars env ~impls c
 
-let interp_casted_constr_evars isevars env ?(impls=[]) c typ =
+let interp_casted_constr_evars isevars env ?(impls=Constrintern.empty_internalization_env) c typ =
   interp_gen (OfType (Some typ)) isevars env ~impls c
 
 let interp_open_constr isevars env c =
@@ -85,25 +84,25 @@ let interp_constr_judgment isevars env c =
     { uj_val = evar_nf isevars j.uj_val; uj_type = evar_nf isevars j.uj_type }
 
 let locate_if_isevar loc na = function
-  | RHole _ ->
+  | GHole _ ->
       (try match na with
-	| Name id ->  Reserve.find_reserved_type id
+	| Name id -> glob_constr_of_aconstr loc (Reserve.find_reserved_type id)
 	| Anonymous -> raise Not_found
-      with Not_found -> RHole (loc, Evd.BinderType na))
+      with Not_found -> GHole (loc, Evd.BinderType na))
   | x -> x
 
 let interp_binder sigma env na t =
   let t = Constrintern.intern_gen true ( !sigma) env t in
-    SPretyping.understand_tcc_evars sigma env IsType (locate_if_isevar (loc_of_rawconstr t) na t)
+    SPretyping.understand_tcc_evars sigma env IsType (locate_if_isevar (loc_of_glob_constr t) na t)
 
 let interp_context_evars evdref env params =
-  let bl = Constrintern.intern_context false ( !evdref) env params in
+  let int_env, bl = Constrintern.intern_context false !evdref env Constrintern.empty_internalization_env params in
   let (env, par, _, impls) =
     List.fold_left
       (fun (env,params,n,impls) (na, k, b, t) ->
 	match b with
 	    None ->
-	      let t' = locate_if_isevar (loc_of_rawconstr t) na t in
+	      let t' = locate_if_isevar (loc_of_glob_constr t) na t in
 	      let t = SPretyping.understand_tcc_evars evdref env IsType t' in
 	      let d = (na,None,t) in
 	      let impls =
@@ -133,7 +132,7 @@ let collect_non_rec env =
       let i =
         list_try_find_i
           (fun i f ->
-             if List.for_all (fun (_, def) -> not (occur_var env f def)) ldefrec
+             if List.for_all (fun (_, def) -> not (Termops.occur_var env f def)) ldefrec
              then i else failwith "try_find_i")
           0 lnamerec
       in
@@ -184,11 +183,11 @@ let sigT = Lazy.lazy_from_fun build_sigma_type
 let sigT_info = lazy
   { ci_ind       = destInd (Lazy.force sigT).typ;
     ci_npar      = 2;
-    ci_cstr_nargs = [|2|];
+    ci_cstr_ndecls = [|2|];
     ci_pp_info   =  { ind_nargs = 0; style = LetStyle }
   }
 
-let telescope = function
+let rec telescope = function
   | [] -> assert false
   | [(n, None, t)] -> t, [n, Some (mkRel 1), t], mkRel 1
   | (n, None, t) :: tl ->
@@ -209,13 +208,14 @@ let telescope = function
 	(List.rev tys) tl (mkRel 1, [])
       in ty, ((n, Some last, t) :: subst), constr
 
-  | _ -> raise (Invalid_argument "telescope")
+  | (n, Some b, t) :: tl -> let ty, subst, term = telescope tl in
+      ty, ((n, Some b, t) :: subst), lift 1 term
 
 let nf_evar_context isevars ctx =
   List.map (fun (n, b, t) ->
     (n, Option.map (Evarutil.nf_evar isevars) b, Evarutil.nf_evar isevars t)) ctx
 
-let build_wellfounded (recname,n,bl,arityc,body) r measure notation boxed =
+let build_wellfounded (recname,n,bl,arityc,body) r measure notation =
   Coqlib.check_required_library ["Coq";"Program";"Wf"];
   let sigma = Evd.empty in
   let isevars = ref (Evd.create_evar_defs sigma) in
@@ -300,11 +300,11 @@ let build_wellfounded (recname,n,bl,arityc,body) r measure notation boxed =
       Constrintern.compute_internalization_data env
 	Constrintern.Recursive full_arity impls 
     in
-    let newimpls = [(recname, (r, l, impls @ 
-      [Some (id_of_string "recproof", Impargs.Manual, (true, false))], 
-			      scopes @ [None]))] in
-    interp_casted_constr isevars ~impls:newimpls
-      (push_rel_context ctx env) body (lift 1 top_arity)
+    let newimpls = Idmap.singleton recname
+      (r, l, impls @ [(Some (id_of_string "recproof", Impargs.Manual, (true, false)))],
+       scopes @ [None]) in
+      interp_casted_constr isevars ~impls:newimpls
+	(push_rel_context ctx env) body (lift 1 top_arity)
   in
   let intern_body_lam = it_mkLambda_or_LetIn intern_body (curry_fun :: lift_lets @ fun_bl) in
   let prop = mkLambda (Name argname, argtyp, top_arity_let) in
@@ -325,10 +325,10 @@ let build_wellfounded (recname,n,bl,arityc,body) r measure notation boxed =
 	let body = it_mkLambda_or_LetIn (mkApp (constr_of_global gr, [|make|])) binders_rel in
 	let ty = it_mkProd_or_LetIn top_arity binders_rel in
 	let ce =
-	  { const_entry_body = Evarutil.nf_evar !isevars body;
+          { const_entry_body = Evarutil.nf_evar !isevars body;
+            const_entry_secctx = None;
 	    const_entry_type = Some ty;
-	    const_entry_opaque = false;
-	    const_entry_boxed = false} 
+	    const_entry_opaque = false }
 	in 
 	let c = Declare.declare_constant recname (DefinitionEntry ce, IsDefinition Definition) in
 	let gr = ConstRef c in
@@ -380,9 +380,16 @@ let rec unfold f b =
     | Some (x, b') -> x :: unfold f b'
     | None -> []
 
+
+let find_annot loc id ctx = 
+  try rel_index id ctx
+  with Not_found -> 
+  user_err_loc(loc,"",
+	       str "No parameter named " ++ Nameops.pr_id id ++ str".")
+
 let compute_possible_guardness_evidences (n,_) (_, fixctx) fixtype =
   match n with
-  | Some (loc, n) -> [rel_index n fixctx]
+  | Some (loc, id) -> [find_annot loc id fixctx]
   | None ->
       (* If recursive argument was not given by user, we try all args.
 	 An earlier approach was to look only for inductive arguments,
@@ -417,7 +424,7 @@ let out_def = function
   | Some def -> def
   | None -> error "Program Fixpoint needs defined bodies."
 
-let interp_recursive fixkind l boxed =
+let interp_recursive fixkind l =
   let env = Global.env() in
   let fixl, ntnl = List.split l in
   let kind = fixkind <> IsCoFixpoint in
@@ -458,7 +465,7 @@ let interp_recursive fixkind l boxed =
   (* Instantiate evars and check all are resolved *)
   let evd = Evarconv.consider_remaining_unif_problems env_rec !evdref in
   let evd = Typeclasses.resolve_typeclasses
-    ~onlyargs:true ~split:true ~fail:false env_rec evd
+    ~filter:Typeclasses.no_goals ~split:true ~fail:false env_rec evd
   in
   let evd = Evarutil.nf_evar_map evd in
   let fixdefs = List.map (nf_evar evd) fixdefs in
@@ -506,7 +513,7 @@ let out_n = function
     Some n -> n
   | None -> raise Not_found
 
-let build_recursive l b =
+let build_recursive l =
   let g = List.map (fun ((_,wf,_,_,_),_) -> wf) l in
     match g, l with
 	[(n, CWfRec r)], [(((_,id),_,bl,typ,def),ntn)] ->
@@ -514,24 +521,24 @@ let build_recursive l b =
 		    (match n with Some n -> mkIdentC (snd n) | None ->
 		      errorlabstrm "Subtac_command.build_recursive"
 			(str "Recursive argument required for well-founded fixpoints"))
-		    ntn false)
+		    ntn)
 
       | [(n, CMeasureRec (m, r))], [(((_,id),_,bl,typ,def),ntn)] ->
 	  ignore(build_wellfounded (id, n, bl, typ, out_def def) (Option.default (CRef lt_ref) r)
-		    m ntn false)
+		    m ntn)
 
       | _, _ when List.for_all (fun (n, ro) -> ro = CStructRec) g ->
 	  let fixl = List.map (fun (((_,id),(n,ro),bl,typ,def),ntn) ->
 	    ({Command.fix_name = id; Command.fix_binders = bl; Command.fix_annot = n;
 	      Command.fix_body = def; Command.fix_type = typ},ntn)) l
-	  in interp_recursive (IsFixpoint g) fixl b
+	  in interp_recursive (IsFixpoint g) fixl
       | _, _ ->
 	  errorlabstrm "Subtac_command.build_recursive"
 	    (str "Well-founded fixpoints not allowed in mutually recursive blocks")
 
-let build_corecursive l b =
+let build_corecursive l =
   let fixl = List.map (fun (((_,id),bl,typ,def),ntn) ->
     ({Command.fix_name = id; Command.fix_binders = bl; Command.fix_annot = None;
       Command.fix_body = def; Command.fix_type = typ},ntn))
     l in
-  interp_recursive IsCoFixpoint fixl b
+  interp_recursive IsCoFixpoint fixl

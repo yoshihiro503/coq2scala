@@ -1,13 +1,10 @@
-(* -*- compile-command: "make -C ../.. bin/coqdoc" -*- *)
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: main.ml 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (* Modified by Lionel Elie Mamane <lionel@mamane.lu> on 9 & 10 Mar 2004:
  *  - handling of absolute filenames (function coq_module)
@@ -53,6 +50,7 @@ let usage () =
   prerr_endline "  -p <string>          insert <string> in LaTeX preamble";
   prerr_endline "  --files-from <file>  read file names to process in <file>";
   prerr_endline "  --glob-from <file>   read globalization information from <file>";
+  prerr_endline "  --no-glob            don't use any globalization information (no links will be inserted at identifiers)";
   prerr_endline "  --quiet              quiet mode (default)";
   prerr_endline "  --verbose            verbose mode";
   prerr_endline "  --no-externals       no links to Coq standard library";
@@ -73,6 +71,7 @@ let usage () =
   prerr_endline "  --no-lib-name        don't display \"Library\" before library names in the toc";
   prerr_endline "  --lib-name <string>  call top level toc entries <string> instead of \"Library\"";
   prerr_endline "  --lib-subtitles      first line comments of the form (** * ModuleName : text *) will be interpreted as subtitles";
+  prerr_endline "  --inline-notmono     use a proportional width font for inline code (possibly with a different color)";
   prerr_endline "";
   exit 1
 
@@ -107,25 +106,6 @@ let check_if_file_exists f =
   end
 
 
-(*s Manipulations of paths and path aliases *)
-
-let normalize_path p =
-  (* We use the Unix subsystem to normalize a physical path (relative
-     or absolute) and get rid of symbolic links, relative links (like
-     ./ or ../ in the middle of the path; it's tricky but it
-     works... *)
-  (* Rq: Sys.getcwd () returns paths without '/' at the end *)
-  let orig = Sys.getcwd () in
-  Sys.chdir p;
-  let res = Sys.getcwd () in
-  Sys.chdir orig;
-  res
-
-let normalize_filename f =
-  let basename = Filename.basename f in
-  let dirname = Filename.dirname f in
-  normalize_path dirname, basename
-
 (* [paths] maps a physical path to a name *)
 let paths = ref []
 
@@ -135,7 +115,7 @@ let add_path dir name =
 
 (* turn A/B/C into A.B.C *)
 let rec name_of_path p name dirname suffix =
-  if p = dirname then String.concat "." (name::suffix)
+  if p = dirname then String.concat "." (if name = "" then suffix else (name::suffix))
   else
     let subdir = Filename.dirname dirname in
     if subdir = dirname then raise Not_found
@@ -303,6 +283,9 @@ let parse () =
     | ("-lib-subtitles" | "--lib-subtitles") :: rem ->
       Cdglobals.lib_subtitles := true;
       parse_rec rem
+    | ("-inline-notmono" | "--inline-notmono") :: rem ->
+      Cdglobals.inline_notmono := true;
+      parse_rec rem
 
     | ("-latin1" | "--latin1") :: rem ->
 	Cdglobals.set_latin1 (); parse_rec rem
@@ -341,6 +324,8 @@ let parse () =
 	glob_source := GlobFile f; parse_rec rem
     | ("-glob-from" | "--glob-from") :: [] ->
 	usage ()
+    | ("-no-glob" | "--no-glob") :: rem ->
+	glob_source := NoGlob; parse_rec rem
     | ("--no-externals" | "-no-externals" | "-noexternals") :: rem ->
 	Cdglobals.externals := false; parse_rec rem
     | ("--external" | "-external") :: u :: logicalpath :: rem ->
@@ -350,7 +335,11 @@ let parse () =
     | ("--coqlib" | "-coqlib") :: [] ->
 	usage ()
     | ("--boot" | "-boot") :: rem ->
-	Cdglobals.coqlib_path := Coq_config.coqsrc; parse_rec rem
+	Cdglobals.coqlib_path := normalize_path (
+          Filename.concat
+            (Filename.dirname Sys.executable_name)
+            Filename.parent_dir_name
+        ); parse_rec rem
     | ("--coqlib_path" | "-coqlib_path") :: d :: rem ->
 	Cdglobals.coqlib_path := d; parse_rec rem
     | ("--coqlib_path" | "-coqlib_path") :: [] ->
@@ -458,13 +447,13 @@ let gen_mult_files l =
     end
       (* Rq: pour latex et texmacs, une toc ou un index séparé n'a pas de sens... *)
 
-let read_glob_file x =
-  try Index.read_glob x
-  with Sys_error s ->
-    eprintf "Warning: %s (links will not be available)\n" s
+let read_glob_file vfile f =
+  try Index.read_glob vfile f
+  with Sys_error s -> eprintf "Warning: %s (links will not be available)\n" s
 
 let read_glob_file_of = function
-  | Vernac_file (f,_) -> read_glob_file (Filename.chop_extension f ^ ".glob")
+  | Vernac_file (f,_) ->
+      read_glob_file (Some f) (Filename.chop_extension f ^ ".glob")
   | Latex_file _ -> ()
 
 let index_module = function
@@ -486,7 +475,7 @@ let produce_document l =
   (match !Cdglobals.glob_source with
     | NoGlob -> ()
     | DotGlob -> List.iter read_glob_file_of l
-    | GlobFile f -> read_glob_file f);
+    | GlobFile f -> read_glob_file None f);
   List.iter index_module l;
   match !out_to with
     | StdOut ->

@@ -1,19 +1,16 @@
-(* -*- compile-command: "make -C ../.. plugins/subtac/subtac_plugin.cma" -*- *)
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: subtac_classes.ml 13516 2010-10-07 19:09:38Z msozeau $ i*)
-
 open Pretyping
 open Evd
 open Environ
 open Term
-open Rawterm
+open Glob_term
 open Topconstr
 open Names
 open Libnames
@@ -23,24 +20,28 @@ open Constrintern
 open Subtac_command
 open Typeclasses
 open Typeclasses_errors
-open Termops
 open Decl_kinds
 open Entries
 open Util
 
 module SPretyping = Subtac_pretyping.Pretyping
 
-let interp_constr_evars_gen evdref env ?(impls=[]) kind c =
+let interp_constr_evars_gen evdref env ?(impls=Constrintern.empty_internalization_env) kind c =
   SPretyping.understand_tcc_evars evdref env kind
-    (intern_gen (kind=IsType) ~impls ( !evdref) env c)
+    (intern_gen (kind=IsType) ~impls !evdref env c)
 
-let interp_casted_constr_evars evdref env ?(impls=[]) c typ =
+let interp_casted_constr_evars evdref env ?(impls=Constrintern.empty_internalization_env) c typ =
   interp_constr_evars_gen evdref env ~impls (OfType (Some typ)) c
 
 let interp_context_evars evdref env params =
-  Constrintern.interp_context_gen
+  let impls_env, bl = Constrintern.interp_context_gen
     (fun env t -> SPretyping.understand_tcc_evars evdref env IsType t)
-    (SPretyping.understand_judgment_tcc evdref) !evdref env params
+    (SPretyping.understand_judgment_tcc evdref) !evdref env params in bl
+
+let interp_type_evars_impls ~evdref ?(impls=empty_internalization_env) env c =
+  let c = intern_gen true ~impls !evdref env c in
+  let imps = Implicit_quantifiers.implicits_of_glob_constr ~with_products:true c in
+    SPretyping.understand_tcc_evars ~fail_evar:false evdref env IsType c, imps
 
 let type_ctx_instance evars env ctx inst subst =
   let rec aux (subst, instctx) l = function
@@ -51,7 +52,7 @@ let type_ctx_instance evars env ctx inst subst =
 	| None -> interp_casted_constr_evars evars env (List.hd l) t', List.tl l
 	| Some b -> substl subst b, l
       in
-       evars := resolve_typeclasses ~onlyargs:true ~fail:true env !evars;
+       evars := resolve_typeclasses ~filter:Subtac_utils.no_goals_or_obligations ~fail:true env !evars;
        let d = na, Some c', t' in
 	aux (c' :: subst, d :: instctx) l ctx
     | [] -> subst
@@ -106,18 +107,20 @@ let new_instance ?(global=false) ctx (instid, bk, cl) props ?(generalize=true) p
 	let i = Nameops.add_suffix (Classes.id_of_class k) "_instance_0" in
 	  Namegen.next_global_ident_away i (Termops.ids_of_context env)
   in
+  evars := resolve_typeclasses ~filter:Subtac_utils.no_goals_or_obligations ~fail:true env !evars;  
+  let ctx = Evarutil.nf_rel_context_evar !evars ctx 
+  and ctx' = Evarutil.nf_rel_context_evar !evars ctx' in
   let env' = push_rel_context ctx env in
-  evars := Evarutil.nf_evar_map !evars;
-  evars := resolve_typeclasses ~onlyargs:false ~fail:true env !evars;
   let sigma =  !evars in
   let subst = List.map (Evarutil.nf_evar sigma) subst in
   let props =
     match props with
-    | CRecord (loc, _, fs) ->
+    | Some (CRecord (loc, _, fs)) ->
 	if List.length fs > List.length k.cl_props then
 	  Classes.mismatched_props env' (List.map snd fs) k.cl_props;
 	Inl fs
-    | _ -> Inr props
+    | Some p -> Inr p
+    | None -> Inl []
   in
   let subst =
     match props with
@@ -138,7 +141,11 @@ let new_instance ?(global=false) ctx (instid, bk, cl) props ?(generalize=true) p
 		  let (loc_mid, c) = List.find (fun (id', _) -> Name (snd (get_id id')) = id) rest in
 		  let rest' = List.filter (fun (id', _) -> Name (snd (get_id id')) <> id) rest in
 		  let (loc, mid) = get_id loc_mid in
-		    Option.iter (fun x -> Dumpglob.add_glob loc (ConstRef x)) (List.assoc mid k.cl_projs);
+		    List.iter 
+		      (fun (n, _, x) -> 
+			 if n = Name mid then
+			   Option.iter (fun x -> Dumpglob.add_glob loc (ConstRef x)) x)
+		      k.cl_projs;
 		    c :: props, rest'
 		with Not_found ->
 		  (CHole (Util.dummy_loc, None) :: props), rest
@@ -151,6 +158,8 @@ let new_instance ?(global=false) ctx (instid, bk, cl) props ?(generalize=true) p
 	    Inl (type_ctx_instance evars (push_rel_context ctx' env') k.cl_props props subst)
   in	  
   evars := Evarutil.nf_evar_map !evars;
+  evars := resolve_typeclasses ~filter:Subtac_utils.no_goals_or_obligations ~fail:true env !evars;
+  evars := resolve_typeclasses ~filter:Typeclasses.no_goals ~fail:false env !evars;
   let term, termtype =
     match subst with
     | Inl subst ->
@@ -160,7 +169,7 @@ let new_instance ?(global=false) ctx (instid, bk, cl) props ?(generalize=true) p
 	in
 	let app, ty_constr = instance_constructor k subst in
 	let termtype = it_mkProd_or_LetIn ty_constr (ctx' @ ctx) in
-	let term = Termops.it_mkLambda_or_LetIn app (ctx' @ ctx) in
+	let term = Termops.it_mkLambda_or_LetIn (Option.get app) (ctx' @ ctx) in
 	  term, termtype
     | Inr def ->
 	let termtype = it_mkProd_or_LetIn cty ctx in
@@ -173,10 +182,9 @@ let new_instance ?(global=false) ctx (instid, bk, cl) props ?(generalize=true) p
   Evarutil.check_evars env Evd.empty !evars termtype;
   let hook vis gr =
     let cst = match gr with ConstRef kn -> kn | _ -> assert false in
-    let inst = Typeclasses.new_instance k pri global (ConstRef cst) in
       Impargs.declare_manual_implicits false gr ~enriching:false [imps];
-      Typeclasses.add_instance inst
+      Typeclasses.declare_instance pri (not global) (ConstRef cst)
   in
   let evm = Subtac_utils.evars_of_term !evars Evd.empty term in
   let obls, _, constr, typ = Eterm.eterm_obligations env id !evars evm 0 term termtype in
-    id, Subtac_obligations.add_definition id ~term:constr typ ~kind:(Global,false,Instance) ~hook obls
+    id, Subtac_obligations.add_definition id ~term:constr typ ~kind:(Global,Instance) ~hook obls

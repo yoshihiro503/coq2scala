@@ -1,14 +1,11 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: proof_type.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
-(*i*)
 open Environ
 open Evd
 open Names
@@ -16,15 +13,17 @@ open Libnames
 open Term
 open Util
 open Tacexpr
-open Decl_expr
-open Rawterm
+open Glob_term
 open Genarg
 open Nametab
 open Pattern
-(*i*)
 
-(* This module defines the structure of proof tree and the tactic type. So, it
+(** This module defines the structure of proof tree and the tactic type. So, it
    is used by [Proof_tree] and [Refiner] *)
+
+type goal = Goal.goal
+
+type tactic = goal sigma -> goal list sigma
 
 type prim_rule =
   | Intro of identifier
@@ -41,42 +40,39 @@ type prim_rule =
   | Rename of identifier * identifier
   | Change_evars
 
-(* The type [goal sigma] is the type of subgoal. It has the following form
-\begin{verbatim}
-   it    = { evar_concl = [the conclusion of the subgoal]
+(** The type [goal sigma] is the type of subgoal. It has the following form
+{v   it    = \{ evar_concl = [the conclusion of the subgoal]
              evar_hyps = [the hypotheses of the subgoal]
              evar_body = Evar_Empty;
-             evar_info = { pgm    : [The Realizer pgm if any]
-                           lc     : [Set of evar num occurring in subgoal] }}
-   sigma = { stamp = [an int chardacterizing the ed field, for quick compare]
+             evar_info = \{ pgm    : [The Realizer pgm if any]
+                           lc     : [Set of evar num occurring in subgoal] \}\}
+   sigma = \{ stamp = [an int chardacterizing the ed field, for quick compare]
              ed : [A set of existential variables depending in the subgoal]
                number of first evar,
-               it = { evar_concl = [the type of first evar]
+               it = \{ evar_concl = [the type of first evar]
                       evar_hyps = [the context of the evar]
                       evar_body = [the body of the Evar if any]
-                      evar_info = { pgm    : [Useless ??]
+                      evar_info = \{ pgm    : [Useless ??]
                                     lc     : [Set of evars occurring
-                                              in the type of evar] } };
+                                              in the type of evar] \} \};
                ...
                number of last evar,
-               it = { evar_concl = [the type of evar]
+               it = \{ evar_concl = [the type of evar]
                       evar_hyps = [the context of the evar]
                       evar_body = [the body of the Evar if any]
-                      evar_info = { pgm    : [Useless ??]
+                      evar_info = \{ pgm    : [Useless ??]
                                     lc     : [Set of evars occurring
-                                              in the type of evar] } } }
-   }
-\end{verbatim}
+                                              in the type of evar] \} \} \} v}
 *)
 
-(*s Proof trees.
+(** {6 ... } *)
+(** Proof trees.
   [ref] = [None] if the goal has still to be proved,
   and [Some (r,l)] if the rule [r] was applied to the goal
   and gave [l] as subproofs to be completed.
   if [ref = (Some(Nested(Tactic t,p),l))] then [p] is the proof
   that the goal can be proven if the goals in [l] are solved. *)
 type proof_tree = {
-  open_subgoals : int;
   goal : goal;
   ref : (rule * proof_tree list) option }
 
@@ -87,15 +83,8 @@ and rule =
   | Daimon
 
 and compound_rule=
-  (* the boolean of Tactic tells if the default tactic is used *)
+  (** the boolean of Tactic tells if the default tactic is used *)
   | Tactic of tactic_expr * bool
-  | Proof_instr of bool * proof_instr
-
-and goal = evar_info
-
-and tactic = goal sigma -> (goal list sigma * validation)
-
-and validation = (proof_tree list -> proof_tree)
 
 and tactic_expr =
   (constr,
@@ -135,7 +124,7 @@ type ltac_call_kind =
   | LtacNameCall of ltac_constant
   | LtacAtomCall of glob_atomic_tactic_expr * atomic_tactic_expr option ref
   | LtacVarCall of identifier * glob_tactic_expr
-  | LtacConstrInterp of rawconstr *
+  | LtacConstrInterp of glob_constr *
       (extended_patvar_map * (identifier * identifier option) list)
 
 type ltac_trace = (int * loc * ltac_call_kind) list

@@ -74,6 +74,8 @@ and conv_whd pb k whd1 whd2 cu =
       else raise NotConvertible
   | Vatom_stk(a1,stk1), Vatom_stk(a2,stk2) ->
       conv_atom pb k a1 stk1 a2 stk2 cu
+  | Vfun _, _ | _, Vfun _ ->
+      conv_val CONV (k+1) (eta_whd k whd1) (eta_whd k whd2) cu
   | _, Vatom_stk(Aiddef(_,v),stk) ->
       conv_whd pb k whd1 (force_whd v stk) cu
   | Vatom_stk(Aiddef(_,v),stk), _ ->
@@ -98,7 +100,7 @@ and conv_atom pb k a1 stk1 a2 stk2 cu =
 	    conv_stack k stk1 stk2 cu
 	  else raise NotConvertible
 	with NotConvertible ->
-	  if oracle_order ik1 ik2 then
+	  if oracle_order false ik1 ik2 then
             conv_whd pb k (whd_stack v1 stk1) (Vatom_stk(a2,stk2)) cu
           else conv_whd pb k (Vatom_stk(a1,stk1)) (whd_stack v2 stk2) cu
       end
@@ -219,12 +221,12 @@ and conv_eq_vect vt1 vt2 cu =
 
 let vconv pb env t1 t2 =
   let cu =
-    try conv_eq pb t1 t2 Constraint.empty
+    try conv_eq pb t1 t2 empty_constraint
     with NotConvertible ->
       infos := create_clos_infos betaiotazeta env;
       let v1 = val_of_constr env t1 in
       let v2 = val_of_constr env t2 in
-      let cu = conv_val pb (nb_rel env) v1 v2 Constraint.empty in
+      let cu = conv_val pb (nb_rel env) v1 v2 empty_constraint in
       cu
   in cu
 
@@ -234,8 +236,8 @@ let use_vm = ref false
 
 let set_use_vm b =
   use_vm := b;
-  if b then Reduction.set_default_conv vconv
-  else Reduction.set_default_conv Reduction.conv_cmp
+  if b then Reduction.set_default_conv (fun cv_pb ?(l2r=false) -> vconv cv_pb)
+  else Reduction.set_default_conv (fun cv_pb ?(l2r=false) -> Reduction.conv_cmp cv_pb)
 
 let use_vm _ = !use_vm
 

@@ -1,12 +1,17 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: retroknowledge.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
+(* Created by Arnaud Spiwack, May 2007 *)
+(* Addition of native Head (nb of heading 0) and Tail (nb of trailing 0) by
+   Benjamin Grégoire, Jun 2007 *)
+
+(* This file defines the knowledge that the kernel is able to optimize
+   for evaluation in the bytecode virtual machine *)
 
 open Term
 open Names

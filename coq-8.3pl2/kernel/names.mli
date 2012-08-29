@@ -1,62 +1,59 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: names.mli 13804 2011-01-27 00:41:34Z letouzey $ i*)
-
-(*s Identifiers *)
+(** {6 Identifiers } *)
 
 type identifier
-type name = Name of identifier | Anonymous
-(* Parsing and printing of identifiers *)
+
+(** Parsing and printing of identifiers *)
 val string_of_id : identifier -> string
 val id_of_string : string -> identifier
 
 val id_ord : identifier -> identifier -> int
 
-(* Identifiers sets and maps *)
+(** Identifiers sets and maps *)
 module Idset  : Set.S with type elt = identifier
 module Idpred : Predicate.S with type elt = identifier
-module Idmap  : Map.S with type key = identifier
+module Idmap  : sig
+  include Map.S with type key = identifier
+  val exists : (identifier -> 'a -> bool) -> 'a t -> bool
+  val singleton : key -> 'a -> 'a t
+end
 
-(*s Directory paths = section names paths *)
+(** {6 Various types based on identifiers } *)
+
+type name = Name of identifier | Anonymous
+type variable = identifier
+
+(** {6 Directory paths = section names paths } *)
+
 type module_ident = identifier
 module ModIdmap : Map.S with type key = module_ident
 
 type dir_path
 
-(* Inner modules idents on top of list (to improve sharing).
+(** Inner modules idents on top of list (to improve sharing).
    For instance: A.B.C is ["C";"B";"A"] *)
 val make_dirpath : module_ident list -> dir_path
 val repr_dirpath : dir_path -> module_ident list
 
 val empty_dirpath : dir_path
 
-(* Printing of directory paths as ["coq_root.module.submodule"] *)
+(** Printing of directory paths as ["coq_root.module.submodule"] *)
 val string_of_dirpath : dir_path -> string
+
+(** {6 Names of structure elements } *)
 
 type label
 
-(*s Unique names for bound modules *)
-type mod_bound_id
-
-(* The first argument is a file name - to prevent conflict between
-   different files *)
-val make_mbid : dir_path -> string -> mod_bound_id
-val repr_mbid : mod_bound_id -> int * string * dir_path
-val id_of_mbid : mod_bound_id -> identifier
-val label_of_mbid : mod_bound_id -> label
-val debug_string_of_mbid : mod_bound_id -> string
-val string_of_mbid : mod_bound_id -> string
-
-(*s Names of structure elements *)
-
 val mk_label : string -> label
 val string_of_label : label -> string
+val pr_label : label -> Pp.std_ppcmds
 
 val label_of_id : identifier -> label
 val id_of_label : label -> identifier
@@ -64,13 +61,25 @@ val id_of_label : label -> identifier
 module Labset : Set.S with type elt = label
 module Labmap : Map.S with type key = label
 
-(*s The module part of the kernel name *)
+(** {6 Unique names for bound modules } *)
+
+type mod_bound_id
+
+(** The first argument is a file name - to prevent conflict between
+   different files *)
+
+val make_mbid : dir_path -> identifier -> mod_bound_id
+val repr_mbid : mod_bound_id -> int * identifier * dir_path
+val id_of_mbid : mod_bound_id -> identifier
+val debug_string_of_mbid : mod_bound_id -> string
+val string_of_mbid : mod_bound_id -> string
+
+(** {6 The module part of the kernel name } *)
+
 type module_path =
   | MPfile of dir_path
   | MPbound of mod_bound_id
- (* | MPapp of module_path * module_path  very soon *)
   | MPdot of module_path * label
-
 
 val check_bound_mp : module_path -> bool
 
@@ -79,17 +88,17 @@ val string_of_mp : module_path -> string
 module MPset : Set.S with type elt = module_path
 module MPmap : Map.S with type key = module_path
 
-(* Initial "seed" of the unique identifier generator *)
+(** Initial "seed" of the unique identifier generator *)
 val initial_dir : dir_path
 
-(* Name of the toplevel structure *)
-val initial_path : module_path (* [= MPfile initial_dir] *)
+(** Name of the toplevel structure *)
+val initial_path : module_path (** [= MPfile initial_dir] *)
 
-(*s The absolute names of objects seen by kernel *)
+(** {6 The absolute names of objects seen by kernel } *)
 
 type kernel_name
 
-(* Constructor and destructor *)
+(** Constructor and destructor *)
 val make_kn : module_path -> dir_path -> label -> kernel_name
 val repr_kn : kernel_name -> module_path * dir_path * label
 
@@ -99,23 +108,25 @@ val label : kernel_name -> label
 val string_of_kn : kernel_name -> string
 val pr_kn : kernel_name -> Pp.std_ppcmds
 
+val kn_ord : kernel_name -> kernel_name -> int
 
 module KNset  : Set.S with type elt = kernel_name
 module KNpred : Predicate.S with type elt = kernel_name
 module KNmap  : Map.S with type key = kernel_name
 
 
-(*s Specific paths for declarations *)
+(** {6 Specific paths for declarations } *)
 
-type variable = identifier
 type constant
 type mutual_inductive
-(* Beware: first inductive has index 0 *)
+
+(** Beware: first inductive has index 0 *)
 type inductive = mutual_inductive * int
-(* Beware: first constructor has index 1 *)
+
+(** Beware: first constructor has index 1 *)
 type constructor = inductive * int
 
-(* *_env modules consider an order on user part of names
+(** *_env modules consider an order on user part of names
    the others consider an order on canonical part of names*)
 module Cmap  : Map.S with type key = constant
 module Cmap_env  : Map.S with type key = constant
@@ -169,7 +180,6 @@ val debug_string_of_mind : mutual_inductive -> string
 
 
 
-val mind_modpath : mutual_inductive -> module_path
 val ind_modpath : inductive -> module_path
 val constr_modpath : constructor -> module_path
 
@@ -180,7 +190,7 @@ val index_of_constructor : constructor -> int
 val eq_ind : inductive -> inductive -> bool
 val eq_constructor : constructor -> constructor -> bool
 
-(* Better to have it here that in Closure, since required in grammar.cma *)
+(** Better to have it here that in Closure, since required in grammar.cma *)
 type evaluable_global_reference =
   | EvalVarRef of identifier
   | EvalConstRef of constant
@@ -188,12 +198,16 @@ type evaluable_global_reference =
 val eq_egr : evaluable_global_reference ->  evaluable_global_reference
   -> bool
 
-(* Hash-consing *)
-val hcons_names : unit ->
-  (constant -> constant) *
-  (mutual_inductive -> mutual_inductive) * (dir_path -> dir_path) *
-  (name -> name) * (identifier -> identifier) * (string -> string)
+(** {6 Hash-consing } *)
 
+val hcons_string : string -> string
+val hcons_ident : identifier -> identifier
+val hcons_name : name -> name
+val hcons_dirpath : dir_path -> dir_path
+val hcons_con : constant -> constant
+val hcons_mind : mutual_inductive -> mutual_inductive
+val hcons_ind : inductive -> inductive
+val hcons_construct : constructor -> constructor
 
 (******)
 
@@ -209,8 +223,8 @@ val full_transparent_state : transparent_state
 val var_full_transparent_state : transparent_state
 val cst_full_transparent_state : transparent_state
 
-type inv_rel_key = int (* index in the [rel_context] part of environment
-			  starting by the end, {\em inverse}
+type inv_rel_key = int (** index in the [rel_context] part of environment
+			  starting by the end, {e inverse}
 			  of de Bruijn indice *)
 
 type id_key = inv_rel_key tableKey

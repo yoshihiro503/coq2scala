@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: ccalgo.mli 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Util
 open Term
@@ -23,6 +21,8 @@ type term =
   | Eps of identifier
   | Appli of term*term
   | Constructor of cinfo (* constructor arity + nhyps *)
+
+val term_equal : term -> term -> bool
 
 type patt_kind =
     Normal
@@ -66,13 +66,16 @@ type explanation =
   | Contradiction of disequality
   | Incomplete
 
+module Constrhash : Hashtbl.S with type key = constr
+module Termhash : Hashtbl.S with type key = term
+
 val constr_of_term : term -> constr
 
 val debug : (Pp.std_ppcmds -> unit) -> Pp.std_ppcmds -> unit
 
 val forest : state -> forest
 
-val axioms : forest -> (constr, term * term) Hashtbl.t
+val axioms : forest -> (term * term) Constrhash.t
 
 val epsilons : forest -> pa_constructor list
 
@@ -127,7 +130,7 @@ val do_match :  state ->
 
 val init_pb_stack : state -> matching_problem Stack.t
 
-val paf_of_patt : (term, int) Hashtbl.t -> ccpattern -> pa_fun
+val paf_of_patt : int Termhash.t -> ccpattern -> pa_fun
 
 val find_instances : state -> (quant_eq * int array) list
 

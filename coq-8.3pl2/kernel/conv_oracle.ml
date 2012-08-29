@@ -1,12 +1,13 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: conv_oracle.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
+(* Created by Bruno Barras as part of the rewriting of the conversion
+   algorithm, Nov 2001 *)
 
 open Names
 
@@ -55,12 +56,12 @@ let get_transp_state () =
 
 (* Unfold the first constant only if it is "more transparent" than the
    second one. In case of tie, expand the second one. *)
-let oracle_order k1 k2 =
+let oracle_order l2r k1 k2 =
   match get_strategy k1, get_strategy k2 with
     | Expand, _ -> true
     | Level n1, Opaque -> true
     | Level n1, Level n2 -> n1 < n2
-    | _ -> false (* expand k2 *)
+    | _ -> l2r (* use recommended default *)
 
 (* summary operations *)
 let init() = (cst_opacity := Cmap.empty; var_opacity := Idmap.empty)

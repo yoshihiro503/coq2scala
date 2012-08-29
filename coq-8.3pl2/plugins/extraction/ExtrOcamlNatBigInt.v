@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,7 +8,7 @@
 
 (** Extraction of [nat] into Ocaml's [big_int] *)
 
-Require Import Arith Even Div2 EqNat MinMax Euclid.
+Require Import Arith Even Div2 EqNat Euclid.
 Require Import ExtrOcamlBasic.
 
 (** NB: The extracted code should be linked with [nums.cm(x)a]
@@ -36,7 +36,7 @@ Extract Constant pred => "fun n -> Big.max Big.zero (Big.pred n)".
 Extract Constant minus => "fun n m -> Big.max Big.zero (Big.sub n m)".
 Extract Constant max => "Big.max".
 Extract Constant min => "Big.min".
-Extract Constant nat_beq => "Big.eq".
+(*Extract Constant nat_beq => "Big.eq".*)
 Extract Constant EqNat.beq_nat => "Big.eq".
 Extract Constant EqNat.eq_nat_decide => "Big.eq".
 

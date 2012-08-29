@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -11,8 +11,6 @@
    Author: Matthieu Sozeau
    Institution: LRI, CNRS UMR 8623 - University Paris Sud
 *)
-
-(* $Id: SetoidClass.v 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -71,7 +69,7 @@ Notation " x =/= y " := (complement equiv x y) (at level 70, no associativity) :
 (** Use the [clsubstitute] command which substitutes an equality in every hypothesis. *)
 
 Ltac clsubst H :=
-  match type of H with
+  lazymatch type of H with
     ?x == ?y => substitute H ; clear H x
   end.
 

@@ -6,8 +6,6 @@
 (*         *       GNU Lesser General Public License Version 2.1       *)
 (***********************************************************************)
 
-(* $Id$ *)
-
 (** * Finite sets library *)
 
 (** This file proposes an implementation of the non-dependant
@@ -664,7 +662,7 @@ Module MakeRaw (X: OrderedType) <: RawSets X.
   Proof.
   induction s; simpl; intros.
   split; intuition; inv.
-  destruct (f a) as [ ]_eqn:F; rewrite !InA_cons, ?IHs; intuition.
+  destruct (f a) eqn:F; rewrite !InA_cons, ?IHs; intuition.
   setoid_replace x with a; auto.
   setoid_replace a with x in F; auto; congruence.
   Qed.
@@ -676,7 +674,7 @@ Module MakeRaw (X: OrderedType) <: RawSets X.
   Proof.
   unfold For_all; induction s; simpl; intros.
   split; intros; auto. inv.
-  destruct (f a) as [ ]_eqn:F.
+  destruct (f a) eqn:F.
   rewrite IHs; auto. firstorder. inv; auto.
   setoid_replace x with a; auto.
   split; intros H'. discriminate.
@@ -690,7 +688,7 @@ Module MakeRaw (X: OrderedType) <: RawSets X.
   Proof.
   unfold Exists; induction s; simpl; intros.
   firstorder. discriminate. inv.
-  destruct (f a) as [ ]_eqn:F.
+  destruct (f a) eqn:F.
   firstorder.
   rewrite IHs; auto.
   firstorder.
@@ -788,8 +786,7 @@ Module MakeRaw (X: OrderedType) <: RawSets X.
   Definition eq := L.eq.
   Definition eq_equiv := L.eq_equiv.
   Definition lt l1 l2 :=
-    exists l1', exists l2', Ok l1' /\ Ok l2' /\
-      eq l1 l1' /\ eq l2 l2' /\ L.lt l1' l2'.
+    exists l1' l2', Ok l1' /\ Ok l2' /\ eq l1 l1' /\ eq l2 l2' /\ L.lt l1' l2'.
 
   Instance lt_strorder : StrictOrder lt.
   Proof.

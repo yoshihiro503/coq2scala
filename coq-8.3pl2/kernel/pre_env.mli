@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: pre_env.mli 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Util
 open Names
@@ -15,7 +13,7 @@ open Univ
 open Term
 open Declarations
 
-(* The type of environments. *)
+(** The type of environments. *)
 
 
 type key = int option ref
@@ -57,25 +55,27 @@ val empty_named_context_val : named_context_val
 
 val empty_env : env
 
-(* Rel context *)
+(** Rel context *)
 
 val nb_rel         : env -> int
 val push_rel       : rel_declaration -> env -> env
 val lookup_rel_val : int -> env -> lazy_val
 val env_of_rel     : int -> env -> env
-(* Named context *)
+
+(** Named context *)
 
 val push_named_context_val  :
     named_declaration -> named_context_val -> named_context_val
 val push_named       : named_declaration -> env -> env
 val lookup_named_val : identifier -> env -> lazy_val
 val env_of_named     : identifier -> env -> env
-(* Global constants *)
+
+(** Global constants *)
 
 
 val lookup_constant_key : constant -> env -> constant_key
 val lookup_constant : constant -> env -> constant_body
 
-(* Mutual Inductives *)
+(** Mutual Inductives *)
 val lookup_mind : mutual_inductive -> env -> mutual_inductive_body
 

@@ -1,40 +1,36 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(** Euclidean Division *)
+Require Import NAxioms NSub NZDiv.
 
-Require Import NAxioms NProperties NZDiv.
+(** Properties of Euclidean Division *)
 
-Module Type NDivSpecific (Import N : NAxiomsSig')(Import DM : DivMod' N).
- Axiom mod_upper_bound : forall a b, b ~= 0 -> a mod b < b.
-End NDivSpecific.
-
-Module Type NDivSig := NAxiomsSig <+ DivMod <+ NZDivCommon <+ NDivSpecific.
-Module Type NDivSig' := NAxiomsSig' <+ DivMod' <+ NZDivCommon <+ NDivSpecific.
-
-Module NDivPropFunct (Import N : NDivSig')(Import NP : NPropSig N).
+Module Type NDivProp (Import N : NAxiomsSig')(Import NP : NSubProp N).
 
 (** We benefit from what already exists for NZ *)
+Module Import Private_NZDiv := Nop <+ NZDivProp N N NP.
 
- Module ND <: NZDiv N.
-  Definition div := div.
-  Definition modulo := modulo.
-  Definition div_wd := div_wd.
-  Definition mod_wd := mod_wd.
-  Definition div_mod := div_mod.
-  Lemma mod_bound : forall a b, 0<=a -> 0<b -> 0 <= a mod b < b.
-  Proof. split. apply le_0_l. apply mod_upper_bound. order. Qed.
- End ND.
- Module Import NZDivP := NZDivPropFunct N NP ND.
-
- Ltac auto' := try rewrite <- neq_0_lt_0; auto using le_0_l.
+Ltac auto' := try rewrite <- neq_0_lt_0; auto using le_0_l.
 
 (** Let's now state again theorems, but without useless hypothesis. *)
+
+Lemma mod_upper_bound : forall a b, b ~= 0 -> a mod b < b.
+Proof. intros. apply mod_bound_pos; auto'. Qed.
+
+(** Another formulation of the main equation *)
+
+Lemma mod_eq :
+ forall a b, b~=0 -> a mod b == a - b*(a/b).
+Proof.
+intros.
+symmetry. apply add_sub_eq_l. symmetry.
+now apply div_mod.
+Qed.
 
 (** Uniqueness theorems *)
 
@@ -50,6 +46,9 @@ Proof. intros; apply div_unique with r; auto'. Qed.
 Theorem mod_unique:
  forall a b q r, r<b -> a == b*q + r -> r == a mod b.
 Proof. intros. apply mod_unique with q; auto'. Qed.
+
+Theorem div_unique_exact: forall a b q, b~=0 -> a == b*q -> q == a/b.
+Proof. intros. apply div_unique_exact; auto'. Qed.
 
 (** A division by itself returns 1 *)
 
@@ -223,6 +222,10 @@ Lemma div_div : forall a b c, b~=0 -> c~=0 ->
  (a/b)/c == a/(b*c).
 Proof. intros. apply div_div; auto'. Qed.
 
+Lemma mod_mul_r : forall a b c, b~=0 -> c~=0 ->
+ a mod (b*c) == a mod b + b*((a/b) mod c).
+Proof. intros. apply mod_mul_r; auto'. Qed.
+
 (** A last inequality: *)
 
 Theorem div_mul_le:
@@ -235,5 +238,4 @@ Lemma mod_divides : forall a b, b~=0 ->
  (a mod b == 0 <-> exists c, a == b*c).
 Proof. intros. apply mod_divides; auto'. Qed.
 
-End NDivPropFunct.
-
+End NDivProp.

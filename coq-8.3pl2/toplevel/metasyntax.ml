@@ -1,15 +1,14 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: metasyntax.ml 13690 2010-12-06 16:15:54Z glondu $ *)
-
 open Pp
 open Flags
+open Compat
 open Util
 open Names
 open Topconstr
@@ -20,8 +19,9 @@ open Summary
 open Constrintern
 open Vernacexpr
 open Pcoq
-open Rawterm
+open Glob_term
 open Libnames
+open Tok
 open Lexer
 open Egrammar
 open Notation
@@ -30,9 +30,9 @@ open Nameops
 (**********************************************************************)
 (* Tokens                                                             *)
 
-let cache_token (_,s) = add_token ("", s)
+let cache_token (_,s) = add_keyword s
 
-let (inToken, outToken) =
+let inToken : string -> obj =
   declare_object {(default_object "TOKEN") with
        open_function = (fun i o -> if i=1 then cache_token o);
        cache_function = cache_token;
@@ -70,7 +70,12 @@ let subst_tactic_parule subst (key,n,p,(d,tac)) =
 let subst_tactic_notation (subst,(pa,pp)) =
   (subst_tactic_parule subst pa,pp)
 
-let (inTacticGrammar, outTacticGrammar) =
+type tactic_grammar_obj =
+    (string * int * grammar_prod_item list *
+       (dir_path * Tacexpr.glob_tactic_expr))
+    * (string * Genarg.argument_type list * (int * Pptactic.grammar_terminals))
+
+let inTacticGrammar : tactic_grammar_obj -> obj =
   declare_object {(default_object "TacticGrammar") with
        open_function = (fun i o -> if i=1 then cache_tactic_notation o);
        cache_function = cache_tactic_notation;
@@ -106,33 +111,33 @@ let add_tactic_notation (n,prods,e) =
 let print_grammar = function
   | "constr" | "operconstr" | "binder_constr" ->
       msgnl (str "Entry constr is");
-      entry_print Pcoq.Constr.constr;
+      Gram.entry_print Pcoq.Constr.constr;
       msgnl (str "and lconstr is");
-      entry_print Pcoq.Constr.lconstr;
+      Gram.entry_print Pcoq.Constr.lconstr;
       msgnl (str "where binder_constr is");
-      entry_print Pcoq.Constr.binder_constr;
+      Gram.entry_print Pcoq.Constr.binder_constr;
       msgnl (str "and operconstr is");
-      entry_print Pcoq.Constr.operconstr;
+      Gram.entry_print Pcoq.Constr.operconstr;
   | "pattern" ->
-      entry_print Pcoq.Constr.pattern
+      Gram.entry_print Pcoq.Constr.pattern
   | "tactic" ->
       msgnl (str "Entry tactic_expr is");
-      entry_print Pcoq.Tactic.tactic_expr;
+      Gram.entry_print Pcoq.Tactic.tactic_expr;
       msgnl (str "Entry binder_tactic is");
-      entry_print Pcoq.Tactic.binder_tactic;
+      Gram.entry_print Pcoq.Tactic.binder_tactic;
       msgnl (str "Entry simple_tactic is");
-      entry_print Pcoq.Tactic.simple_tactic;
+      Gram.entry_print Pcoq.Tactic.simple_tactic;
   | "vernac" ->
       msgnl (str "Entry vernac is");
-      entry_print Pcoq.Vernac_.vernac;
+      Gram.entry_print Pcoq.Vernac_.vernac;
       msgnl (str "Entry command is");
-      entry_print Pcoq.Vernac_.command;
+      Gram.entry_print Pcoq.Vernac_.command;
       msgnl (str "Entry syntax is");
-      entry_print Pcoq.Vernac_.syntax;
+      Gram.entry_print Pcoq.Vernac_.syntax;
       msgnl (str "Entry gallina is");
-      entry_print Pcoq.Vernac_.gallina;
+      Gram.entry_print Pcoq.Vernac_.gallina;
       msgnl (str "Entry gallina_ext is");
-      entry_print Pcoq.Vernac_.gallina_ext;
+      Gram.entry_print Pcoq.Vernac_.gallina_ext;
   | _ -> error "Unknown or unprintable grammar entry."
 
 (**********************************************************************)
@@ -233,7 +238,7 @@ let parse_format (loc,str) =
     else
       error "Empty format."
   with e ->
-    Stdpp.raise_with_loc loc e
+    Loc.raise loc e
 
 (***********************)
 (* Analyzing notations *)
@@ -279,9 +284,9 @@ let rec find_pattern nt xl = function
       find_pattern nt (x::xl) (l,l')
   | [], NonTerminal x' :: l' ->
       (out_nt nt,x',List.rev xl),l'
-  | [], Terminal s :: _ | Terminal s :: _, _ ->
+  | _, Terminal s :: _ | Terminal s :: _, _ ->
       error ("The token \""^s^"\" occurs on one side of \"..\" but not on the other side.")
-  | [], Break s :: _ | Break s :: _, _ ->
+  | _, Break s :: _ | Break s :: _, _ ->
       error ("A break occurs on one side of \"..\" but not on the other side.")
   | _, [] ->
       error ("The special symbol \"..\" must occur in a configuration of the form\n\"x symbs .. symbs y\".")
@@ -311,13 +316,10 @@ let rec interp_list_parser hd = function
 
 (* Find non-terminal tokens of notation *)
 
-let is_normal_token str =
-  try let _ = Lexer.check_ident str in true with Lexer.Error _ -> false
-
 (* To protect alphabetic tokens and quotes from being seen as variables *)
 let quote_notation_token x =
   let n = String.length x in
-  let norm = is_normal_token x in
+  let norm = is_ident x in
   if (n > 0 & norm) or (n > 2 & x.[0] = '\'') then "'"^x^"'"
   else x
 
@@ -325,11 +327,9 @@ let rec raw_analyze_notation_tokens = function
   | []    -> []
   | String ".." :: sl -> NonTerminal ldots_var :: raw_analyze_notation_tokens sl
   | String "_" :: _ -> error "_ must be quoted."
-  | String x :: sl when is_normal_token x ->
-      Lexer.check_ident x;
+  | String x :: sl when is_ident x ->
       NonTerminal (Names.id_of_string x) :: raw_analyze_notation_tokens sl
   | String s :: sl ->
-      Lexer.check_keyword s;
       Terminal (drop_simple_quotes s) :: raw_analyze_notation_tokens sl
   | WhiteSpace n :: sl ->
       Break n :: raw_analyze_notation_tokens sl
@@ -363,11 +363,6 @@ let error_not_same_scope x y =
   error ("Variables "^string_of_id x^" and "^string_of_id y^
     " must be in the same scope.")
 
-let error_both_bound_and_binding x y =
-  errorlabstrm "" (strbrk "The recursive variables " ++ pr_id x ++
-  strbrk " and " ++ pr_id y ++ strbrk " cannot be used as placeholder
-  for both terms and binders.")
-
 (**********************************************************************)
 (* Build pretty-printing rules                                        *)
 
@@ -375,9 +370,9 @@ type printing_precedence = int * parenRelation
 type parsing_precedence = int option
 
 let prec_assoc = function
-  | Gramext.RightA -> (L,E)
-  | Gramext.LeftA -> (E,L)
-  | Gramext.NonA -> (L,L)
+  | RightA -> (L,E)
+  | LeftA -> (E,L)
+  | NonA -> (L,L)
 
 let precedence_of_entry_type from = function
   | ETConstr (NumLevel n,BorderProd (_,None)) -> n, Prec n
@@ -402,12 +397,6 @@ let is_left_bracket s =
 let is_right_bracket s =
   let l = String.length s in l <> 0 &
   (s.[l-1] = '}' or s.[l-1] = ']' or s.[l-1] = ')')
-
-let is_left_bracket_on_left s =
-  let l = String.length s in l <> 0 & s.[l-1] = '>'
-
-let is_right_bracket_on_right s =
-  let l = String.length s in l <> 0 & s.[0] = '<'
 
 let is_comma s =
   let l = String.length s in l <> 0 &
@@ -598,20 +587,20 @@ let is_not_small_constr = function
   | _ -> false
 
 let rec define_keywords_aux = function
-  | GramConstrNonTerminal(e,Some _) as n1 :: GramConstrTerminal("IDENT",k) :: l
+  | GramConstrNonTerminal(e,Some _) as n1 :: GramConstrTerminal(IDENT k) :: l
       when is_not_small_constr e ->
-      message ("Defining '"^k^"' as keyword");
-      Lexer.add_token("",k);
-      n1 :: GramConstrTerminal("",k) :: define_keywords_aux l
+      message ("Identifier '"^k^"' now a keyword");
+      Lexer.add_keyword k;
+      n1 :: GramConstrTerminal(KEYWORD k) :: define_keywords_aux l
   | n :: l -> n :: define_keywords_aux l
   | [] -> []
 
   (* Ensure that IDENT articulation terminal symbols are keywords *)
 let define_keywords = function
-  | GramConstrTerminal("IDENT",k)::l ->
-      message ("Defining '"^k^"' as keyword");
-      Lexer.add_token("",k);
-      GramConstrTerminal("",k) :: define_keywords_aux l
+  | GramConstrTerminal(IDENT k)::l ->
+      message ("Identifier '"^k^"' now a keyword");
+      Lexer.add_keyword k;
+      GramConstrTerminal(KEYWORD k) :: define_keywords_aux l
   | l -> define_keywords_aux l
 
 let distribute a ll = List.map (fun l -> a @ l) ll
@@ -673,9 +662,9 @@ let border = function
 
 let recompute_assoc typs =
   match border typs, border (List.rev typs) with
-    | Some Gramext.LeftA, Some Gramext.RightA -> assert false
-    | Some Gramext.LeftA, _ -> Some Gramext.LeftA
-    | _, Some Gramext.RightA -> Some Gramext.RightA
+    | Some LeftA, Some RightA -> assert false
+    | Some LeftA, _ -> Some LeftA
+    | _, Some RightA -> Some RightA
     | _ -> None
 
 (**************************************************************************)
@@ -726,7 +715,13 @@ let subst_syntax_extension (subst,(local,sy)) =
 let classify_syntax_definition (local,_ as o) =
   if local then Dispose else Substitute o
 
-let (inSyntaxExtension, outSyntaxExtension) =
+type syntax_extension_obj =
+    bool *
+      (notation_var_internalization_type list * Notation.level *
+         notation * notation_grammar * unparsing list)
+      list
+
+let inSyntaxExtension : syntax_extension_obj -> obj =
   declare_object {(default_object "SYNTAX-EXTENSION") with
        open_function = (fun i o -> if i=1 then cache_syntax_extension o);
        cache_function = cache_syntax_extension;
@@ -762,7 +757,7 @@ let interp_modifiers modl =
     | SetAssoc a :: l ->
 	if assoc <> None then error"An associativity is given more than once.";
 	interp (Some a) level etyps format l
-    | SetOnlyParsing :: l ->
+    | SetOnlyParsing _ :: l ->
 	onlyparsing := true;
 	interp assoc level etyps format l
     | SetFormat s :: l ->
@@ -775,8 +770,13 @@ let check_infix_modifiers modifiers =
   if t <> [] then
     error "Explicit entry level or type unexpected in infix notation."
 
-let no_syntax_modifiers modifiers =
-  modifiers = [] or modifiers = [SetOnlyParsing]
+let no_syntax_modifiers = function
+  | [] | [SetOnlyParsing _] -> true
+  | _ -> false
+
+let is_only_parsing = function
+  | [SetOnlyParsing _] -> true
+  | _ -> false
 
 (* Compute precedences from modifiers (or find default ones) *)
 
@@ -891,15 +891,17 @@ specially and require that the notation \"{ _ }\" is already reserved."
 
 (* Remove patterns of the form "{ _ }", unless it is the "{ _ }" notation *)
 let remove_curly_brackets l =
-  let rec next = function
-    | Break _ :: l -> next l
-    | l -> l in
+  let rec skip_break acc = function
+    | Break _ as br :: l -> skip_break (br::acc) l
+    | l -> List.rev acc, l in
   let rec aux deb = function
   | [] -> []
   | Terminal "{" as t1 :: l ->
-      (match next l with
+      let br,next = skip_break [] l in
+      (match next with
         | NonTerminal _ as x :: l' as l0 ->
-            (match next l' with
+            let br',next' = skip_break [] l' in
+            (match next' with
               | Terminal "}" as t2 :: l'' as l1 ->
                   if l <> l0 or l' <> l1 then
                     warning "Skipping spaces inside curly brackets";
@@ -907,15 +909,14 @@ let remove_curly_brackets l =
                     check_curly_brackets_notation_exists ();
                     x :: aux false l''
                   end
-              | l1 -> t1 :: x :: aux false l1)
+              | l1 -> t1 :: br @ x :: br' @ aux false l1)
         | l0 -> t1 :: aux false l0)
   | x :: l -> x :: aux false l
   in aux true l
 
 let compute_syntax_data (df,modifiers) =
   let (assoc,n,etyps,onlyparse,fmt) = interp_modifiers modifiers in
-  (* Notation defaults to NONA *)
-  let assoc = match assoc with None -> Some Gramext.NonA | a -> a in
+  let assoc = match assoc with None -> (* default *) Some NonA | a -> a in
   let toks = split_notation_string df in
   let (recvars,mainvars,symbols) = analyze_notation_tokens toks in
   let ntn_for_interp = make_notation_key symbols in
@@ -977,13 +978,29 @@ let subst_notation (subst,(lc,scope,pat,b,ndf)) =
 let classify_notation (local,_,_,_,_ as o) =
   if local then Dispose else Substitute o
 
-let (inNotation, outNotation) =
+type notation_obj =
+    bool * scope_name option * interpretation * bool *
+      (notation * notation_location)
+
+let inNotation : notation_obj -> obj =
   declare_object {(default_object "NOTATION") with
        open_function = open_notation;
        cache_function = cache_notation;
        subst_function = subst_notation;
        load_function = load_notation;
        classify_function = classify_notation}
+
+(**********************************************************************)
+
+let with_lib_stk_protection f x =
+  let fs = Lib.freeze () in
+  try let a = f x in Lib.unfreeze fs; a
+  with e -> Lib.unfreeze fs; raise e
+
+let with_syntax_protection f x =
+  with_lib_stk_protection
+    (with_grammar_rule_protection
+       (with_notation_protection f)) x
 
 (**********************************************************************)
 (* Recovering existing syntax                                         *)
@@ -1106,7 +1123,7 @@ let add_notation local c ((loc,df),modifiers) sc =
   let df' =
    if no_syntax_modifiers modifiers then
     (* No syntax data: try to rely on a previously declared rule *)
-    let onlyparse = modifiers=[SetOnlyParsing] in
+    let onlyparse = is_only_parsing modifiers in
     try add_notation_interpretation_core local df c sc onlyparse
     with NoSyntaxRule ->
       (* Try to determine a default syntax rule *)
@@ -1153,7 +1170,7 @@ let subst_scope_command (subst,(scope,o as x)) = match o with
       scope, ScopeClasses cl'
   | _ -> x
 
-let (inScopeCommand,outScopeCommand) =
+let inScopeCommand : scope_name * scope_command -> obj =
   declare_object {(default_object "DELIMITERS") with
       cache_function = cache_scope_command;
       open_function = open_scope_command;
@@ -1181,6 +1198,9 @@ let add_syntactic_definition ident (vars,c) local onlyparse =
       let vars,pat = interp_aconstr i_vars [] c in
       List.map (fun (id,(sc,kind)) -> (id,sc)) vars, pat
   in
-  let onlyparse = onlyparse or is_not_printable pat in
+  let onlyparse = match onlyparse with
+    | None when (is_not_printable pat) -> Some Flags.Current
+    | p -> p
+  in
   Syntax_def.declare_syntactic_definition local ident onlyparse (vars,pat)
 

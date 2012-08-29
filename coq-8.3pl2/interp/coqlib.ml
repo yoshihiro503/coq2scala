@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: coqlib.ml 13332 2010-07-26 22:12:43Z msozeau $ *)
 
 open Util
 open Pp
@@ -44,8 +42,8 @@ let global_of_extended q =
 
 let gen_constant_in_modules locstr dirs s =
   let dirs = List.map make_dir dirs in
-  let id = id_of_string s in
-  let all = Nametab.locate_extended_all (qualid_of_ident id) in
+  let qualid = qualid_of_string s in
+  let all = Nametab.locate_extended_all qualid in
   let all = list_uniquize (list_map_filter global_of_extended all) in
   let these = List.filter (has_suffix_in_dirs dirs) all in
   match these with
@@ -93,10 +91,12 @@ let logic_constant dir s = gen_constant "Coqlib" ("Logic"::dir) s
 let arith_dir = ["Coq";"Arith"]
 let arith_modules = [arith_dir]
 
+let numbers_dir = [ "Coq";"Numbers"]
+let parith_dir = ["Coq";"PArith"]
 let narith_dir = ["Coq";"NArith"]
-
 let zarith_dir = ["Coq";"ZArith"]
-let zarith_base_modules = [narith_dir;zarith_dir]
+
+let zarith_base_modules = [numbers_dir;parith_dir;narith_dir;zarith_dir]
 
 let init_dir = ["Coq";"Init"]
 let init_modules = [
@@ -107,11 +107,6 @@ let init_modules = [
   init_dir@["Peano"];
   init_dir@["Wf"]
 ]
-
-let coq_id = id_of_string "Coq"
-let init_id = id_of_string "Init"
-let arith_id = id_of_string "Arith"
-let datatypes_id = id_of_string "Datatypes"
 
 let logic_module_name = ["Coq";"Init";"Logic"]
 let logic_module = make_dir logic_module_name
@@ -137,7 +132,7 @@ let make_con dir id = Libnames.encode_con dir id
 let id = make_con datatypes_module (id_of_string "id")
 let type_of_id = make_con datatypes_module (id_of_string "ID")
 
-let _ = Cases.set_impossible_default_clause (mkConst id,mkConst type_of_id)
+let _ = Termops.set_impossible_default_clause (mkConst id,mkConst type_of_id)
 
 (** Natural numbers *)
 let nat_kn = make_kn datatypes_module (id_of_string "nat")
@@ -192,9 +187,16 @@ let build_sigma_set () = anomaly "Use build_sigma_type"
 let build_sigma_type () =
   { proj1 = init_constant ["Specif"] "projT1";
     proj2 = init_constant ["Specif"] "projT2";
-    elim = init_constant ["Specif"] "sigT_rec";
+    elim = init_constant ["Specif"] "sigT_rect";
     intro = init_constant ["Specif"] "existT";
     typ = init_constant ["Specif"] "sigT" }
+
+let build_sigma () =
+  { proj1 = init_constant ["Specif"] "proj1_sig";
+    proj2 = init_constant ["Specif"] "proj2_sig";
+    elim = init_constant ["Specif"] "sig_rect";
+    intro = init_constant ["Specif"] "exist";
+    typ = init_constant ["Specif"] "sig" }
 
 let build_prod () =
   { proj1 = init_constant ["Datatypes"] "fst";
@@ -227,8 +229,6 @@ let lazy_logic_constant dir id = lazy (logic_constant dir id)
 let coq_eq_eq = lazy_init_constant ["Logic"] "eq"
 let coq_eq_refl = lazy_init_constant ["Logic"] "eq_refl"
 let coq_eq_ind = lazy_init_constant ["Logic"] "eq_ind"
-let coq_eq_rec = lazy_init_constant ["Logic"] "eq_rec"
-let coq_eq_rect = lazy_init_constant ["Logic"] "eq_rect"
 let coq_eq_congr = lazy_init_constant ["Logic"] "f_equal"
 let coq_eq_sym  = lazy_init_constant ["Logic"] "eq_sym"
 let coq_eq_trans  = lazy_init_constant ["Logic"] "eq_trans"
@@ -250,8 +250,6 @@ let build_coq_eq_refl () = Lazy.force coq_eq_refl
 let build_coq_eq_sym () = Lazy.force coq_eq_sym
 let build_coq_f_equal2 () = Lazy.force coq_f_equal2
 
-let build_coq_sym_eq = build_coq_eq_sym (* compatibility *)
-
 let build_coq_inversion_eq_data () =
   let _ = check_required_library logic_module_name in {
   inv_eq = Lazy.force coq_eq_eq;
@@ -263,8 +261,6 @@ let build_coq_inversion_eq_data () =
 let coq_jmeq_eq = lazy_logic_constant ["JMeq"] "JMeq"
 let coq_jmeq_refl = lazy_logic_constant ["JMeq"] "JMeq_refl"
 let coq_jmeq_ind = lazy_logic_constant ["JMeq"] "JMeq_ind"
-let coq_jmeq_rec = lazy_logic_constant ["JMeq"] "JMeq_rec"
-let coq_jmeq_rect = lazy_logic_constant ["JMeq"] "JMeq_rect"
 let coq_jmeq_sym  = lazy_logic_constant ["JMeq"] "JMeq_sym"
 let coq_jmeq_congr  = lazy_logic_constant ["JMeq"] "JMeq_congr"
 let coq_jmeq_trans  = lazy_logic_constant ["JMeq"] "JMeq_trans"
@@ -298,10 +294,8 @@ let build_coq_sumbool () = Lazy.force coq_sumbool
 
 (* Equality on Type as a Type *)
 let coq_identity_eq = lazy_init_constant ["Datatypes"] "identity"
-let coq_identity_refl = lazy_init_constant ["Datatypes"] "refl_identity"
+let coq_identity_refl = lazy_init_constant ["Datatypes"] "identity_refl"
 let coq_identity_ind = lazy_init_constant ["Datatypes"] "identity_ind"
-let coq_identity_rec = lazy_init_constant ["Datatypes"] "identity_rec"
-let coq_identity_rect = lazy_init_constant ["Datatypes"] "identity_rect"
 let coq_identity_congr = lazy_init_constant ["Logic_Type"] "identity_congr"
 let coq_identity_sym = lazy_init_constant ["Logic_Type"] "identity_sym"
 let coq_identity_trans = lazy_init_constant ["Logic_Type"] "identity_trans"
@@ -376,6 +370,7 @@ let coq_jmeq_ref     = lazy (gen_reference "Coqlib" ["Logic";"JMeq"] "JMeq")
 let coq_eq_true_ref = lazy (gen_reference "Coqlib" ["Init";"Datatypes"] "eq_true")
 let coq_existS_ref  = lazy (anomaly "use coq_existT_ref")
 let coq_existT_ref  = lazy (init_reference ["Specif"] "existT")
+let coq_exist_ref  = lazy (init_reference ["Specif"] "exist")
 let coq_not_ref     = lazy (init_reference ["Logic"] "not")
 let coq_False_ref   = lazy (init_reference ["Logic"] "False")
 let coq_sumbool_ref = lazy (init_reference ["Specif"] "sumbool")

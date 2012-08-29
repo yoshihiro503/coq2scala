@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -16,22 +16,20 @@ open Libnames
 open Nameops
 open Sign
 open Univ
-open Proof_trees
 open Environ
 open Printer
 open Tactic_printer
-open Refiner
 open Term
 open Termops
-open Clenv
 open Cerrors
 open Evd
 open Goptions
 open Genarg
 open Mod_subst
-
+open Clenv
 
 let _ = Constrextern.print_evar_arguments := true
+let _ = Constrextern.print_universes := true
 let _ = set_bool_option_value ["Printing";"Matching"] false
 let _ = Detyping.set_detype_anonymous (fun _ _ -> raise Not_found)
 
@@ -58,13 +56,13 @@ let ppconstrdb x = pp(Flags.with_option rawdebug Termops.print_constr x)
 let ppterm = ppconstr
 let ppsconstr x = ppconstr (Declarations.force x)
 let ppconstr_univ x = Constrextern.with_universes ppconstr x
-let pprawconstr = (fun x -> pp(pr_lrawconstr x))
+let ppglob_constr = (fun x -> pp(pr_lglob_constr x))
 let pppattern = (fun x -> pp(pr_constr_pattern x))
-let pptype = (fun x -> pp(pr_ltype x))
+let pptype = (fun x -> try pp(pr_ltype x) with e -> pp (str (Printexc.to_string e)))
 
 let ppfconstr c = ppconstr (Closure.term_of_fconstr c)
 
-let ppbigint n = pp (Bigint.pr_bigint n);;
+let ppbigint n = pp (str (Bigint.to_string n));;
 
 let prset pr l = str "[" ++ hov 0 (prlist_with_sep spc pr l) ++ str "]"
 let ppintset l = pp (prset int (Intset.elements l))
@@ -114,22 +112,31 @@ let pp_transparent_state s = pp (pr_transparent_state s)
 
 (* proof printers *)
 let ppmetas metas = pp(pr_metaset metas)
-let ppevm evd = pp(pr_evar_map evd)
+let ppevm evd = pp(pr_evar_map (Some 2) evd)
+let ppevmall evd = pp(pr_evar_map None evd)
+let pr_existentialset evars =
+  prlist_with_sep spc pr_meta (ExistentialSet.elements evars)
+let ppexistentialset evars =
+  pp (pr_existentialset evars)
 let ppclenv clenv = pp(pr_clenv clenv)
-let ppgoal g = pp(db_pr_goal g)
+let ppgoalgoal gl = pp(Goal.pr_goal gl)
+let ppgoal g = pp(Printer.pr_goal g)
+(* spiwack: deactivated until a replacement is found
 let pppftreestate p = pp(print_pftreestate p)
+*)
 
-let pr_gls gls =
-  hov 0 (pr_evar_map (sig_sig gls) ++ fnl () ++ db_pr_goal (sig_it gls))
+(* let ppgoal g = pp(db_pr_goal g) *)
+(* let pr_gls gls = *)
+(*   hov 0 (pr_evar_defs (sig_sig gls) ++ fnl () ++ db_pr_goal (sig_it gls)) *)
 
-let pr_glls glls =
-  hov 0 (pr_evar_map (sig_sig glls) ++ fnl () ++
-         prlist_with_sep pr_fnl db_pr_goal (sig_it glls))
+(* let pr_glls glls = *)
+(*   hov 0 (pr_evar_defs (sig_sig glls) ++ fnl () ++ *)
+(*          prlist_with_sep pr_fnl db_pr_goal (sig_it glls)) *)
 
-let ppsigmagoal g = pp(pr_goal (sig_it g))
-let prgls gls = pp(pr_gls gls)
-let prglls glls = pp(pr_glls glls)
-let pproof p = pp(print_proof Evd.empty empty_named_context p)
+(* let ppsigmagoal g = pp(pr_goal (sig_it g)) *)
+(* let prgls gls = pp(pr_gls gls) *)
+(* let prglls glls = pp(pr_glls glls) *)
+(* let pproof p = pp(print_proof Evd.empty empty_named_context p) *)
 
 let ppuni u = pp(pr_uni u)
 
@@ -153,6 +160,7 @@ let cast_kind_display k =
   match k with
   | VMcast -> "VMcast"
   | DEFAULTcast -> "DEFAULTcast"
+  | REVERTcast -> "REVERTcast"
 
 let constr_display csr =
   let rec term_display c = match kind_of_term c with
@@ -412,12 +420,12 @@ let _ =
            (fun () -> in_current_context constr_display c)
        | _ -> failwith "Vernac extension: cannot occur")
   with
-    e -> Pp.pp (Cerrors.explain_exn e)
+    e -> Pp.pp (Errors.print e)
 let _ =
-  extend_vernac_command_grammar "PrintConstr"
+  extend_vernac_command_grammar "PrintConstr" None
     [[GramTerminal "PrintConstr";
       GramNonTerminal
-        (dummy_loc,ConstrArgType,Extend.Aentry ("constr","constr"),
+        (dummy_loc,ConstrArgType,Aentry ("constr","constr"),
 	 Some (Names.id_of_string "c"))]]
 
 let _ =
@@ -429,12 +437,12 @@ let _ =
            (fun () -> in_current_context print_pure_constr c)
        | _ -> failwith "Vernac extension: cannot occur")
   with
-    e -> Pp.pp (Cerrors.explain_exn e)
+    e -> Pp.pp (Errors.print e)
 let _ =
-  extend_vernac_command_grammar "PrintPureConstr"
+  extend_vernac_command_grammar "PrintPureConstr" None
     [[GramTerminal "PrintPureConstr";
       GramNonTerminal
-        (dummy_loc,ConstrArgType,Extend.Aentry ("constr","constr"),
+        (dummy_loc,ConstrArgType,Aentry ("constr","constr"),
 	 Some (Names.id_of_string "c"))]]
 
 (* Setting printer of unbound global reference *)
@@ -479,5 +487,9 @@ let short_string_of_ref loc = function
         [id_of_label (pi3 (repr_mind kn));id_of_string ("_"^string_of_int i)]
         (id_of_string ("_"^string_of_int j))
 
+(* Anticipate that printers can be used from ocamldebug and that 
+   pretty-printer should not make calls to the global env since ocamldebug
+   runs in a different process and does not have the proper env at hand *)
+let _ = Constrextern.in_debugger := true
 let _ = Constrextern.set_debug_global_reference_printer
   (if !rawdebug then raw_string_of_ref else short_string_of_ref)

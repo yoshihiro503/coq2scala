@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: proof_search.mli 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 type form=
     Atom of int
@@ -40,7 +38,7 @@ val branching: state -> state list
 
 val success: state -> bool
 
-val pp: state -> unit
+val pp: state -> Pp.std_ppcmds
 
 val pr_form : form -> unit
 

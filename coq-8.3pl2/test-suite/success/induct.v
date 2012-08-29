@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -41,3 +41,26 @@ Proof.
   auto.
   auto.
 Qed.
+
+(* Check selection of occurrences by pattern *)
+
+Goal forall x, S x = S (S x).   
+intros.
+induction (S _) in |- * at -2.
+now_show (0=1).
+Undo 2.
+induction (S _) in |- * at 1 3.
+now_show (0=1).
+Undo 2.
+induction (S _) in |- * at 1.
+now_show (0=S (S x)).
+Undo 2.
+induction (S _) in |- * at 2.
+now_show (S x=0).
+Undo 2.
+induction (S _) in |- * at 3.
+now_show (S x=1).
+Undo 2.
+Fail induction (S _) in |- * at 4.
+Abort.
+

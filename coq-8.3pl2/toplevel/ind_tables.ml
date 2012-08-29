@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: ind_tables.ml 13392 2010-09-02 12:11:15Z vsiles $ i*)
 
 (* File created by Vincent Siles, Oct 2007, extended into a generic
    support for generation of inductive schemes by Hugo Herbelin, Nov 2009 *)
@@ -53,7 +51,7 @@ let discharge_scheme (_,(kind,l)) =
   Some (kind,Array.map (fun (ind,const) ->
     (Lib.discharge_inductive ind,Lib.discharge_con const)) l)
 
-let (inScheme,_) =
+let inScheme : string * (inductive * constant) array -> obj =
   declare_object {(default_object "SCHEME") with
                     cache_function = cache_scheme;
                     load_function = (fun _ -> cache_scheme);
@@ -111,21 +109,28 @@ let declare_individual_scheme_object s ?(aux="") f =
 let declare_scheme kind indcl =
   Lib.add_anonymous_leaf (inScheme (kind,indcl))
 
+let is_visible_name id =
+  try ignore (Nametab.locate (Libnames.qualid_of_ident id)); true
+  with Not_found -> false
+
+let compute_name internal id =
+  match internal with
+  | KernelVerbose | UserVerbose -> id
+  | KernelSilent ->
+      Namegen.next_ident_away_from (add_prefix "internal_" id) is_visible_name
+
 let define internal id c =
-  (* TODO: specify even more by distinguish between KernelVerbose and
-   * UserVerbose *)
-  let fd = match internal with 
-    | KernelSilent -> declare_internal_constant
-    | _ -> declare_constant in
+  let fd = declare_constant ~internal in
+  let id = compute_name internal id in
   let kn = fd id
     (DefinitionEntry
       { const_entry_body = c;
+        const_entry_secctx = None;
         const_entry_type = None;
-        const_entry_opaque = false;
-	const_entry_boxed = Flags.boxed_definitions() },
+        const_entry_opaque = false },
       Decl_kinds.IsDefinition Scheme) in
   (match internal with
-  | KernelSilent -> () 
+  | KernelSilent -> ()
   | _-> definition_message id);
   kn
 

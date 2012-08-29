@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Sorted.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (* Made by Hugo Herbelin *)
 
@@ -27,7 +25,7 @@ Require Import List Relations Relations_1.
 Set Implicit Arguments.
 Local Notation "[ ]" := nil (at level 0).
 Local Notation "[ a ; .. ; b ]" := (a :: .. (b :: []) ..) (at level 0).
-Implicit Arguments Transitive [U].
+Arguments Transitive [U] R.
 
 Section defs.
 

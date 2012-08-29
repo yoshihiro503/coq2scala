@@ -1,14 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: List.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
-Require Import Le Gt Minus Min Bool.
+Require Import Le Gt Minus Bool Setoid.
 
 Set Implicit Arguments.
 
@@ -55,9 +53,16 @@ Section Lists.
 
 End Lists.
 
-(* Keep these notations local to prevent conflicting notations *)
-Local Notation "[ ]" := nil : list_scope.
-Local Notation "[ a ; .. ; b ]" := (a :: .. (b :: []) ..) : list_scope.
+
+(** Standard notations for lists. 
+In a special module to avoid conflict. *)
+Module ListNotations.
+Notation " [ ] " := nil : list_scope.
+Notation " [ x ] " := (cons x nil) : list_scope.
+Notation " [ x ; .. ; y ] " := (cons x .. (cons y nil) ..) : list_scope.
+End ListNotations.
+
+Import ListNotations.
 
 (** ** Facts about lists *)
 
@@ -119,7 +124,7 @@ Section Facts.
     unfold not; intros a H; inversion_clear H.
   Qed.
 
-  Theorem in_split : forall x (l:list A), In x l -> exists l1, exists l2, l = l1++x::l2.
+  Theorem in_split : forall x (l:list A), In x l -> exists l1 l2, l = l1++x::l2.
   Proof.
   induction l; simpl; destruct 1.
   subst a; auto.
@@ -254,7 +259,7 @@ Section Facts.
   Qed.
 
 
-  (** Compatibility wtih other operations *)
+  (** Compatibility with other operations *)
 
   Lemma app_length : forall l l' : list A, length (l++l') = length l + length l'.
   Proof.
@@ -541,30 +546,21 @@ Section Elts.
     end.
 
   (** Compatibility of count_occ with operations on list *)
-  Theorem count_occ_In : forall (l : list A) (x : A), In x l <-> count_occ l x > 0.
+  Theorem count_occ_In (l : list A) (x : A) : In x l <-> count_occ l x > 0.
   Proof.
-    induction l as [|y l].
-    simpl; intros; split; [destruct 1 | apply gt_irrefl].
-    simpl. intro x; destruct (eq_dec y x) as [Heq|Hneq].
-    rewrite Heq; intuition.
-    pose (IHl x). intuition.
+    induction l as [|y l]; simpl.
+    - split; [destruct 1 | apply gt_irrefl].
+    - destruct eq_dec as [->|Hneq]; rewrite IHl; intuition.
   Qed.
 
-  Theorem count_occ_inv_nil : forall (l : list A), (forall x:A, count_occ l x = 0) <-> l = [].
+  Theorem count_occ_inv_nil (l : list A) :
+    (forall x:A, count_occ l x = 0) <-> l = [].
   Proof.
     split.
-    (* Case -> *)
-    induction l as [|x l].
-    trivial.
-    intro H.
-    elim (O_S (count_occ l x)).
-    apply sym_eq.
-    generalize (H x).
-    simpl. destruct (eq_dec x x) as [|HF].
-    trivial.
-    elim HF; reflexivity.
-    (* Case <- *)
-    intro H; rewrite H; simpl; reflexivity.
+    - induction l as [|x l]; trivial.
+      intros H. specialize (H x). simpl in H.
+      destruct eq_dec as [_|NEQ]; [discriminate|now elim NEQ].
+    - now intros ->.
   Qed.
 
   Lemma count_occ_nil : forall (x : A), count_occ [] x = 0.
@@ -749,21 +745,10 @@ Section ListOps.
 
   Hypothesis eq_dec : forall (x y : A), {x = y}+{x <> y}.
 
-  Lemma list_eq_dec :
-    forall l l':list A, {l = l'} + {l <> l'}.
-  Proof.
-    induction l as [| x l IHl]; destruct l' as [| y l'].
-    left; trivial.
-    right; apply nil_cons.
-    right; unfold not; intro HF; apply (nil_cons (sym_eq HF)).
-    destruct (eq_dec x y) as [xeqy|xneqy]; destruct (IHl l') as [leql'|lneql'];
-      try (right; unfold not; intro HF; injection HF; intros; contradiction).
-    rewrite xeqy; rewrite leql'; left; trivial.
-  Qed.
-
+  Lemma list_eq_dec : forall l l':list A, {l = l'} + {l <> l'}.
+  Proof. decide equality. Defined.
 
 End ListOps.
-
 
 (***************************************************)
 (** * Applying functions to the elements of a list *)
@@ -1643,7 +1628,7 @@ Proof. exact Forall2_nil. Qed.
 
 Theorem Forall2_app_inv_l : forall A B (R:A->B->Prop) l1 l2 l',
   Forall2 R (l1 ++ l2) l' ->
-  exists l1', exists l2', Forall2 R l1 l1' /\ Forall2 R l2 l2' /\ l' = l1' ++ l2'.
+  exists l1' l2', Forall2 R l1 l1' /\ Forall2 R l2 l2' /\ l' = l1' ++ l2'.
 Proof.
   induction l1; intros.
     exists [], l'; auto.
@@ -1654,7 +1639,7 @@ Qed.
 
 Theorem Forall2_app_inv_r : forall A B (R:A->B->Prop) l1' l2' l,
   Forall2 R l (l1' ++ l2') ->
-  exists l1, exists l2, Forall2 R l1 l1' /\ Forall2 R l2 l2' /\ l = l1 ++ l2.
+  exists l1 l2, Forall2 R l1 l1' /\ Forall2 R l2 l2' /\ l = l1 ++ l2.
 Proof.
   induction l1'; intros.
     exists [], l; auto.

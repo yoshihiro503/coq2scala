@@ -1,14 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
 (*i camlp4deps: "parsing/grammar.cma" i*)
-
-(* $Id: extraargs.ml4 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Pp
 open Pcoq
@@ -27,35 +25,23 @@ let pr_orient _prc _prlc _prt = function
   | true -> Pp.mt ()
   | false -> Pp.str " <-"
 
-
 ARGUMENT EXTEND orient TYPED AS bool PRINTED BY pr_orient
 | [ "->" ] -> [ true ]
 | [ "<-" ] -> [ false ]
 | [ ] -> [ true ]
 END
 
-let pr_int_list _prc _prlc _prt l =
-  let rec aux = function
-    | i :: l -> Pp.int i ++ Pp.spc () ++ aux l
-    | [] -> Pp.mt()
-  in aux l
+let pr_orient = pr_orient () () ()
 
-ARGUMENT EXTEND int_nelist
-  TYPED AS int list
-  PRINTED BY pr_int_list
-  RAW_TYPED AS int list
-  RAW_PRINTED BY pr_int_list
-  GLOB_TYPED AS int list
-  GLOB_PRINTED BY pr_int_list
-| [ integer(x) int_nelist(l) ] -> [x::l]
-| [ integer(x) ] -> [ [x] ]
-END
 
-open Rawterm
+let pr_int_list = Util.pr_sequence Pp.int
+let pr_int_list_full _prc _prlc _prt l = pr_int_list l
+
+open Glob_term
 
 let pr_occurrences _prc _prlc _prt l =
   match l with
-    | ArgArg x -> pr_int_list _prc _prlc _prt x
+    | ArgArg x -> pr_int_list x
     | ArgVar (loc, id) -> Nameops.pr_id id
 
 let coerce_to_int = function
@@ -72,6 +58,8 @@ let interp_occs ist gl l =
     | ArgVar (_,id as locid) ->
 	(try int_list_of_VList (List.assoc id ist.lfun)
 	  with Not_found | CannotCoerceTo _ -> [interp_int ist locid])
+let interp_occs ist gl l =
+  Tacmach.project gl , interp_occs ist gl l
 
 let glob_occs ist l = l
 
@@ -81,8 +69,7 @@ type occurrences_or_var = int list or_var
 type occurrences = int list
 
 ARGUMENT EXTEND occurrences
-  TYPED AS occurrences
-  PRINTED BY pr_int_list
+  PRINTED BY pr_int_list_full
 
   INTERPRETED BY interp_occs
   GLOBALIZED BY glob_occs
@@ -94,35 +81,37 @@ ARGUMENT EXTEND occurrences
   GLOB_TYPED AS occurrences_or_var
   GLOB_PRINTED BY pr_occurrences
 
-| [ int_nelist(l) ] -> [ ArgArg l ]
+| [ ne_integer_list(l) ] -> [ ArgArg l ]
 | [ var(id) ] -> [ ArgVar id ]
 END
 
+let pr_occurrences = pr_occurrences () () ()
+
 let pr_gen prc _prlc _prtac c = prc c
 
-let pr_rawc _prc _prlc _prtac (_,raw) = Printer.pr_rawconstr raw
+let pr_globc _prc _prlc _prtac (_,glob) = Printer.pr_glob_constr glob
 
-let interp_raw ist gl (t,_) = (ist,t)
+let interp_glob ist gl (t,_) = Tacmach.project gl , (ist,t)
 
-let glob_raw = Tacinterp.intern_constr
+let glob_glob = Tacinterp.intern_constr
 
-let subst_raw = Tacinterp.subst_rawconstr_and_expr
+let subst_glob = Tacinterp.subst_glob_constr_and_expr
 
-ARGUMENT EXTEND raw
-    TYPED AS rawconstr
-    PRINTED BY pr_rawc
+ARGUMENT EXTEND glob
+    PRINTED BY pr_globc
 
-     INTERPRETED BY interp_raw
-     GLOBALIZED BY glob_raw
-     SUBSTITUTED BY subst_raw
+     INTERPRETED BY interp_glob
+     GLOBALIZED BY glob_glob
+     SUBSTITUTED BY subst_glob
 
      RAW_TYPED AS constr_expr
      RAW_PRINTED BY pr_gen
 
-     GLOB_TYPED AS rawconstr_and_expr
+     GLOB_TYPED AS glob_constr_and_expr
      GLOB_PRINTED BY pr_gen
   [ lconstr(c) ] -> [ c ]
 END
+
 
 type 'id gen_place= ('id * hyp_location_flag,unit) location
 
@@ -139,6 +128,7 @@ let pr_gen_place pr_id = function
 
 let pr_loc_place _ _ _ = pr_gen_place (fun (_,id) -> Nameops.pr_id id)
 let pr_place _ _ _ = pr_gen_place Nameops.pr_id
+let pr_hloc = pr_loc_place () () ()
 
 let intern_place ist = function
     ConclLocation () -> ConclLocation ()
@@ -148,10 +138,12 @@ let interp_place ist gl = function
     ConclLocation () -> ConclLocation ()
   | HypLocation (id,hl) -> HypLocation (interp_hyp ist gl id,hl)
 
+let interp_place ist gl p =
+  Tacmach.project gl , interp_place ist gl p
+
 let subst_place subst pl = pl
 
 ARGUMENT EXTEND hloc
-    TYPED AS place
     PRINTED BY pr_place
     INTERPRETED BY interp_place
     GLOBALIZED BY intern_place
@@ -193,6 +185,7 @@ ARGUMENT EXTEND by_arg_tac
 | [ ] -> [ None ]
 END
 
+let pr_by_arg_tac prtac opt_c = pr_by_arg_tac () () prtac opt_c
 
 let pr_in_hyp  pr_id (lo,concl) :  Pp.std_ppcmds =
   match lo,concl with
@@ -220,7 +213,6 @@ let pr_var_list _ _ _ = pr_var_list_gen (fun (_,id) -> Ppconstr.pr_id id)
 
 
 ARGUMENT EXTEND comma_var_lne
-  TYPED AS var list
   PRINTED BY pr_var_list_typed
   RAW_TYPED AS var list
   RAW_PRINTED BY pr_var_list
@@ -231,7 +223,6 @@ ARGUMENT EXTEND comma_var_lne
 END
 
 ARGUMENT EXTEND comma_var_l
-  TYPED AS var list
   PRINTED BY pr_var_list_typed
   RAW_TYPED AS var list
   RAW_PRINTED BY pr_var_list
@@ -253,7 +244,6 @@ END
 
 
 ARGUMENT EXTEND in_arg_hyp
-  TYPED AS var list option * bool
   PRINTED BY pr_in_arg_hyp_typed
   RAW_TYPED AS var list option * bool
   RAW_PRINTED BY pr_in_arg_hyp
@@ -267,6 +257,7 @@ ARGUMENT EXTEND in_arg_hyp
 | [ ] -> [ (Some [],true) ]
 END
 
+let pr_in_arg_hyp = pr_in_arg_hyp_typed () () ()
 
 let gen_in_arg_hyp_to_clause trad_id (hyps ,concl) : Tacticals.clause =
   {Tacexpr.onhyps=
@@ -287,13 +278,13 @@ let glob_in_arg_hyp_to_clause = gen_in_arg_hyp_to_clause (fun x -> x)
 (* spiwack argument for the commands of the retroknowledge *)
 
 let (wit_r_nat_field, globwit_r_nat_field, rawwit_r_nat_field) =
-  Genarg.create_arg "r_nat_field"
+  Genarg.create_arg None "r_nat_field"
 let (wit_r_n_field, globwit_r_n_field, rawwit_r_n_field) =
-  Genarg.create_arg "r_n_field"
+  Genarg.create_arg None "r_n_field"
 let (wit_r_int31_field, globwit_r_int31_field, rawwit_r_int31_field) =
-  Genarg.create_arg "r_int31_field"
+  Genarg.create_arg None "r_int31_field"
 let (wit_r_field, globwit_r_field, rawwit_r_field) =
-  Genarg.create_arg "r_field"
+  Genarg.create_arg None "r_field"
 
 (* spiwack: the print functions are incomplete, but I don't know what they are
 	used for *)

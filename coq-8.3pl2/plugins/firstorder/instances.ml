@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: instances.ml 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 open Formula
 open Sequent
@@ -14,7 +12,7 @@ open Unify
 open Rules
 open Util
 open Term
-open Rawterm
+open Glob_term
 open Tacmach
 open Tactics
 open Tacticals
@@ -35,11 +33,11 @@ let compare_instance inst1 inst2=
 	  | Phantom(_),Real((m,_),_)-> if m=0 then -1 else 1
 	  | Real((m,_),_),Phantom(_)-> if m=0 then 1 else -1
 
-let compare_gr id1 id2=
+let compare_gr id1 id2 =
   if id1==id2 then 0 else
     if id1==dummy_id then 1
     else if id2==dummy_id then -1
-    else Pervasives.compare id1 id2
+    else Libnames.RefOrdered.compare id1 id2
 
 module OrderedInstance=
 struct
@@ -125,9 +123,9 @@ let mk_open_instance id gl m t=
   let rec raux n t=
     if n=0 then t else
       match t with
-	  RLambda(loc,name,k,_,t0)->
+	  GLambda(loc,name,k,_,t0)->
 	    let t1=raux (n-1) t0 in
-	      RLambda(loc,name,k,RHole (dummy_loc,Evd.BinderType name),t1)
+	      GLambda(loc,name,k,GHole (dummy_loc,Evd.BinderType name),t1)
 	| _-> anomaly "can't happen" in
   let ntt=try
     Pretyping.Default.understand evmap env (raux m rawt)
@@ -181,12 +179,12 @@ let right_instance_tac inst continue seq=
 	[tclTHENLIST
 	   [introf;
 	    (fun gls->
-	       split (Rawterm.ImplicitBindings
+	       split (Glob_term.ImplicitBindings
 			[mkVar (Tacmach.pf_nth_hyp_id gls 1)]) gls);
 	    tclSOLVE [wrap 0 true continue (deepen seq)]];
 	 tclTRY assumption]
     | Real ((0,t),_) ->
-	(tclTHEN (split (Rawterm.ImplicitBindings [t]))
+	(tclTHEN (split (Glob_term.ImplicitBindings [t]))
 	   (tclSOLVE [wrap 0 true continue (deepen seq)]))
     | Real ((m,t),_) ->
 	tclFAIL 0 (Pp.str "not implemented ... yet")

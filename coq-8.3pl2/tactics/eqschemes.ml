@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: eqschemes.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 (* File created by Hugo Herbelin, Nov 2009 *)
 
@@ -70,8 +68,8 @@ let build_dependent_inductive ind (mib,mip) =
        extended_rel_list mip.mind_nrealargs_ctxt mib.mind_params_ctxt
        @ extended_rel_list 0 realargs)
 
-let my_it_mkLambda_or_LetIn s c = it_mkLambda_or_LetIn ~init:c s
-let my_it_mkProd_or_LetIn s c = it_mkProd_or_LetIn ~init:c s
+let my_it_mkLambda_or_LetIn s c = it_mkLambda_or_LetIn c s
+let my_it_mkProd_or_LetIn s c = it_mkProd_or_LetIn c s
 let my_it_mkLambda_or_LetIn_name s c =
   it_mkLambda_or_LetIn_name (Global.env()) c s
 
@@ -110,7 +108,7 @@ let get_sym_eq_data env ind =
   let _,params2 = list_chop (mib.mind_nparams-mip.mind_nrealargs) params in
   let paramsctxt1,_ =
     list_chop (mib.mind_nparams-mip.mind_nrealargs) mib.mind_params_ctxt in
-  if params2 <> constrargs then
+  if not (list_equal eq_constr params2 constrargs) then
     error "Constructors arguments must repeat the parameters.";
   (* nrealargs_ctxt and nrealargs are the same here *)
   (specif,mip.mind_nrealargs,realsign,mib.mind_params_ctxt,paramsctxt1)
@@ -176,7 +174,7 @@ let build_sym_scheme env ind =
        [|cstr (nrealargs+1)|]))))
 
 let sym_scheme_kind =
-  declare_individual_scheme_object "_sym"
+  declare_individual_scheme_object "_sym_internal"
   (fun ind -> build_sym_scheme (Global.env() (* side-effect! *)) ind)
 
 (**********************************************************************)
@@ -635,27 +633,14 @@ let rew_l2r_forward_dep_scheme_kind =
 (**********************************************************************)
 (* Non-dependent rewrite from either left-to-right in conclusion or   *)
 (* right-to-left in hypotheses: both l2r_rew and r2l_forward_rew are  *)
-(* potential candidates. However r2l_forward_rew introduces a blocked *)
-(* beta-expansion that blocks in turn the guard condition if this     *)
-(* one does not support commutative cuts while l2r_rew does not       *)
-(* support non symmetrical equalities, so...                          *)
-(**********************************************************************)
-
-(**********************************************************************)
-(* ... we use l2r_rew for the symmetrical case:                       *)
+(* potential candidates. Since l2r_rew needs a symmetrical equality,  *)
+(* we adopt r2l_forward_rew (this one introduces a blocked beta-      *)
+(* expansion but since the guard condition supports commutative cuts  *)
+(* this is not a problem; we need though a fix to adjust it to the    *)
+(* standard form of schemes in Coq)                                   *)
 (**********************************************************************)
 let rew_l2r_scheme_kind =
   declare_individual_scheme_object "_rew_r"
-  (fun ind -> build_l2r_rew_scheme false (Global.env()) ind InType)
-
-(**********************************************************************)
-(* ... and r2l_forward_rew for the non-symmetrical case, even though  *)
-(* it may break the guard condition. Moreover, its standard form      *)
-(* needs the inductive hypothesis not in last position what breaks    *)
-(* the order of goals and need a fix:                                 *)
-(**********************************************************************)
-let rew_asym_scheme_kind =
-  declare_individual_scheme_object "_rew_r_asym"
   (fun ind -> fix_r2l_forward_rew_scheme
       (build_r2l_forward_rew_scheme false (Global.env()) ind InType))
 

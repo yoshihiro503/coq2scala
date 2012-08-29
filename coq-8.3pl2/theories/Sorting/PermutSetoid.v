@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: PermutSetoid.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Import Omega Relations Multiset SetoidList.
 
@@ -54,7 +52,7 @@ Lemma list_contents_app :
   forall l m:list A,
     meq (list_contents (l ++ m)) (munion (list_contents l) (list_contents m)).
 Proof.
-  simple induction l; simpl in |- *; auto with datatypes.
+  simple induction l; simpl; auto with datatypes.
   intros.
   apply meq_trans with
     (munion (singletonBag a) (munion (list_contents l0) (list_contents m)));
@@ -67,19 +65,19 @@ Definition permutation (l m:list A) := meq (list_contents l) (list_contents m).
 
 Lemma permut_refl : forall l:list A, permutation l l.
 Proof.
-  unfold permutation in |- *; auto with datatypes.
+  unfold permutation; auto with datatypes.
 Qed.
 
 Lemma permut_sym :
   forall l1 l2 : list A, permutation l1 l2 -> permutation l2 l1.
 Proof.
-  unfold permutation, meq; intros; apply sym_eq; trivial.
+  unfold permutation, meq; intros; symmetry; trivial.
 Qed.
 
 Lemma permut_trans :
   forall l m n:list A, permutation l m -> permutation m n -> permutation l n.
 Proof.
-  unfold permutation in |- *; intros.
+  unfold permutation; intros.
   apply meq_trans with (list_contents m); auto with datatypes.
 Qed.
 
@@ -104,7 +102,7 @@ Lemma permut_app :
   forall l l' m m':list A,
     permutation l l' -> permutation m m' -> permutation (l ++ m) (l' ++ m').
 Proof.
-  unfold permutation in |- *; intros.
+  unfold permutation; intros.
   apply meq_trans with (munion (list_contents l) (list_contents m));
     auto using permut_cons, list_contents_app with datatypes.
   apply meq_trans with (munion (list_contents l') (list_contents m'));
@@ -344,8 +342,7 @@ Proof.
   rewrite if_eqA_refl in H.
   clear IHl; omega.
   rewrite IHl; intros.
-  specialize (H a0); auto with *.
-  destruct (eqA_dec a a0); simpl; auto with *.
+  specialize (H a0). omega.
 Qed.
 
 (** Permutation is compatible with InA. *)
@@ -396,18 +393,14 @@ Proof.
   apply permut_length_1.
   red; red; intros.
   specialize (P a). simpl in *.
-  rewrite (@if_eqA_rewrite_l a1 a2 a) in P by auto.
-  (** Bug omega: le "set" suivant ne devrait pas etre necessaire *)
-  set (u:= if eqA_dec a2 a then 1 else 0) in *; omega.
+  rewrite (@if_eqA_rewrite_l a1 a2 a) in P by auto. omega.
   right.
   inversion_clear H0; [|inversion H].
   split; auto.
   apply permut_length_1.
   red; red; intros.
   specialize (P a); simpl in *.
-  rewrite (@if_eqA_rewrite_l a1 b2 a) in P by auto.
-  (** Bug omega: idem *)
-  set (u:= if eqA_dec b2 a then 1 else 0) in *; omega.
+  rewrite (@if_eqA_rewrite_l a1 b2 a) in P by auto. omega.
 Qed.
 
 (** Permutation is compatible with length. *)
@@ -492,7 +485,7 @@ Qed.
 
 End Permut_map.
 
-Require Import Permutation TheoryList.
+Require Import Permutation.
 
 Section Permut_permut.
 

@@ -10,8 +10,6 @@
 (*                                                                     *)
 (************************************************************************)
 
-(* $Id: predicate.ml 12337 2009-09-17 15:58:14Z glondu $ *)
-
 (* Sets over ordered types *)
 
 module type OrderedType =

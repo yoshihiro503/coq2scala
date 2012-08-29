@@ -1,19 +1,17 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: search.ml 13853 2011-02-24 07:57:31Z glondu $ *)
 
 open Pp
 open Util
 open Names
 open Nameops
 open Term
-open Rawterm
+open Glob_term
 open Declarations
 open Libobject
 open Declare
@@ -23,6 +21,16 @@ open Matching
 open Printer
 open Libnames
 open Nametab
+
+module SearchBlacklist =
+  Goptions.MakeStringTable
+    (struct
+      let key = ["Search";"Blacklist"]
+      let title = "Current search blacklist : "
+      let member_message s b =
+	str ("Search blacklist does "^(if b then "" else "not ")^"include "^s)
+      let synchronous = true
+     end)
 
 (* The functions print_constructors and crible implement the behavior needed
    for the Coq searching commands.
@@ -57,14 +65,14 @@ let gen_crible refopt (fn : global_reference -> env -> constr -> unit) =
 	     fn (VarRef id) env typ
 	 with Not_found -> (* we are in a section *) ())
     | "CONSTANT" ->
-	let cst = Global.constant_of_delta(constant_of_kn kn) in
+	let cst = Global.constant_of_delta_kn kn in
 	let typ = Typeops.type_of_constant env cst in
         if refopt = None
 	  || head_const typ = constr_of_global (Option.get refopt)
 	then
 	  fn (ConstRef cst) env typ
     | "INDUCTIVE" ->
-	let mind = Global.mind_of_delta(mind_of_kn kn) in
+	let mind = Global.mind_of_delta_kn kn in
         let mib = Global.lookup_mind mind in
         (match refopt with
 	  | Some (IndRef ((kn',tyi) as ind)) when eq_mind mind kn' ->
@@ -94,10 +102,6 @@ let rec head c =
   | Prod (_,_,c) -> head c
   | LetIn (_,_,_,c) -> head c
   | _              -> c
-
-let constr_to_full_path c = match kind_of_term c with
-  | Const sp -> sp
-  | _ -> raise No_full_path
 
 let xor a b = (a or b) & (not (a & b))
 
@@ -170,6 +174,10 @@ let raw_search_by_head extra_filter display_function pattern =
 
 let name_of_reference ref = string_of_id (basename_of_global ref)
 
+let full_name_of_reference ref =
+  let (dir,id) = repr_path (path_of_global ref) in
+  string_of_dirpath dir ^ "." ^ string_of_id id
+
 (*
  * functions to use the new Libtypes facility
  *)
@@ -196,20 +204,21 @@ let filter_by_module_from_list = function
   | [], _ -> (fun _ _ _ -> true)
   | l, outside -> filter_by_module l (not outside)
 
-let filter_subproof gr _ _ =
-  not (string_string_contains (name_of_reference gr) "_subproof") &&
-  not (string_string_contains (name_of_reference gr) "_admitted")
+let filter_blacklist gr _ _ =
+  let name = full_name_of_reference gr in
+  let l = SearchBlacklist.elements () in
+  List.for_all (fun str -> not (string_string_contains ~where:name ~what:str)) l
 
 let (&&&&&) f g x y z = f x y z && g x y z
 
 let search_by_head pat inout =
-  text_search_by_head (filter_by_module_from_list inout &&&&& filter_subproof) pat
+  text_search_by_head (filter_by_module_from_list inout &&&&& filter_blacklist) pat
 
 let search_rewrite pat inout =
-  text_search_rewrite (filter_by_module_from_list inout &&&&& filter_subproof) pat
+  text_search_rewrite (filter_by_module_from_list inout &&&&& filter_blacklist) pat
 
 let search_pattern pat inout =
-  text_pattern_search (filter_by_module_from_list inout &&&&& filter_subproof) pat
+  text_pattern_search (filter_by_module_from_list inout &&&&& filter_blacklist) pat
 
 let gen_filtered_search filter_function display_function =
   gen_crible None
@@ -223,13 +232,13 @@ type glob_search_about_item =
 
 let search_about_item (itemref,typ) = function
   | GlobSearchSubPattern pat -> is_matching_appsubterm ~closed:false pat typ
-  | GlobSearchString s -> string_string_contains (name_of_reference itemref) s
+  | GlobSearchString s -> string_string_contains ~where:(name_of_reference itemref) ~what:s
 
 let raw_search_about filter_modules display_function l =
   let filter ref' env typ =
     filter_modules ref' env typ &&
     List.for_all (fun (b,i) -> b = search_about_item (ref',typ) i) l &&
-      filter_subproof ref' () ()
+      filter_blacklist ref' () ()
   in
   gen_filtered_search filter display_function
 

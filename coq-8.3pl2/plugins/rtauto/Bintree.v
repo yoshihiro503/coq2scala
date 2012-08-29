@@ -1,153 +1,31 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: Bintree.v 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 Require Export List.
 Require Export BinPos.
-
-Unset Boxed Definitions.
+Require Arith.EqNat.
 
 Open Scope positive_scope.
 
 Ltac clean := try (simpl; congruence).
-Ltac caseq t := generalize (refl_equal t); pattern t at -1; case t.
-
-Functional Scheme Pcompare_ind := Induction for Pcompare Sort Prop.
-
-Lemma Gt_Eq_Gt : forall p q cmp,
-       (p ?= q) Eq = Gt -> (p ?= q) cmp = Gt.
-apply (Pcompare_ind (fun p q cmp _ => (p ?= q) Eq = Gt -> (p ?= q) cmp = Gt));
-simpl;auto;congruence.
-Qed.
-
-Lemma Gt_Lt_Gt : forall p q cmp,
-       (p ?= q) Lt = Gt -> (p ?= q) cmp = Gt.
-apply (Pcompare_ind (fun p q cmp _ => (p ?= q) Lt = Gt -> (p ?= q) cmp = Gt));
-simpl;auto;congruence.
-Qed.
-
-Lemma Gt_Psucc_Eq: forall p q,
-  (p ?= Psucc q) Gt = Gt -> (p ?= q) Eq = Gt.
-intros p q;generalize p;clear p;induction q;destruct p;simpl;auto;try congruence.
-intro;apply Gt_Eq_Gt;auto.
-apply Gt_Lt_Gt.
-Qed.
-
-Lemma Eq_Psucc_Gt: forall p q,
-  (p ?= Psucc q) Eq = Eq -> (p ?= q) Eq = Gt.
-intros p q;generalize p;clear p;induction q;destruct p;simpl;auto;try congruence.
-intro H;elim (Pcompare_not_Eq p (Psucc q));tauto.
-intro H;apply Gt_Eq_Gt;auto.
-intro H;rewrite Pcompare_Eq_eq with p q;auto.
-generalize q;clear q IHq p H;induction q;simpl;auto.
-intro H;elim (Pcompare_not_Eq p q);tauto.
-Qed.
-
-Lemma Gt_Psucc_Gt : forall n p cmp cmp0,
- (n?=p) cmp = Gt -> (Psucc n?=p) cmp0 = Gt.
-induction n;intros [ | p | p];simpl;try congruence.
-intros; apply IHn with cmp;trivial.
-intros; apply IHn with Gt;trivial.
-intros;apply Gt_Lt_Gt;trivial.
-intros [ | | ] _ H.
-apply Gt_Eq_Gt;trivial.
-apply Gt_Lt_Gt;trivial.
-trivial.
-Qed.
 
 Lemma Gt_Psucc: forall p q,
-       (p ?= Psucc q) Eq = Gt -> (p ?= q) Eq = Gt.
-intros p q;generalize p;clear p;induction q;destruct p;simpl;auto;try congruence.
-apply Gt_Psucc_Eq.
-intro;apply Gt_Eq_Gt;apply IHq;auto.
-apply Gt_Eq_Gt.
-apply Gt_Lt_Gt.
+       (p ?= Pos.succ q) = Gt -> (p ?= q) = Gt.
+Proof.
+intros. rewrite <- Pos.compare_succ_succ.
+now apply Pos.lt_gt, Pos.lt_lt_succ, Pos.gt_lt.
 Qed.
 
 Lemma Psucc_Gt : forall p,
-       (Psucc p ?= p) Eq = Gt.
-induction p;simpl.
-apply Gt_Eq_Gt;auto.
-generalize p;clear p IHp.
-induction p;simpl;auto.
-reflexivity.
+       (Pos.succ p ?= p) = Gt.
+Proof.
+intros. apply Pos.lt_gt, Pos.lt_succ_diag_r.
 Qed.
-
-Fixpoint pos_eq (m n:positive) {struct m} :bool :=
-match m, n with
-  xI mm, xI nn => pos_eq mm nn
-| xO mm, xO nn => pos_eq mm nn
-| xH, xH => true
-| _, _ => false
-end.
-
-Theorem pos_eq_refl : forall m n, pos_eq m n = true -> m = n.
-induction m;simpl;intro n;destruct n;congruence ||
-(intro e;apply f_equal with positive;auto).
-Defined.
-
-Theorem refl_pos_eq : forall m, pos_eq m m = true.
-induction m;simpl;auto.
-Qed.
-
-Definition pos_eq_dec : forall (m n:positive), {m=n}+{m<>n} .
-fix 1;intros [mm|mm|] [nn|nn|];try (right;congruence).
-case (pos_eq_dec mm nn).
-intro e;left;apply (f_equal xI e).
-intro ne;right;congruence.
-case (pos_eq_dec mm nn).
-intro e;left;apply (f_equal xO e).
-intro ne;right;congruence.
-left;reflexivity.
-Defined.
-
-Theorem pos_eq_dec_refl : forall m, pos_eq_dec m m = left _ (refl_equal m).
-fix 1;intros [mm|mm|].
-simpl; rewrite  pos_eq_dec_refl; reflexivity.
-simpl; rewrite  pos_eq_dec_refl; reflexivity.
-reflexivity.
-Qed.
-
-Theorem pos_eq_dec_ex : forall m n,
- pos_eq m n =true -> exists h:m=n,
- pos_eq_dec m n = left _ h.
-fix 1;intros [mm|mm|] [nn|nn|];try (simpl;congruence).
-simpl;intro e.
-elim (pos_eq_dec_ex _ _ e).
-intros x ex; rewrite ex.
-exists (f_equal xI x).
-reflexivity.
-simpl;intro e.
-elim (pos_eq_dec_ex _ _ e).
-intros x ex; rewrite ex.
-exists (f_equal xO x).
-reflexivity.
-simpl.
-exists (refl_equal xH).
-reflexivity.
-Qed.
-
-Fixpoint nat_eq (m n:nat) {struct m}: bool:=
-match m, n with
-O,O => true
-| S mm,S nn => nat_eq mm nn
-| _,_ => false
-end.
-
-Theorem nat_eq_refl : forall m n, nat_eq m n = true -> m = n.
-induction m;simpl;intro n;destruct n;congruence ||
-(intro e;apply f_equal with nat;auto).
-Defined.
-
-Theorem refl_nat_eq : forall n, nat_eq n n = true.
-induction n;simpl;trivial.
-Defined.
 
 Fixpoint Lget (A:Set) (n:nat) (l:list A) {struct l}:option A :=
 match l with nil => None
@@ -156,21 +34,21 @@ match n with O => Some x
 | S m => Lget A m q
 end end .
 
-Implicit Arguments Lget [A].
+Arguments Lget [A] n l.
 
 Lemma map_app : forall (A B:Set) (f:A -> B) l m,
 List.map  f (l ++ m) = List.map  f  l ++ List.map  f  m.
 induction l.
 reflexivity.
 simpl.
-intro m ; apply f_equal with (list B);apply IHl.
+intro m ; apply f_equal;apply IHl.
 Qed.
 
 Lemma length_map : forall (A B:Set) (f:A -> B) l,
 length (List.map  f l) = length l.
 induction l.
 reflexivity.
-simpl; apply f_equal with nat;apply IHl.
+simpl; apply f_equal;apply IHl.
 Qed.
 
 Lemma Lget_map : forall (A B:Set) (f:A -> B) i l,
@@ -182,7 +60,8 @@ simpl;auto.
 Qed.
 
 Lemma Lget_app : forall (A:Set) (a:A) l i,
-Lget i (l ++ a :: nil) = if nat_eq i (length l) then Some a else Lget i l.
+Lget i (l ++ a :: nil) = if Arith.EqNat.beq_nat i (length l) then Some a else Lget i l.
+Proof.
 induction l;simpl Lget;simpl length.
 intros [ | i];simpl;reflexivity.
 intros [ | i];simpl.
@@ -278,17 +157,20 @@ Qed.
 
 Theorem Tget_Tadd: forall i j a T,
        Tget i (Tadd j a T) =
-       match (i ?= j) Eq with
+       match (i ?= j) with
          Eq => PSome a
        | Lt => Tget i T
        | Gt => Tget i T
        end.
+Proof.
 intros i j.
-caseq ((i ?= j) Eq).
-intro H;rewrite (Pcompare_Eq_eq _ _ H);intros a;clear i H.
+case_eq (i ?= j).
+intro H;rewrite (Pos.compare_eq _ _ H);intros a;clear i H.
 induction j;destruct T;simpl;try (apply IHj);congruence.
+unfold Pos.compare.
 generalize i;clear i;induction j;destruct T;simpl in H|-*;
 destruct i;simpl;try rewrite (IHj _ H);try (destruct i;simpl;congruence);reflexivity|| congruence.
+unfold Pos.compare.
 generalize i;clear i;induction j;destruct T;simpl in H|-*;
 destruct i;simpl;try rewrite (IHj _ H);try (destruct i;simpl;congruence);reflexivity|| congruence.
 Qed.
@@ -299,7 +181,7 @@ mkStore  {index:positive;contents:Tree}.
 Definition empty := mkStore xH Tempty.
 
 Definition push a  S :=
-mkStore (Psucc (index S)) (Tadd (index S) a (contents S)).
+mkStore (Pos.succ (index S)) (Tadd (index S) a (contents S)).
 
 Definition get i S := Tget i (contents S).
 
@@ -312,7 +194,8 @@ Inductive Full : Store -> Type:=
   | F_push : forall a S, Full S -> Full (push a S).
 
 Theorem get_Full_Gt : forall S, Full S ->
-       forall i, (i ?= index S) Eq = Gt -> get i S = PNone.
+       forall i, (i ?= index S) = Gt -> get i S = PNone.
+Proof.
 intros S W;induction W.
 unfold empty,index,get,contents;intros;apply Tget_Tempty.
 unfold index,get,push;simpl contents.
@@ -331,7 +214,7 @@ intros a S.
 rewrite Tget_Tadd.
 rewrite Psucc_Gt.
 intro W.
-change (get (Psucc (index S)) S =PNone).
+change (get (Pos.succ (index S)) S =PNone).
 apply get_Full_Gt; auto.
 apply Psucc_Gt.
 Qed.
@@ -339,16 +222,17 @@ Qed.
 Theorem get_push_Full :
   forall i a S, Full S ->
   get i (push a S) =
-  match (i ?= index S) Eq with
+  match (i ?= index S) with
     Eq => PSome a
   | Lt => get i S
   | Gt => PNone
 end.
+Proof.
 intros i a S F.
-caseq ((i ?= index S) Eq).
-intro e;rewrite (Pcompare_Eq_eq _ _ e).
+case_eq (i ?= index S).
+intro e;rewrite (Pos.compare_eq _ _ e).
 destruct S;unfold get,push,index;simpl contents;rewrite Tget_Tadd.
-rewrite Pcompare_refl;reflexivity.
+rewrite Pos.compare_refl;reflexivity.
 intros;destruct S;unfold get,push,index;simpl contents;rewrite Tget_Tadd.
 simpl index in H;rewrite H;reflexivity.
 intro H;generalize H;clear H.
@@ -361,9 +245,10 @@ Qed.
 Lemma Full_push_compat : forall i a S, Full S ->
 forall x, get i S = PSome x ->
  get i (push a S) = PSome x.
+Proof.
 intros i a S F x H.
-caseq ((i ?= index S) Eq);intro test.
-rewrite (Pcompare_Eq_eq _ _ test) in H.
+case_eq (i ?= index S);intro test.
+rewrite (Pos.compare_eq _ _ test) in H.
 rewrite (get_Full_Eq _ F) in H;congruence.
 rewrite <- H.
 rewrite (get_push_Full i a).
@@ -375,13 +260,13 @@ Qed.
 Lemma Full_index_one_empty : forall S, Full S -> index S = 1 -> S=empty.
 intros [ind cont] F one; inversion F.
 reflexivity.
-simpl index in one;assert (h:=Psucc_not_one (index S)).
+simpl index in one;assert (h:=Pos.succ_not_1 (index S)).
 congruence.
 Qed.
 
 Lemma push_not_empty: forall a S, (push a S) <> empty.
 intros a [ind cont];unfold push,empty.
-simpl;intro H;injection H; intros _ ; apply Psucc_not_one.
+simpl;intro H;injection H; intros _ ; apply Pos.succ_not_1.
 Qed.
 
 Fixpoint In (x:A) (S:Store) (F:Full S) {struct F}: Prop :=
@@ -395,7 +280,7 @@ get i S = PSome x -> In x S F.
 induction F.
 intro i;rewrite get_empty; congruence.
 intro i;rewrite get_push_Full;trivial.
-caseq ((i ?= index S) Eq);simpl.
+case_eq (i ?= index S);simpl.
 left;congruence.
 right;eauto.
 congruence.
@@ -403,34 +288,34 @@ Qed.
 
 End Store.
 
-Implicit Arguments PNone [A].
-Implicit Arguments PSome [A].
+Arguments PNone [A].
+Arguments PSome [A] _.
 
-Implicit Arguments Tempty [A].
-Implicit Arguments Branch0 [A].
-Implicit Arguments Branch1 [A].
+Arguments Tempty [A].
+Arguments Branch0 [A] _ _.
+Arguments Branch1 [A] _ _ _.
 
-Implicit Arguments Tget [A].
-Implicit Arguments Tadd [A].
+Arguments Tget [A] p T.
+Arguments Tadd [A] p a T.
 
-Implicit Arguments Tget_Tempty [A].
-Implicit Arguments Tget_Tadd [A].
+Arguments Tget_Tempty [A] p.
+Arguments Tget_Tadd [A] i j a T.
 
-Implicit Arguments mkStore [A].
-Implicit Arguments index [A].
-Implicit Arguments contents [A].
+Arguments mkStore [A] index contents.
+Arguments index [A] s.
+Arguments contents [A] s.
 
-Implicit Arguments empty [A].
-Implicit Arguments get [A].
-Implicit Arguments push [A].
+Arguments empty [A].
+Arguments get [A] i S.
+Arguments push [A] a S.
 
-Implicit Arguments get_empty [A].
-Implicit Arguments get_push_Full [A].
+Arguments get_empty [A] i.
+Arguments get_push_Full [A] i a S _.
 
-Implicit Arguments Full [A].
-Implicit Arguments F_empty [A].
-Implicit Arguments F_push [A].
-Implicit Arguments In [A].
+Arguments Full [A] _.
+Arguments F_empty [A].
+Arguments F_push [A] a S _.
+Arguments In [A] x S F.
 
 Section Map.
 
@@ -482,8 +367,8 @@ Defined.
 
 End Map.
 
-Implicit Arguments Tmap [A B].
-Implicit Arguments map [A B].
-Implicit Arguments Full_map [A B f].
+Arguments Tmap [A B] f T.
+Arguments map [A B] f S.
+Arguments Full_map [A B f] S _.
 
 Notation "hyps \ A" := (push A hyps) (at level 72,left associativity).

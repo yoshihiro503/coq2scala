@@ -11,20 +11,18 @@
  * Institution: LRI, CNRS UMR 8623 - Université Paris Sud
  *              91405 Orsay, France *)
 
-(* $Id: OrdersEx.v 12641 2010-01-07 15:32:52Z letouzey $ *)
-
-Require Import Orders NatOrderedType POrderedType NOrderedType
- ZOrderedType RelationPairs EqualitiesFacts.
+Require Import Orders NPeano POrderedType NArith
+ ZArith RelationPairs EqualitiesFacts.
 
 (** * Examples of Ordered Type structures. *)
 
 
 (** Ordered Type for [nat], [Positive], [N], [Z] with the usual order. *)
 
-Module Nat_as_OT := NatOrderedType.Nat_as_OT.
+Module Nat_as_OT := NPeano.Nat.
 Module Positive_as_OT := POrderedType.Positive_as_OT.
-Module N_as_OT := NOrderedType.N_as_OT.
-Module Z_as_OT := ZOrderedType.Z_as_OT.
+Module N_as_OT := BinNat.N.
+Module Z_as_OT := BinInt.Z.
 
 (** An OrderedType can now directly be seen as a DecidableType *)
 

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: Quote.v 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 Declare ML Module "quote_plugin".
 
@@ -28,7 +26,6 @@ Declare ML Module "quote_plugin".
 ***********************************************************************)
 
 Set Implicit Arguments.
-Unset Boxed Definitions.
 
 Section variables_map.
 
@@ -70,7 +67,7 @@ Fixpoint index_lt (n m:index) {struct m} : bool :=
   end.
 
 Lemma index_eq_prop : forall n m:index, index_eq n m = true -> n = m.
-  simple induction n; simple induction m; simpl in |- *; intros.
+  simple induction n; simple induction m; simpl; intros.
   rewrite (H i0 H1); reflexivity.
   discriminate.
   discriminate.

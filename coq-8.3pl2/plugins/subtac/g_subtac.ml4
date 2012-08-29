@@ -1,20 +1,16 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
 (*i camlp4deps: "parsing/grammar.cma" i*)
-(*i camlp4use: "pa_extend.cmo" i*)
-
 
 (*
   Syntax for the subtac terms and types.
   Elaborated from correctness/psyntax.ml4 by Jean-Christophe Filliâtre *)
-
-(* $Id: g_subtac.ml4 13332 2010-07-26 22:12:43Z msozeau $ *)
 
 
 open Flags
@@ -37,14 +33,14 @@ module Tactic = Pcoq.Tactic
 
 module SubtacGram =
 struct
-  let gec s = Gram.Entry.create ("Subtac."^s)
+  let gec s = Gram.entry_create ("Subtac."^s)
 		(* types *)
-  let subtac_gallina_loc : Vernacexpr.vernac_expr located Gram.Entry.e = gec "subtac_gallina_loc"
+  let subtac_gallina_loc : Vernacexpr.vernac_expr located Gram.entry = gec "subtac_gallina_loc"
 
-  let subtac_withtac : Tacexpr.raw_tactic_expr option Gram.Entry.e = gec "subtac_withtac"
+  let subtac_withtac : Tacexpr.raw_tactic_expr option Gram.entry = gec "subtac_withtac"
 end
 
-open Rawterm
+open Glob_term
 open SubtacGram
 open Util
 open Pcoq
@@ -79,14 +75,14 @@ type 'a gallina_loc_argtype = (Vernacexpr.vernac_expr located, 'a) Genarg.abstra
 let (wit_subtac_gallina_loc : Genarg.tlevel gallina_loc_argtype),
   (globwit_subtac_gallina_loc : Genarg.glevel gallina_loc_argtype),
   (rawwit_subtac_gallina_loc : Genarg.rlevel gallina_loc_argtype) =
-  Genarg.create_arg "subtac_gallina_loc"
+  Genarg.create_arg None "subtac_gallina_loc"
 
 type 'a withtac_argtype = (Tacexpr.raw_tactic_expr option, 'a) Genarg.abstract_argument_type
 
 let (wit_subtac_withtac : Genarg.tlevel withtac_argtype),
   (globwit_subtac_withtac : Genarg.glevel withtac_argtype),
   (rawwit_subtac_withtac : Genarg.rlevel withtac_argtype) =
-  Genarg.create_arg "subtac_withtac"
+  Genarg.create_arg None "subtac_withtac"
 
 VERNAC COMMAND EXTEND Subtac
 [ "Program" subtac_gallina_loc(g) ] -> [ Subtac.subtac g ]
@@ -94,7 +90,7 @@ VERNAC COMMAND EXTEND Subtac
 
 let try_catch_exn f e =
   try f e
-  with exn -> errorlabstrm "Program" (Cerrors.explain_exn exn)
+  with exn -> errorlabstrm "Program" (Errors.print exn)
 
 let subtac_obligation e = try_catch_exn Subtac_obligations.subtac_obligation e
 let next_obligation e = try_catch_exn Subtac_obligations.next_obligation e

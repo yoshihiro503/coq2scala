@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -9,38 +9,74 @@
 (* This file gathers environment variables needed by Coq to run (such
    as coqlib) *)
 
-let coqbin () =
-  if !Flags.boot || Coq_config.local
-  then Filename.concat Coq_config.coqsrc "bin"
-  else System.canonical_path_name (Filename.dirname Sys.executable_name)
+let coqbin =
+  System.canonical_path_name (Filename.dirname Sys.executable_name)
+
+(* The following only makes sense when executables are running from
+   source tree (e.g. during build or in local mode). *)
+let coqroot = Filename.dirname coqbin
 
 (* On win32, we add coqbin to the PATH at launch-time (this used to be
    done in a .bat script). *)
 
 let _ =
   if Coq_config.arch = "win32" then
-    Unix.putenv "PATH" (coqbin() ^ ";" ^ System.getenv_else "PATH" "")
+    Unix.putenv "PATH" (coqbin ^ ";" ^ System.getenv_else "PATH" "")
+
+let reldir instdir testfile oth =
+  let rpath = if Coq_config.local then [] else instdir in
+  let out = List.fold_left Filename.concat coqroot rpath in
+  if Sys.file_exists (Filename.concat out testfile) then out else oth ()
 
 let guess_coqlib () =
   let file = "states/initial.coq" in
-    if Sys.file_exists (Filename.concat Coq_config.coqlib file)
-    then Coq_config.coqlib
-    else
-      let coqbin = System.canonical_path_name (Filename.dirname Sys.executable_name) in
-      let prefix = Filename.dirname coqbin in
-      let rpath = if Coq_config.local then [] else
-	  (if Coq_config.arch = "win32" then ["lib"] else ["lib";"coq"]) in
-      let coqlib = List.fold_left Filename.concat prefix rpath in
-	if Sys.file_exists (Filename.concat coqlib file) then coqlib else
-	  Util.error "cannot guess a path for Coq libraries; please use -coqlib option"
+    reldir (if Coq_config.arch = "win32" then ["lib"] else ["lib";"coq"]) file
+      (fun () ->
+        let coqlib = match Coq_config.coqlib with
+          | Some coqlib -> coqlib
+          | None -> coqroot
+        in
+        if Sys.file_exists (Filename.concat coqlib file)
+        then coqlib
+        else Util.error "cannot guess a path for Coq libraries; please use -coqlib option")
 
 let coqlib () =
   if !Flags.coqlib_spec then !Flags.coqlib else
-    (if !Flags.boot then Coq_config.coqsrc else guess_coqlib ())
+    (if !Flags.boot then coqroot else guess_coqlib ())
+
+let docdir () =
+  reldir (if Coq_config.arch = "win32" then ["doc"] else ["share";"doc";"coq"]) "html" (fun () -> Coq_config.docdir)
 
 let path_to_list p =
   let sep = if Sys.os_type = "Win32" then ';' else ':' in
     Util.split_string_at sep p
+
+let xdg_data_home =
+  Filename.concat
+    (System.getenv_else "XDG_DATA_HOME" (Filename.concat System.home ".local/share"))
+    "coq"
+
+let xdg_config_home =
+  Filename.concat
+    (System.getenv_else "XDG_CONFIG_HOME" (Filename.concat System.home ".config"))
+    "coq"
+
+let xdg_data_dirs =
+  (try
+    List.map (fun dir -> Filename.concat dir "coq") (path_to_list (Sys.getenv "XDG_DATA_DIRS"))
+  with Not_found -> ["/usr/local/share/coq";"/usr/share/coq"])
+    @ (match Coq_config.datadir with |None -> [] |Some datadir -> [datadir])
+
+let xdg_dirs =
+  let dirs = xdg_data_home :: xdg_data_dirs
+  in
+  List.rev (List.filter Sys.file_exists dirs)
+
+let coqpath =
+  try
+    let path = Sys.getenv "COQPATH" in
+      List.rev (List.filter Sys.file_exists (path_to_list path))
+  with Not_found -> []
 
 let rec which l f =
   match l with
@@ -74,11 +110,12 @@ let camllib () =
     let _,res = System.run_command (fun x -> x) (fun _ -> ()) com in
     Util.strip res
 
-(* TODO : essayer aussi camlbin *)
 let camlp4bin () =
   if !Flags.camlp4bin_spec then !Flags.camlp4bin else
     if !Flags.boot then Coq_config.camlp4bin else
-      try guess_camlp4bin () with _ -> Coq_config.camlp4bin
+      try guess_camlp4bin () with _ -> let cb = camlbin () in
+				       if Sys.file_exists (Filename.concat cb Coq_config.camlp4) then cb
+				       else Coq_config.camlp4bin
 
 let camlp4lib () =
   if !Flags.boot
@@ -86,7 +123,7 @@ let camlp4lib () =
   else
     let camlp4bin = camlp4bin () in
     let com = (Filename.concat camlp4bin Coq_config.camlp4) ^ " -where" in
-    let _,res = System.run_command (fun x -> x) (fun _ -> ()) com in
-    Util.strip res
-
-
+    let ex,res = System.run_command (fun x -> x) (fun _ -> ()) com in
+    match ex with
+      |Unix.WEXITED 0 -> Util.strip res
+      |_ -> "/dev/null"

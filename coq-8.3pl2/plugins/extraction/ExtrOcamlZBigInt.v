@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,7 +8,7 @@
 
 (** Extraction of [positive], [N] and [Z] into Ocaml's [big_int] *)
 
-Require Import ZArith NArith ZOdiv_def.
+Require Import ZArith NArith.
 Require Import ExtrOcamlBasic.
 
 (** NB: The extracted code should be linked with [nums.cm(x)a]
@@ -36,50 +36,52 @@ Extract Inductive N => "Big.big_int"
 
 (** Efficient (but uncertified) versions for usual functions *)
 
-Extract Constant Pplus => "Big.add".
-Extract Constant Psucc => "Big.succ".
-Extract Constant Ppred => "fun n -> Big.max Big.one (Big.pred n)".
-Extract Constant Pminus => "fun n m -> Big.max Big.one (Big.sub n m)".
-Extract Constant Pmult => "Big.mult".
-Extract Constant Pmin => "Big.min".
-Extract Constant Pmax => "Big.max".
-Extract Constant Pcompare =>
+Extract Constant Pos.add => "Big.add".
+Extract Constant Pos.succ => "Big.succ".
+Extract Constant Pos.pred => "fun n -> Big.max Big.one (Big.pred n)".
+Extract Constant Pos.sub => "fun n m -> Big.max Big.one (Big.sub n m)".
+Extract Constant Pos.mul => "Big.mult".
+Extract Constant Pos.min => "Big.min".
+Extract Constant Pos.max => "Big.max".
+Extract Constant Pos.compare =>
+ "fun x y -> Big.compare_case Eq Lt Gt x y".
+Extract Constant Pos.compare_cont =>
  "fun x y c -> Big.compare_case c Lt Gt x y".
 
-Extract Constant Nplus => "Big.add".
-Extract Constant Nsucc => "Big.succ".
-Extract Constant Npred => "fun n -> Big.max Big.zero (Big.pred n)".
-Extract Constant Nminus => "fun n m -> Big.max Big.zero (Big.sub n m)".
-Extract Constant Nmult => "Big.mult".
-Extract Constant Nmin => "Big.min".
-Extract Constant Nmax => "Big.max".
-Extract Constant Ndiv =>
+Extract Constant N.add => "Big.add".
+Extract Constant N.succ => "Big.succ".
+Extract Constant N.pred => "fun n -> Big.max Big.zero (Big.pred n)".
+Extract Constant N.sub => "fun n m -> Big.max Big.zero (Big.sub n m)".
+Extract Constant N.mul => "Big.mult".
+Extract Constant N.min => "Big.min".
+Extract Constant N.max => "Big.max".
+Extract Constant N.div =>
  "fun a b -> if Big.eq b Big.zero then Big.zero else Big.div a b".
-Extract Constant Nmod =>
+Extract Constant N.modulo =>
  "fun a b -> if Big.eq b Big.zero then Big.zero else Big.modulo a b".
-Extract Constant Ncompare => "Big.compare_case Eq Lt Gt".
+Extract Constant N.compare => "Big.compare_case Eq Lt Gt".
 
-Extract Constant Zplus => "Big.add".
-Extract Constant Zsucc => "Big.succ".
-Extract Constant Zpred => "Big.pred".
-Extract Constant Zminus => "Big.sub".
-Extract Constant Zmult => "Big.mult".
-Extract Constant Zopp => "Big.opp".
-Extract Constant Zabs => "Big.abs".
-Extract Constant Zmin => "Big.min".
-Extract Constant Zmax => "Big.max".
-Extract Constant Zcompare => "Big.compare_case Eq Lt Gt".
+Extract Constant Z.add => "Big.add".
+Extract Constant Z.succ => "Big.succ".
+Extract Constant Z.pred => "Big.pred".
+Extract Constant Z.sub => "Big.sub".
+Extract Constant Z.mul => "Big.mult".
+Extract Constant Z.opp => "Big.opp".
+Extract Constant Z.abs => "Big.abs".
+Extract Constant Z.min => "Big.min".
+Extract Constant Z.max => "Big.max".
+Extract Constant Z.compare => "Big.compare_case Eq Lt Gt".
 
-Extract Constant Z_of_N => "fun p -> p".
-Extract Constant Zabs_N => "Big.abs".
+Extract Constant Z.of_N => "fun p -> p".
+Extract Constant Z.abs_N => "Big.abs".
 
-(** Zdiv and Zmod are quite complex to define in terms of (/) and (mod).
+(** Z.div and Z.modulo are quite complex to define in terms of (/) and (mod).
     For the moment we don't even try *)
 
 (** Test:
 Require Import ZArith NArith.
 
 Extraction "/tmp/test.ml"
- Pplus Ppred Pminus Pmult Pcompare Npred Nminus Ndiv Nmod Ncompare
- Zplus Zmult BinInt.Zcompare Z_of_N Zabs_N Zdiv.Zdiv Zmod.
+ Pos.add Pos.pred Pos.sub Pos.mul Pos.compare N.pred N.sub N.div N.modulo N.compare
+ Z.add Z.mul Z.compare Z.of_N Z.abs_N Z.div Z.modulo.
 *)

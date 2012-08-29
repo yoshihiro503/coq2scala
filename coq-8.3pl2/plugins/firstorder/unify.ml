@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: unify.ml 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 open Util
 open Formula
@@ -91,9 +89,8 @@ let unif t1 t2=
 let value i t=
   let add x y=
     if x<0 then y else if y<0 then x else x+y in
-  let tref=mkMeta i in
   let rec vaux term=
-    if term=tref then 0 else
+    if isMeta term && destMeta term = i then 0 else
       let f v t=add v (vaux t) in
       let vr=fold_constr f (-1) term in
 	if vr<0 then -1 else vr+1 in

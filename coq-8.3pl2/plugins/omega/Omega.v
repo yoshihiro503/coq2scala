@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -13,17 +13,15 @@
 (*                                                                        *)
 (**************************************************************************)
 
-(* $Id: Omega.v 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 (* We do not require [ZArith] anymore, but only what's necessary for Omega *)
 Require Export ZArith_base.
 Require Export OmegaLemmas.
 Require Export PreOmega.
 Declare ML Module "omega_plugin".
 
-Hint Resolve Zle_refl Zplus_comm Zplus_assoc Zmult_comm Zmult_assoc Zplus_0_l
-  Zplus_0_r Zmult_1_l Zplus_opp_l Zplus_opp_r Zmult_plus_distr_l
-  Zmult_plus_distr_r: zarith.
+Hint Resolve Z.le_refl Z.add_comm Z.add_assoc Z.mul_comm Z.mul_assoc Z.add_0_l
+  Z.add_0_r Z.mul_1_l Z.add_opp_diag_l Z.add_opp_diag_r Z.mul_add_distr_r
+  Z.mul_add_distr_l: zarith.
 
 Require Export Zhints.
 

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: entries.ml 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (*i*)
 open Names
@@ -58,12 +56,13 @@ type mutual_inductive_entry = {
 
 type definition_entry = {
   const_entry_body   : constr;
+  const_entry_secctx : section_context option;
   const_entry_type   : types option;
-  const_entry_opaque : bool;
-  const_entry_boxed  : bool}
+  const_entry_opaque : bool }
 
-(* type and the inlining flag *)
-type parameter_entry = types * bool
+type inline = int option (* inlining level, None for no inlining *)
+
+type parameter_entry = section_context option * types * inline 
 
 type constant_entry =
   | DefinitionEntry of definition_entry
@@ -71,14 +70,7 @@ type constant_entry =
 
 (*s Modules *)
 
-
-type specification_entry = 
-    SPEconst of constant_entry
-  | SPEmind of mutual_inductive_entry
-  | SPEmodule of module_entry
-  | SPEmodtype of module_struct_entry
-      
-and module_struct_entry = 
+type module_struct_entry =
     MSEident of module_path
   | MSEfunctor of mod_bound_id * module_struct_entry * module_struct_entry
   | MSEwith of module_struct_entry * with_declaration

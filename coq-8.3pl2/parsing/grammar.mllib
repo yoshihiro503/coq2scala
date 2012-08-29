@@ -8,12 +8,15 @@ Flags
 Segmenttree
 Unicodetable
 Util
+Errors
 Bigint
 Dyn
 Hashcons
 Predicate
 Rtree
 Option
+Store
+Hashtbl_alt
 
 Names
 Univ
@@ -58,13 +61,14 @@ Namegen
 Evd
 Reductionops
 Inductiveops
-Rawterm
+Glob_term
 Detyping
 Pattern
 Topconstr
 Genarg
 Ppextend
 Tacexpr
+Tok
 Lexer
 Extend
 Vernacexpr

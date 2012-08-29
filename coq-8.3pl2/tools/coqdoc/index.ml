@@ -1,13 +1,10 @@
-(* -*- compile-command: "make -C ../.. bin/coqdoc" -*- *)
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: index.ml 13676 2010-12-04 10:34:21Z herbelin $ i*)
 
 open Filename
 open Lexing
@@ -61,9 +58,11 @@ let full_ident sp id =
   then id
   else ""
 
-let add_def loc ty sp id =
-  Hashtbl.add reftable (!current_library, loc) (Def (full_ident sp id, ty));
-  Hashtbl.add deftable id (Ref (!current_library, full_ident sp id, ty))
+let add_def loc1 loc2 ty sp id =
+  for loc = loc1 to loc2 do
+    Hashtbl.add reftable (!current_library, loc) (Def (full_ident sp id, ty))
+  done;
+  Hashtbl.add deftable id (Def (full_ident sp id, ty))
 
 let add_ref m loc m' sp id ty =
   if Hashtbl.mem reftable (m, loc) then ()
@@ -236,18 +235,20 @@ let type_name = function
 let prepare_entry s = function
   | Notation ->
       (* We decode the encoding done in Dumpglob.cook_notation of coqtop *)
-      (* Encoded notations have the form section:sc:x_'++'_x where: *)
-      (* - the section, if any, ends with a "." *)
-      (* - the scope can be empty *)
-      (* - tokens are separated with "_" *)
-      (* - non-terminal symbols are conventionally represented by "x" *)
-      (* - terminals are enclosed within simple quotes *)
-      (* - existing simple quotes (that necessarily are parts of terminals) *)
-      (*   are doubled *)
+      (* Encoded notations have the form section:sc:x_'++'_x where:      *)
+      (* - the section, if any, ends with a "."                          *)
+      (* - the scope can be empty                                        *)
+      (* - tokens are separated with "_"                                 *)
+      (* - non-terminal symbols are conventionally represented by "x"    *)
+      (* - terminals are enclosed within simple quotes                   *)
+      (* - existing simple quotes (that necessarily are parts of         *)
+      (*   terminals) are doubled                                        *)
       (*   (as a consequence, when a terminal contains "_" or "x", these *)
       (*   necessarily appear enclosed within non-doubled simple quotes) *)
-      (*   Example: "x ' %x _% y %'x %'_' z" is encoded as *)
-      (*     "x_''''_'%x'_'_%'_x_'%''x'_'%''_'''_x" *)
+      (* - non-printable characters < 32 are left encoded so that they   *)
+      (*   are human-readable in index files                             *)
+      (* Example: "x ' %x _% y %'x %'_' z" is encoded as                 *)
+      (*   "x_''''_'%x'_'_%'_x_'%''x'_'%''_'''_x"                        *)
       let err () = eprintf "Invalid notation in globalization file\n"; exit 1 in
       let h = try String.index_from s 0 ':' with _ -> err () in
       let i = try String.index_from s (h+1) ':' with _ -> err () in
@@ -266,10 +267,10 @@ let prepare_entry s = function
 	  | _ -> assert false)
 	end
 	else
-	  if s.[!j] = '\'' then begin
-	    if (!j = l || s.[!j+1] <> '\'') then quoted := false
-	    else (ntn.[!k] <- s.[!j]; incr k; incr j)
-	  end else begin
+	  if s.[!j] = '\'' then
+	    if (!j = l || s.[!j+1] = '_') then quoted := false
+	    else (incr j; ntn.[!k] <- s.[!j]; incr k)
+	  else begin
 	    ntn.[!k] <- s.[!j];
 	    incr k
 	  end;
@@ -288,11 +289,11 @@ let all_entries () =
     let l = try Hashtbl.find bt t with Not_found -> [] in
       Hashtbl.replace bt t ((s,m) :: l)
   in
-  let classify (m,_) e = match e with
+  let classify m e = match e with
     | Def (s,t) -> add_g s m t; add_bt t s m
     | Ref _ | Mod _ -> ()
   in
-    Hashtbl.iter classify reftable;
+    Hashtbl.iter classify deftable;
     Hashtbl.iter (fun id m -> add_g id m Library; add_bt Library id m) modules;
     { idx_name = "global";
       idx_entries = sort_entries !gl;
@@ -322,8 +323,27 @@ let type_of_string = function
   | "sec" -> Section
   | s -> raise (Invalid_argument ("type_of_string:" ^ s))
 
-let read_glob f =
+let ill_formed_glob_file f =
+  eprintf "Warning: ill-formed file %s (links will not be available)\n" f
+let outdated_glob_file f =
+  eprintf "Warning: %s not consistent with corresponding .v file (links will not be available)\n" f
+
+let correct_file vfile f c =
+  let s = input_line c in
+  if String.length s < 7 || String.sub s 0 7 <> "DIGEST " then
+    (ill_formed_glob_file f; false)
+  else
+    let s = String.sub s 7 (String.length s - 7) in
+    match vfile, s with
+    | None, "NO" -> true
+    | Some _, "NO" -> ill_formed_glob_file f; false
+    | None, _ -> ill_formed_glob_file f; false
+    | Some vfile, s ->
+        s = Digest.to_hex (Digest.file vfile) || (outdated_glob_file f; false)
+
+let read_glob vfile f =
   let c = open_in f in
+  if correct_file vfile f c then
   let cur_mod = ref "" in
   try
     while true do
@@ -339,18 +359,27 @@ let read_glob f =
 		Scanf.sscanf s "R%d:%d %s %s %s %s"
 		  (fun loc1 loc2 lib_dp sp id ty ->
 		    for loc=loc1 to loc2 do
-		      add_ref !cur_mod loc lib_dp sp id (type_of_string ty)
+		      add_ref !cur_mod loc lib_dp sp id (type_of_string ty);
+
+                      (* Also add an entry for each module mentioned in [lib_dp],
+                       * to use in interpolation. *)
+                      ignore (List.fold_right (fun thisPiece priorPieces ->
+                                                let newPieces = match priorPieces with
+                                                                | "" -> thisPiece
+                                                                | _ -> thisPiece ^ "." ^ priorPieces in
+                                                add_ref !cur_mod loc "" "" newPieces Library;
+                                                newPieces) (Str.split (Str.regexp_string ".") lib_dp) "")
 		    done)
-	       with _ ->
-	       try
-		Scanf.sscanf s "R%d %s %s %s %s"
-		  (fun loc lib_dp sp id ty ->
-		    add_ref !cur_mod loc lib_dp sp id (type_of_string ty))
 	       with _ -> ())
 	  | _ ->
-	      try Scanf.sscanf s "%s %d %s %s"
-		(fun ty loc sp id -> add_def loc (type_of_string ty) sp id)
+	      try Scanf.sscanf s "not %d %s %s"
+		(fun loc sp id -> add_def loc loc (type_of_string "not") sp id)
+	      with Scanf.Scan_failure _ ->
+	      try Scanf.sscanf s "%s %d:%d %s %s"
+		(fun ty loc1 loc2 sp id ->
+                  add_def loc1 loc2 (type_of_string ty) sp id)
 	      with Scanf.Scan_failure _ -> ()
+
       end
     done; assert false
   with End_of_file ->

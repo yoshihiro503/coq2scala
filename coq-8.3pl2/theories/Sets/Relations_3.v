@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -23,8 +23,6 @@
 (* to the Newton Institute for providing an exceptional work environment    *)
 (* in Summer 1995. Several developments by E. Ledinot were an inspiration.  *)
 (****************************************************************************)
-
-(*i $Id: Relations_3.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Export Relations_1.
 Require Export Relations_2.

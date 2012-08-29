@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Peano.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (** The type [nat] of Peano natural numbers (built from [O] and [S])
     is defined in [Datatypes.v] *)
@@ -28,7 +26,6 @@
 Require Import Notations.
 Require Import Datatypes.
 Require Import Logic.
-Unset Boxed Definitions.
 
 Open Scope nat_scope.
 
@@ -52,18 +49,12 @@ Qed.
 
 (** Injectivity of successor *)
 
-Theorem eq_add_S : forall n m:nat, S n = S m -> n = m.
-Proof.
-  intros n m Sn_eq_Sm.
-  replace (n=m) with (pred (S n) = pred (S m)) by auto using pred_Sn.
-  rewrite Sn_eq_Sm; trivial.
-Qed.
-
+Definition eq_add_S n m (H: S n = S m): n = m := f_equal pred H.
 Hint Immediate eq_add_S: core.
 
 Theorem not_eq_S : forall n m:nat, n <> m -> S n <> S m.
 Proof.
-  red in |- *; auto.
+  red; auto.
 Qed.
 Hint Resolve not_eq_S: core.
 
@@ -102,7 +93,7 @@ Hint Resolve (f_equal2 (A1:=nat) (A2:=nat)): core.
 
 Lemma plus_n_O : forall n:nat, n = n + 0.
 Proof.
-  induction n; simpl in |- *; auto.
+  induction n; simpl; auto.
 Qed.
 Hint Resolve plus_n_O: core.
 
@@ -113,7 +104,7 @@ Qed.
 
 Lemma plus_n_Sm : forall n m:nat, S (n + m) = n + S m.
 Proof.
-  intros n m; induction n; simpl in |- *; auto.
+  intros n m; induction n; simpl; auto.
 Qed.
 Hint Resolve plus_n_Sm: core.
 
@@ -124,8 +115,8 @@ Qed.
 
 (** Standard associated names *)
 
-Notation plus_0_r_reverse := plus_n_O (only parsing).
-Notation plus_succ_r_reverse := plus_n_Sm (only parsing).
+Notation plus_0_r_reverse := plus_n_O (compat "8.2").
+Notation plus_succ_r_reverse := plus_n_Sm (compat "8.2").
 
 (** Multiplication *)
 
@@ -141,22 +132,22 @@ Hint Resolve (f_equal2 mult): core.
 
 Lemma mult_n_O : forall n:nat, 0 = n * 0.
 Proof.
-  induction n; simpl in |- *; auto.
+  induction n; simpl; auto.
 Qed.
 Hint Resolve mult_n_O: core.
 
 Lemma mult_n_Sm : forall n m:nat, n * m + n = n * S m.
 Proof.
-  intros; induction n as [| p H]; simpl in |- *; auto.
-  destruct H; rewrite <- plus_n_Sm; apply (f_equal S).
-  pattern m at 1 3 in |- *; elim m; simpl in |- *; auto.
+  intros; induction n as [| p H]; simpl; auto.
+  destruct H; rewrite <- plus_n_Sm; apply eq_S.
+  pattern m at 1 3; elim m; simpl; auto.
 Qed.
 Hint Resolve mult_n_Sm: core.
 
 (** Standard associated names *)
 
-Notation mult_0_r_reverse := mult_n_O (only parsing).
-Notation mult_succ_r_reverse := mult_n_Sm (only parsing).
+Notation mult_0_r_reverse := mult_n_O (compat "8.2").
+Notation mult_succ_r_reverse := mult_n_Sm (compat "8.2").
 
 (** Truncated subtraction: [m-n] is [0] if [n>=m] *)
 
@@ -201,6 +192,16 @@ Notation "x <= y < z" := (x <= y /\ y < z) : nat_scope.
 Notation "x < y < z" := (x < y /\ y < z) : nat_scope.
 Notation "x < y <= z" := (x < y /\ y <= z) : nat_scope.
 
+Theorem le_pred : forall n m, n <= m -> pred n <= pred m.
+Proof.
+induction 1; auto. destruct m; simpl; auto.
+Qed.
+
+Theorem le_S_n : forall n m, S n <= S m -> n <= m.
+Proof.
+intros n m. exact (le_pred (S n) (S m)).
+Qed.
+
 (** Case analysis *)
 
 Theorem nat_case :
@@ -218,5 +219,78 @@ Theorem nat_double_ind :
    (forall n m:nat, R n m -> R (S n) (S m)) -> forall n m:nat, R n m.
 Proof.
   induction n; auto.
-  destruct m as [| n0]; auto.
+  destruct m; auto.
+Qed.
+
+(** Maximum and minimum : definitions and specifications *)
+
+Fixpoint max n m : nat :=
+  match n, m with
+    | O, _ => m
+    | S n', O => n
+    | S n', S m' => S (max n' m')
+  end.
+
+Fixpoint min n m : nat :=
+  match n, m with
+    | O, _ => 0
+    | S n', O => 0
+    | S n', S m' => S (min n' m')
+  end.
+
+Theorem max_l : forall n m : nat, m <= n -> max n m = n.
+Proof.
+induction n; destruct m; simpl; auto. inversion 1.
+intros. apply f_equal. apply IHn. apply le_S_n. trivial.
+Qed.
+
+Theorem max_r : forall n m : nat, n <= m -> max n m = m.
+Proof.
+induction n; destruct m; simpl; auto. inversion 1.
+intros. apply f_equal. apply IHn. apply le_S_n. trivial.
+Qed.
+
+Theorem min_l : forall n m : nat, n <= m -> min n m = n.
+Proof.
+induction n; destruct m; simpl; auto. inversion 1.
+intros. apply f_equal. apply IHn. apply le_S_n. trivial.
+Qed.
+
+Theorem min_r : forall n m : nat, m <= n -> min n m = m.
+Proof.
+induction n; destruct m; simpl; auto. inversion 1.
+intros. apply f_equal. apply IHn. apply le_S_n. trivial.
+Qed.
+
+(** [n]th iteration of the function [f] *)
+
+Fixpoint nat_iter (n:nat) {A} (f:A->A) (x:A) : A :=
+  match n with
+    | O => x
+    | S n' => f (nat_iter n' f x)
+  end.
+
+Lemma nat_iter_succ_r n {A} (f:A->A) (x:A) :
+  nat_iter (S n) f x = nat_iter n f (f x).
+Proof.
+  induction n; intros; simpl; rewrite <- ?IHn; trivial.
+Qed.
+
+Theorem nat_iter_plus :
+  forall (n m:nat) {A} (f:A -> A) (x:A),
+    nat_iter (n + m) f x = nat_iter n f (nat_iter m f x).
+Proof.
+  induction n; intros; simpl; rewrite ?IHn; trivial.
+Qed.
+
+(** Preservation of invariants : if [f : A->A] preserves the invariant [Inv],
+    then the iterates of [f] also preserve it. *)
+
+Theorem nat_iter_invariant :
+  forall (n:nat) {A} (f:A -> A) (P : A -> Prop),
+    (forall x, P x -> P (f x)) ->
+    forall x, P x -> P (nat_iter n f x).
+Proof.
+  induction n; simpl; trivial.
+  intros A f P Hf x Hx. apply Hf, IHn; trivial.
 Qed.

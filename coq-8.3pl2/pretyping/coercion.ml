@@ -1,11 +1,18 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-(* $Id: coercion.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
+
+(* Created by Hugo Herbelin for Coq V7 by isolating the coercion
+   mechanism out of the type inference algorithm in file trad.ml from
+   Coq V6.3, Nov 1999; The coercion mechanism was implemented in
+   trad.ml by Amokrane Saïbi, May 1996 *)
+(* Addition of products and sorts in canonical structures by Pierre
+   Corbineau, Feb 2008 *)
+(* Turned into an abstract compilation unit by Matthieu Sozeau, March 2006 *)
 
 open Util
 open Names
@@ -66,7 +73,7 @@ module type S = sig
      pattern [pat] typed in [ind1] into a pattern typed in [ind2];
      raises [Not_found] if no coercion found *)
   val inh_pattern_coerce_to :
-    loc  -> Rawterm.cases_pattern -> inductive -> inductive -> Rawterm.cases_pattern
+    loc  -> Glob_term.cases_pattern -> inductive -> inductive -> Glob_term.cases_pattern
 end
 
 module Default = struct
@@ -92,8 +99,8 @@ module Default = struct
   let apply_pattern_coercion loc pat p =
     List.fold_left
       (fun pat (co,n) ->
-	 let f i = if i<n then Rawterm.PatVar (loc, Anonymous) else pat in
-	   Rawterm.PatCstr (loc, co, list_tabulate f (n+1), Anonymous))
+	 let f i = if i<n then Glob_term.PatVar (loc, Anonymous) else pat in
+	   Glob_term.PatCstr (loc, co, list_tabulate f (n+1), Anonymous))
       pat p
 
   (* raise Not_found if no coercion found *)
@@ -103,7 +110,7 @@ module Default = struct
 
   let saturate_evd env evd =
     Typeclasses.resolve_typeclasses
-      ~onlyargs:true ~split:true ~fail:false env evd
+      ~filter:Typeclasses.no_goals ~split:true ~fail:false env evd
 
   (* appliquer le chemin de coercions p à hj *)
   let apply_coercion env sigma p hj typ_cl =
@@ -130,8 +137,8 @@ module Default = struct
 	      (evd',{ uj_val = j.uj_val; uj_type = t })
 	| _ ->
       	    let t,p =
-	      lookup_path_to_fun_from env ( evd) j.uj_type in
-	      (evd,apply_coercion env ( evd) p j t)
+	      lookup_path_to_fun_from env evd j.uj_type in
+	      (evd,apply_coercion env evd p j t)
 
   let inh_app_fun env evd j =
     try inh_app_fun env evd j
@@ -141,15 +148,15 @@ module Default = struct
 
   let inh_tosort_force loc env evd j =
     try
-      let t,p = lookup_path_to_sort_from env ( evd) j.uj_type in
-      let j1 = apply_coercion env ( evd) p j t in
-      let j2 = on_judgment_type (whd_evar ( evd)) j1 in
+      let t,p = lookup_path_to_sort_from env evd j.uj_type in
+      let j1 = apply_coercion env evd p j t in
+      let j2 = on_judgment_type (whd_evar evd) j1 in
         (evd,type_judgment env j2)
     with Not_found ->
-      error_not_a_type_loc loc env ( evd) j
+      error_not_a_type_loc loc env evd j
 
   let inh_coerce_to_sort loc env evd j =
-    let typ = whd_betadeltaiota env ( evd) j.uj_type in
+    let typ = whd_betadeltaiota env evd j.uj_type in
       match kind_of_term typ with
 	| Sort s -> (evd,{ utj_val = j.uj_val; utj_type = s })
 	| Evar ev when not (is_defined_evar evd ev) ->
@@ -195,6 +202,8 @@ module Default = struct
         (* We eta-expand (hence possibly modifying the original term!) *)
 	(* and look for a coercion c:u1->t1 s.t. fun x:u1 => v' (c x)) *)
 	(* has type forall (x:u1), u2 (with v' recursively obtained) *)
+        (* Note: we retype the term because sort-polymorphism may have *)
+        (* weaken its type *)
 	let name = match name with
 	  | Anonymous -> Name (id_of_string "x")
 	  | _ -> name in
@@ -204,7 +213,9 @@ module Default = struct
             (Some (mkRel 1)) (lift 1 u1) (lift 1 t1) in
         let v1 = Option.get v1 in
 	let v2 = Option.map (fun v -> beta_applist (lift 1 v,[v1])) v in
-        let t2 = subst_term v1 t2 in
+	let t2 = match v2 with
+	  | None -> subst_term v1 t2
+	  | Some v2 -> Retyping.get_type_of env1 evd' v2 in
 	let (evd'',v2') = inh_conv_coerce_to_fail loc env1 evd' rigidonly v2 t2 u2 in
 	(evd'', Option.map (fun v2' -> mkLambda (name, u1, v2')) v2')
     | _ -> raise NoCoercion
@@ -231,7 +242,14 @@ module Default = struct
   let inh_conv_coerce_rigid_to = inh_conv_coerce_to_gen true
 
 
-    let inh_conv_coerces_to loc env (evd : evar_map) t (abs, t') = evd
+    let inh_conv_coerces_to loc env (evd : evar_map) t (abs, t') =
+      if abs = None then
+	try
+	  fst (inh_conv_coerce_to_fail loc env evd true None t t')
+	with NoCoercion ->
+	  evd (* Maybe not enough information to unify *)
+      else
+        evd
       (* Still problematic, as it changes unification
       let nabsinit, nabs =
 	match abs with

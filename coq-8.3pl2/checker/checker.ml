@@ -1,13 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: coqtop.ml 10153 2007-09-28 18:00:45Z glondu $ *)
-
+open Compat
 open Pp
 open Util
 open System
@@ -32,11 +31,11 @@ let parse_dir s =
     decoupe_dirs [] 0
 let dirpath_of_string s =
   match parse_dir s with
-      [] -> invalid_arg "dirpath_of_string"
+      [] -> Check.default_root_prefix
     | dir -> make_dirpath (List.map id_of_string dir)
 let path_of_string s =
   match parse_dir s with
-      [] -> invalid_arg "dirpath_of_string"
+      [] -> invalid_arg "path_of_string"
     | l::dir -> {dirpath=dir; basename=l}
 
 let (/) = Filename.concat
@@ -73,17 +72,17 @@ let convert_string d =
     flush_all ();
     failwith "caught"
 
-let add_rec_path ~unix_path:dir ~coq_root:coq_dirpath =
-  if exists_dir dir then
-    let dirs = all_subdirs dir in
-    let prefix = repr_dirpath coq_dirpath in
+let add_rec_path ~unix_path ~coq_root =
+  if exists_dir unix_path then
+    let dirs = all_subdirs ~unix_path in
+    let prefix = repr_dirpath coq_root in
     let convert_dirs (lp,cp) =
       (lp,make_dirpath (List.map convert_string (List.rev cp)@prefix)) in
     let dirs = map_succeed convert_dirs dirs in
     List.iter Check.add_load_path dirs;
-    Check.add_load_path (dir,coq_dirpath)
+    Check.add_load_path (unix_path, coq_root)
   else
-    msg_warning (str ("Cannot open " ^ dir))
+    msg_warning (str ("Cannot open " ^ unix_path))
 
 (* By the option -include -I or -R of the command line *)
 let includes = ref []
@@ -92,9 +91,6 @@ let push_rec_include (s, alias) = includes := (s,alias,true) :: !includes
 
 let set_default_include d =
   push_include (d, Check.default_root_prefix)
-let set_default_rec_include d =
-  let p = Check.default_root_prefix in
-  push_rec_include (d, p)
 let set_include d p =
   let p = dirpath_of_string p in
   push_include (d,p)
@@ -106,24 +102,27 @@ let set_rec_include d p =
 let init_load_path () =
   let coqlib = Envars.coqlib () in
   let user_contrib = coqlib/"user-contrib" in
+  let xdg_dirs = Envars.xdg_dirs in
+  let coqpath = Envars.coqpath in
   let plugins = coqlib/"plugins" in
-  (* first user-contrib *)
-  if Sys.file_exists user_contrib then
-    add_rec_path user_contrib Check.default_root_prefix;
+  (* NOTE: These directories are searched from last to first *)
+  (* first standard library *)
+  add_rec_path ~unix_path:(coqlib/"theories") ~coq_root:(Names.make_dirpath[coq_root]);
   (* then plugins *)
-  add_rec_path plugins (Names.make_dirpath [coq_root]);
-  (* then standard library *)
-(*  List.iter
-    (fun (s,alias) ->
-      add_rec_path (coqlib/s) ([alias; coq_root]))
-    theories_dirs_map;*)
-  add_rec_path (coqlib/"theories") (Names.make_dirpath[coq_root]);
+  add_rec_path ~unix_path:plugins ~coq_root:(Names.make_dirpath [coq_root]);
+  (* then user-contrib *)
+  if Sys.file_exists user_contrib then
+    add_rec_path ~unix_path:user_contrib ~coq_root:Check.default_root_prefix;
+  (* then directories in XDG_DATA_DIRS and XDG_DATA_HOME *)
+  List.iter (fun s -> add_rec_path ~unix_path:s ~coq_root:Check.default_root_prefix) xdg_dirs;
+  (* then directories in COQPATH *)
+  List.iter (fun s -> add_rec_path ~unix_path:s ~coq_root:Check.default_root_prefix) coqpath;
   (* then current directory *)
-  add_path "." Check.default_root_prefix;
+  add_path ~unix_path:"." ~coq_root:Check.default_root_prefix;
   (* additional loadpath, given with -I -include -R options *)
   List.iter
-    (fun (s,alias,reci) ->
-      if reci then add_rec_path s alias else add_path s alias)
+    (fun (unix_path, coq_root, reci) ->
+      if reci then add_rec_path ~unix_path ~coq_root else add_path ~unix_path ~coq_root)
     (List.rev !includes);
   includes := []
 
@@ -168,42 +167,40 @@ let version () =
 
 let print_usage_channel co command =
   output_string co command;
-  output_string co "Coq options are:\n";
+  output_string co "coqchk options are:\n";
   output_string co
-"  -I dir -as coqdir      map physical dir to logical coqdir
-  -I dir                 map directory dir to the empty logical path
-  -include dir           (idem)
-  -R dir -as coqdir      recursively map physical dir to logical coqdir
-  -R dir coqdir          (idem)
-
-  -admit module          load module and dependencies without checking
-  -norec module          check module but admit dependencies without checking
-
-  -where                 print Coq's standard library location and exit
-  -v                     print Coq version and exit
-  -boot                  boot mode
-  -o, --output-context   print the list of assumptions
-  -m, --memoty           print the maximum heap size
-  -silent                disable trace of constants being checked
-
-  -impredicative-set     set sort Set impredicative
-
-  -h, --help             print this list of options
-"
+"  -I dir -as coqdir      map physical dir to logical coqdir\
+\n  -I dir                 map directory dir to the empty logical path\
+\n  -include dir           (idem)\
+\n  -R dir -as coqdir      recursively map physical dir to logical coqdir\
+\n  -R dir coqdir          (idem)\
+\n\
+\n  -admit module          load module and dependencies without checking\
+\n  -norec module          check module but admit dependencies without checking\
+\n\
+\n  -where                 print coqchk's standard library location and exit\
+\n  -v                     print coqchk version and exit\
+\n  -boot                  boot mode\
+\n  -o, --output-context   print the list of assumptions\
+\n  -m, --memory           print the maximum heap size\
+\n  -silent                disable trace of constants being checked\
+\n\
+\n  -impredicative-set     set sort Set impredicative\
+\n\
+\n  -h, --help             print this list of options\
+\n"
 
 (* print the usage on standard error *)
 
 let print_usage = print_usage_channel stderr
 
 let print_usage_coqtop () =
-  print_usage "Usage: coqchk <options>\n\n"
+  print_usage "Usage: coqchk <options> modules\n\n"
 
 let usage () =
   print_usage_coqtop ();
   flush stderr;
   exit 1
-
-let warning s = msg_warning (str s)
 
 open Type_errors
 
@@ -239,14 +236,9 @@ let rec explain_exn = function
   | Anomaly (s,pps) ->
       hov 1 (anomaly_string () ++ where s ++ pps ++ report ())
   | Match_failure(filename,pos1,pos2) ->
-      hov 1 (anomaly_string () ++ str "Match failure in file " ++ str (guill filename) ++
-      if Sys.ocaml_version = "3.06" then
-		   (str " from character " ++ int pos1 ++
-                    str " to " ++ int pos2)
-		 else
-		   (str " at line " ++ int pos1 ++
-		    str " character " ++ int pos2)
-	           ++ report ())
+      hov 1 (anomaly_string () ++ str "Match failure in file " ++
+	     str (guill filename) ++ str " at line " ++ int pos1 ++
+	     str " character " ++ int pos2 ++ report ())
   | Not_found ->
       hov 0 (anomaly_string () ++ str "uncaught exception Not_found" ++ report ())
   | Failure s ->
@@ -274,22 +266,17 @@ let rec explain_exn = function
 (*      let ctx = Check.get_env() in
       hov 0
         (str "Error:" ++ spc () ++ Himsg.explain_inductive_error ctx e)*)
-  | Stdpp.Exc_located (loc,exc) ->
+  | Loc.Exc_located (loc,exc) ->
       hov 0 ((if loc = dummy_loc then (mt ())
                else (str"At location " ++ print_loc loc ++ str":" ++ fnl ()))
                ++ explain_exn exc)
   | Assert_failure (s,b,e) ->
       hov 0 (anomaly_string () ++ str "assert failure" ++ spc () ++
-	       (if s <> "" then
-		 if Sys.ocaml_version = "3.06" then
-		   (str ("(file \"" ^ s ^ "\", characters ") ++
-		    int b ++ str "-" ++ int e ++ str ")")
-		 else
-		   (str ("(file \"" ^ s ^ "\", line ") ++ int b ++
-		    str ", characters " ++ int e ++ str "-" ++
-		    int (e+6) ++ str ")")
-	       else
-		 (mt ())) ++
+	       (if s = "" then mt ()
+		else
+		  (str ("(file \"" ^ s ^ "\", line ") ++ int b ++
+		   str ", characters " ++ int e ++ str "-" ++
+		   int (e+6) ++ str ")")) ++
 	       report ())
   | reraise ->
       hov 0 (anomaly_string () ++ str "Uncaught exception " ++
@@ -298,8 +285,15 @@ let rec explain_exn = function
 let parse_args argv =
   let rec parse = function
     | [] -> ()
-   | "-impredicative-set" :: rem ->
-       set_engagement Declarations.ImpredicativeSet; parse rem
+    | "-impredicative-set" :: rem ->
+      set_engagement Declarations.ImpredicativeSet; parse rem
+
+    | "-coqlib" :: s :: rem ->
+      if not (exists_dir s) then 
+	(msgnl (str ("Directory '"^s^"' does not exist")); exit 1);
+      Flags.coqlib := s;
+      Flags.coqlib_spec := true;
+      parse rem
 
     | ("-I"|"-include") :: d :: "-as" :: p :: rem -> set_include d p; parse rem
     | ("-I"|"-include") :: d :: "-as" :: [] -> usage ()

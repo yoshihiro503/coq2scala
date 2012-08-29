@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: evar_tactics.ml 13428 2010-09-17 18:03:40Z herbelin $ *)
 
 open Term
 open Util
@@ -25,9 +23,9 @@ let instantiate n (ist,rawc) ido gl =
   let sigma = gl.sigma in
   let evl =
     match ido with
-	ConclLocation () -> evar_list sigma gl.it.evar_concl
+	ConclLocation () -> evar_list sigma (pf_concl gl)
       | HypLocation (id,hloc) ->
-	  let decl = Environ.lookup_named_val id gl.it.evar_hyps in
+	  let decl = Environ.lookup_named_val id (Goal.V82.hyps sigma (sig_it gl)) in
 	    match hloc with
 		InHyp ->
 		  (match decl with
@@ -57,4 +55,3 @@ let let_evar name typ gls =
   let sigma',evar = Evarutil.new_evar gls.sigma (pf_env gls) ~src typ in
   Refiner.tclTHEN (Refiner.tclEVARS sigma')
     (Tactics.letin_tac None name evar None nowhere) gls
-

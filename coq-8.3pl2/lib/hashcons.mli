@@ -1,14 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: hashcons.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
-(* Generic hash-consing. *)
+(** Generic hash-consing. *)
 
 module type Comp =
   sig
@@ -37,7 +35,7 @@ val recursive2_hcons :
     (unit -> ('t1 -> 't1) * ('t2 -> 't2) * 'u2 -> 't2 -> 't2) ->
       'u1 -> 'u2 -> ('t1 -> 't1) * ('t2 -> 't2)
 
-(* Declaring and reinitializing global hash-consing functions *)
+(** Declaring and reinitializing global hash-consing functions *)
 
 val init : unit -> unit
 val register_hcons : ('u -> 't -> 't) -> ('u -> 't -> 't)

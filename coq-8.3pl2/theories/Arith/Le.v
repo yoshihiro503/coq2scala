@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Le.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (** Order on natural numbers. [le] is defined in [Init/Peano.v] as:
 <<
@@ -18,7 +16,7 @@ where "n <= m" := (le n m) : nat_scope.
 >>
  *)
 
-Open Local Scope nat_scope.
+Local Open Scope nat_scope.
 
 Implicit Types m n p : nat.
 
@@ -48,8 +46,8 @@ Qed.
 
 Theorem le_Sn_0 : forall n, ~ S n <= 0.
 Proof.
-  red in |- *; intros n H.
-  change (IsSucc 0) in |- *; elim H; simpl in |- *; auto with arith.
+  red; intros n H.
+  change (IsSucc 0); elim H; simpl; auto with arith.
 Qed.
 
 Hint Resolve le_0_n le_Sn_0: arith v62.
@@ -84,8 +82,7 @@ Hint Immediate le_Sn_le: arith v62.
 
 Theorem le_S_n : forall n m, S n <= S m -> n <= m.
 Proof.
-  intros n m H; change (pred (S n) <= pred (S m)) in |- *.
-  destruct H; simpl; auto with arith.
+  exact Peano.le_S_n.
 Qed.
 Hint Immediate le_S_n: arith v62.
 
@@ -105,10 +102,8 @@ Hint Resolve le_pred_n: arith v62.
 
 Theorem le_pred : forall n m, n <= m -> pred n <= pred m.
 Proof.
-  destruct n; simpl; auto with arith.
-  destruct m; simpl; auto with arith.
+  exact Peano.le_pred.
 Qed.
-
 
 (** * [le] is a order on [nat] *)
 (** Antisymmetry *)

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -61,6 +61,12 @@ VERNAC COMMAND EXTEND Extraction
 (* Monolithic extraction to a file *)
 | [ "Extraction" string(f) ne_global_list(l) ]
   -> [ full_extraction (Some f) l ]
+END
+
+VERNAC COMMAND EXTEND SeparateExtraction
+(* Same, with content splitted in several files *)
+| [ "Separate" "Extraction" ne_global_list(l) ]
+  -> [ separate_extraction l ]
 END
 
 (* Modular extraction (one Coq library = one ML module) *)

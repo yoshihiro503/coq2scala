@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, * CNRS-Ecole Polytechnique-INRIA Futurs-Universite Paris Sud *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: subtac.ml 12623 2010-01-04 17:50:38Z letouzey $ *)
 
 open Libobject
 open Proof_type
@@ -27,7 +25,7 @@ let declare_tactic_option ?(default=Tacexpr.TacId []) name =
   let subst (s, (local, tac)) =
     (local, Tacinterp.subst_tactic s tac)
   in
-  let input, _output = 
+  let input : bool * Tacexpr.glob_tactic_expr -> obj =
     declare_object
       { (default_object name) with
 	cache_function = cache;

@@ -1,16 +1,37 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: coqide.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
+(** * The CoqIde main module *)
 
-(* The CoqIde main module. The following function [start] will parse the
-   command line, initialize the load path, load the input
-   state, load the files given on the command line, load the ressource file,
-   produce the output state if any, and finally will launch the interface. *)
+(** The arguments that will be passed to coqtop. No quoting here, since
+    no /bin/sh when using create_process instead of open_process. *)
+val sup_args : string list ref
 
-val start : unit -> unit
+(** Filter the argv from coqide specific options, and set
+    Minilib.coqtop_path accordingly *)
+val read_coqide_args : string list -> string list
+
+(** Prepare the widgets, load the given files in tabs *)
+val main : string list -> unit
+
+(** Function to save anything and kill all coqtops
+    @return [false] if you're allowed to quit. *)
+val forbid_quit_to_save : unit -> bool
+
+(** Function to load of a file. *)
+val do_load : string -> unit
+
+(** Set coqide to ignore Ctrl-C, while launching [crash_save] and
+    exiting for others received signals *)
+val ignore_break : unit -> unit
+
+(** Emergency saving of opened files as "foo.v.crashcoqide",
+    and exit (if the integer isn't 127). *)
+val crash_save : int -> unit
+
+val check_for_geoproof_input : unit -> unit

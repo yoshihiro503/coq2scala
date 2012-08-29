@@ -23,8 +23,6 @@
 (*                                                                               *)
 (*********************************************************************************)
 
-(* $Id: config_file.ml 10348 2007-12-06 17:36:14Z aspiwack $ *)
-
 (* TODO *)
 (* section comments *)
 (* better obsoletes: no "{}", line cuts *)

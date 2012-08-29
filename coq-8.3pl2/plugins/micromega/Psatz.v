@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -18,7 +18,7 @@ Require Import RMicromega.
 Require Import QArith.
 Require Export Ring_normalize.
 Require Import ZArith.
-Require Import Raxioms.
+Require Import Rdefinitions.
 Require Export RingMicromega.
 Require Import VarMap.
 Require Tauto.
@@ -66,6 +66,7 @@ Ltac psatzl dom :=
         change (Tauto.eval_f (Qeval_formula (@find Q 0%Q __varmap)) __ff) ;
         apply (QTautoChecker_sound __ff __wit); vm_compute ; reflexivity)
   | R =>
+    unfold Rdiv in * ; 
     psatzl_R ;
     (* If csdp is not installed, the previous step might not produce any
     progress: the rest of the tactical will then fail. Hence the 'try'. *)
@@ -75,11 +76,24 @@ Ltac psatzl dom :=
   | _ => fail "Unsupported domain"
   end in tac.
 
+
+Ltac lra := 
+  first [ psatzl R | psatzl Q ].
+
 Ltac lia :=
-  xlia ;
+  zify ; unfold Z.succ in * ;
+  (*cbv delta - [Z.add Z.sub Z.opp Z.mul Z.pow Z.gt Z.ge Z.le Z.lt iff not] ;*) xlia ;
   intros __wit __varmap __ff ;
     change (Tauto.eval_f (Zeval_formula (@find Z Z0 __varmap)) __ff) ;
       apply (ZTautoChecker_sound __ff __wit); vm_compute ; reflexivity.
+
+Ltac nia :=
+  zify ; unfold Z.succ in * ;
+  xnlia ;
+  intros __wit __varmap __ff ;
+    change (Tauto.eval_f (Zeval_formula (@find Z Z0 __varmap)) __ff) ;
+      apply (ZTautoChecker_sound __ff __wit); vm_compute ; reflexivity.
+
 
 (* Local Variables: *)
 (* coding: utf-8 *)

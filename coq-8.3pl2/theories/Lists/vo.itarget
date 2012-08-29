@@ -2,6 +2,6 @@ ListSet.vo
 ListTactics.vo
 List.vo
 SetoidList.vo
+SetoidPermutation.vo
 StreamMemo.vo
 Streams.vo
-TheoryList.vo

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -11,8 +11,6 @@
    Author: Matthieu Sozeau
    Institution: LRI, CNRS UMR 8623 - University Paris Sud
 *)
-
-(* $Id: EquivDec.v 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 (** Export notations. *)
 
@@ -51,7 +49,7 @@ Definition swap_sumbool {A B} (x : { A } + { B }) : { B } + { A } :=
     | right H => @left _ _ H
   end.
 
-Open Local Scope program_scope.
+Local Open Scope program_scope.
 
 (** Invert the branches. *)
 

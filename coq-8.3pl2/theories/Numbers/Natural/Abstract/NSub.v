@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,12 +8,10 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: NSub.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Export NMulOrder.
 
-Module Type NSubPropFunct (Import N : NAxiomsSig').
-Include NMulOrderPropFunct N.
+Module Type NSubProp (Import N : NAxiomsMiniSig').
+Include NMulOrderProp N.
 
 Theorem sub_0_l : forall n, 0 - n == 0.
 Proof.
@@ -37,7 +35,7 @@ Qed.
 Theorem sub_gt : forall n m, n > m -> n - m ~= 0.
 Proof.
 intros n m H; elim H using lt_ind_rel; clear n m H.
-solve_relation_wd.
+solve_proper.
 intro; rewrite sub_0_r; apply neq_succ_0.
 intros; now rewrite sub_succ.
 Qed.
@@ -47,8 +45,8 @@ Proof.
 intros n m p; induct p.
 intro; now do 2 rewrite sub_0_r.
 intros p IH H. do 2 rewrite sub_succ_r.
-rewrite <- IH by (apply lt_le_incl; now apply -> le_succ_l).
-rewrite add_pred_r by (apply sub_gt; now apply -> le_succ_l).
+rewrite <- IH by (apply lt_le_incl; now apply le_succ_l).
+rewrite add_pred_r by (apply sub_gt; now apply le_succ_l).
 reflexivity.
 Qed.
 
@@ -205,6 +203,26 @@ Proof.
 intros n m p. rewrite add_comm; apply lt_add_lt_sub_r.
 Qed.
 
+Theorem sub_lt : forall n m, m <= n -> 0 < m -> n - m < n.
+Proof.
+intros n m LE LT.
+assert (LE' := le_sub_l n m). rewrite lt_eq_cases in LE'.
+destruct LE' as [LT'|EQ]. assumption.
+apply add_sub_eq_nz in EQ; [|order].
+rewrite (add_lt_mono_r _ _ n), add_0_l in LT. order.
+Qed.
+
+Lemma sub_le_mono_r : forall n m p, n <= m -> n-p <= m-p.
+Proof.
+ intros. rewrite le_sub_le_add_r. transitivity m. assumption. apply sub_add_le.
+Qed.
+
+Lemma sub_le_mono_l : forall n m p, n <= m -> p-m <= p-n.
+Proof.
+ intros. rewrite le_sub_le_add_r.
+ transitivity (p-n+n); [ apply sub_add_le | now apply add_le_mono_l].
+Qed.
+
 (** Sub and mul *)
 
 Theorem mul_pred_r : forall n m, n * (P m) == n * m - n.
@@ -224,10 +242,10 @@ intros n IH. destruct (le_gt_cases m n) as [H | H].
 rewrite sub_succ_l by assumption. do 2 rewrite mul_succ_l.
 rewrite (add_comm ((n - m) * p) p), (add_comm (n * p) p).
 rewrite <- (add_sub_assoc p (n * p) (m * p)) by now apply mul_le_mono_r.
-now apply <- add_cancel_l.
-assert (H1 : S n <= m); [now apply <- le_succ_l |].
-setoid_replace (S n - m) with 0 by now apply <- sub_0_le.
-setoid_replace ((S n * p) - m * p) with 0 by (apply <- sub_0_le; now apply mul_le_mono_r).
+now apply add_cancel_l.
+assert (H1 : S n <= m); [now apply le_succ_l |].
+setoid_replace (S n - m) with 0 by now apply sub_0_le.
+setoid_replace ((S n * p) - m * p) with 0 by (apply sub_0_le; now apply mul_le_mono_r).
 apply mul_0_l.
 Qed.
 
@@ -298,5 +316,5 @@ Theorem add_dichotomy :
   forall n m, (exists p, p + n == m) \/ (exists p, p + m == n).
 Proof. exact le_alt_dichotomy. Qed.
 
-End NSubPropFunct.
+End NSubProp.
 

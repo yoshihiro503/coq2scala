@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: search.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 open Pp
 open Names
@@ -16,7 +14,7 @@ open Pattern
 open Libnames
 open Nametab
 
-(*s Search facilities. *)
+(** {6 Search facilities. } *)
 
 type glob_search_about_item =
   | GlobSearchSubPattern of constr_pattern
@@ -28,14 +26,16 @@ val search_pattern : constr -> dir_path list * bool -> unit
 val search_about  :
   (bool * glob_search_about_item) list -> dir_path list * bool -> unit
 
-(* The filtering function that is by standard search facilities.
+(** The filtering function that is by standard search facilities.
    It can be passed as argument to the raw search functions.
    It is used in pcoq. *)
 
 val filter_by_module_from_list :
   dir_path list * bool -> global_reference -> env -> 'a -> bool
 
-(* raw search functions can be used for various extensions.
+val filter_blacklist : global_reference -> env -> constr -> bool
+
+(** raw search functions can be used for various extensions.
    They are also used for pcoq. *)
 val gen_filtered_search : (global_reference -> env -> constr -> bool) ->
       (global_reference -> env -> constr -> unit) -> unit

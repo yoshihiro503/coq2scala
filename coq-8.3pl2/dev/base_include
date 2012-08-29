@@ -24,7 +24,6 @@
 #install_printer  (* identifier *) ppidset;;
 #install_printer  (* Intset.t *) ppintset;;
 #install_printer  (* label *) pplab;;
-#install_printer  (* mod_self_id *) ppmsid;;
 #install_printer  (* mod_bound_id *) ppmbid;;
 #install_printer  (* dir_path *) ppdir;;
 #install_printer  (* module_path *) ppmp;;
@@ -38,7 +37,6 @@
 #install_printer  (* values *) ppvalues;;
 #install_printer  (* Idpred.t *) pp_idpred;;
 #install_printer  (* Cpred.t *) pp_cpred;;
-#install_printer  (* transparent_state *) pp_transparent_state;;
 #install_printer ppzipper;;
 #install_printer ppstack;;
 #install_printer ppatom;;
@@ -78,7 +76,8 @@ open Pretyping.Default.Cases
 open Cbv
 open Classops
 open Clenv
-open Rawterm
+open Clenvtac
+open Glob_term
 open Coercion
 open Coercion.Default
 open Recordops
@@ -110,11 +109,9 @@ open Topconstr
 open Prettyp
 open Search
 
-open Clenvtac
 open Evar_refiner
 open Logic
 open Pfedit
-open Proof_trees
 open Proof_type
 open Redexpr
 open Refiner
@@ -126,7 +123,6 @@ open Decl_mode
 open Auto
 open Autorewrite
 open Contradiction
-open Dhyp
 open Eauto
 open Elim
 open Equality
@@ -172,7 +168,7 @@ let parse_constr = Pcoq.parse_string Pcoq.Constr.constr;;
 let parse_tac    = Pcoq.parse_string Pcoq.Tactic.tactic;;
 let parse_vernac = Pcoq.parse_string Pcoq.Vernac_.vernac;;
 
-(* build a term of type rawconstr without type-checking or resolution of 
+(* build a term of type glob_constr without type-checking or resolution of 
    implicit syntax *)
 
 let e s =
@@ -190,18 +186,27 @@ open Declarations;;
 
 let constbody_of_string s =
   let b = Global.lookup_constant (Nametab.locate_constant (qualid_of_string s)) in
-  Option.get b.const_body;;
+  Option.get (body_of_constant b);;
 
 (* Get the current goal *)
-
+(*
 let getgoal x = top_goal_of_pftreestate (Pfedit.get_pftreestate x);;
 
 let get_nth_goal n = nth_goal_of_pftreestate n (Pfedit.get_pftreestate ());;
 let current_goal () = get_nth_goal 1;;
-
+*)
 let pf_e gl s = 
   Constrintern.interp_constr (project gl) (pf_env gl) (parse_constr s);;
+
+(* Set usual printing since the global env is available from the tracer *)
+let _ = Constrextern.in_debugger := false
+let _ = Constrextern.set_debug_global_reference_printer
+  (fun loc r -> Libnames.Qualid (loc,Nametab.shortest_qualid_of_global Idset.empty r));;
 
 open Toplevel
 let go = loop
 
+let _ =
+ print_string
+   ("\n\tOcaml toplevel with Coq printers and utilities (use go();; to exit)\n\n");
+ flush_all()

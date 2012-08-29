@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -26,56 +26,30 @@ Module BigN_BigZ <: NType_ZType BigN.BigN BigZ.
  reflexivity.
  Qed.
  Definition Zabs_N := BigZ.to_N.
- Lemma spec_Zabs_N : forall z, BigN.to_Z (Zabs_N z) = Zabs (BigZ.to_Z z).
+ Lemma spec_Zabs_N : forall z, BigN.to_Z (Zabs_N z) = Z.abs (BigZ.to_Z z).
  Proof.
  unfold Zabs_N; intros.
- rewrite BigZ.spec_to_Z, Zmult_comm; apply Zsgn_Zabs.
+ rewrite BigZ.spec_to_Z, Z.mul_comm; apply Z.sgn_abs.
  Qed.
 End BigN_BigZ.
 
 (** This allows to build [BigQ] out of [BigN] and [BigQ] via [QMake] *)
 
-Module BigQ <: QType <: OrderedTypeFull <: TotalOrder :=
- QMake.Make BigN BigZ BigN_BigZ <+ !QProperties <+ HasEqBool2Dec
- <+ !MinMaxLogicalProperties <+ !MinMaxDecProperties.
+Delimit Scope bigQ_scope with bigQ.
+
+Module BigQ <: QType <: OrderedTypeFull <: TotalOrder.
+ Include QMake.Make BigN BigZ BigN_BigZ [scope abstract_scope to bigQ_scope].
+ Bind Scope bigQ_scope with t t_.
+ Include !QProperties <+ HasEqBool2Dec
+  <+ !MinMaxLogicalProperties <+ !MinMaxDecProperties.
+End BigQ.
 
 (** Notations about [BigQ] *)
 
+Local Open Scope bigQ_scope.
+
 Notation bigQ := BigQ.t.
-
-Delimit Scope bigQ_scope with bigQ.
-Bind Scope bigQ_scope with bigQ.
-Bind Scope bigQ_scope with BigQ.t.
-Bind Scope bigQ_scope with BigQ.t_.
-(* Bind Scope has no retroactive effect, let's declare scopes by hand. *)
-Arguments Scope BigQ.Qz [bigZ_scope].
-Arguments Scope BigQ.Qq [bigZ_scope bigN_scope].
-Arguments Scope BigQ.to_Q [bigQ_scope].
-Arguments Scope BigQ.red [bigQ_scope].
-Arguments Scope BigQ.opp [bigQ_scope].
-Arguments Scope BigQ.inv [bigQ_scope].
-Arguments Scope BigQ.square [bigQ_scope].
-Arguments Scope BigQ.add [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.sub [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.mul [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.div [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.eq [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.lt [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.le [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.eq [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.compare [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.min [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.max [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.eq_bool [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.power_pos [bigQ_scope positive_scope].
-Arguments Scope BigQ.power [bigQ_scope Z_scope].
-Arguments Scope BigQ.inv_norm [bigQ_scope].
-Arguments Scope BigQ.add_norm [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.sub_norm [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.mul_norm [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.div_norm [bigQ_scope bigQ_scope].
-Arguments Scope BigQ.power_norm [bigQ_scope bigQ_scope].
-
+Bind Scope bigQ_scope with bigQ BigQ.t BigQ.t_.
 (** As in QArith, we use [#] to denote fractions *)
 Notation "p # q" := (BigQ.Qq p q) (at level 55, no associativity) : bigQ_scope.
 Local Notation "0" := BigQ.zero : bigQ_scope.
@@ -88,18 +62,16 @@ Infix "/" := BigQ.div : bigQ_scope.
 Infix "^" := BigQ.power : bigQ_scope.
 Infix "?=" := BigQ.compare : bigQ_scope.
 Infix "==" := BigQ.eq : bigQ_scope.
-Notation "x != y" := (~x==y)%bigQ (at level 70, no associativity) : bigQ_scope.
+Notation "x != y" := (~x==y) (at level 70, no associativity) : bigQ_scope.
 Infix "<" := BigQ.lt : bigQ_scope.
 Infix "<=" := BigQ.le : bigQ_scope.
-Notation "x > y" := (BigQ.lt y x)(only parsing) : bigQ_scope.
-Notation "x >= y" := (BigQ.le y x)(only parsing) : bigQ_scope.
-Notation "x < y < z" := (x<y /\ y<z)%bigQ : bigQ_scope.
-Notation "x < y <= z" := (x<y /\ y<=z)%bigQ : bigQ_scope.
-Notation "x <= y < z" := (x<=y /\ y<z)%bigQ : bigQ_scope.
-Notation "x <= y <= z" := (x<=y /\ y<=z)%bigQ : bigQ_scope.
+Notation "x > y" := (BigQ.lt y x) (only parsing) : bigQ_scope.
+Notation "x >= y" := (BigQ.le y x) (only parsing) : bigQ_scope.
+Notation "x < y < z" := (x<y /\ y<z) : bigQ_scope.
+Notation "x < y <= z" := (x<y /\ y<=z) : bigQ_scope.
+Notation "x <= y < z" := (x<=y /\ y<z) : bigQ_scope.
+Notation "x <= y <= z" := (x<=y /\ y<=z) : bigQ_scope.
 Notation "[ q ]" := (BigQ.to_Q q) : bigQ_scope.
-
-Local Open Scope bigQ_scope.
 
 (** [BigQ] is a field *)
 
@@ -117,10 +89,10 @@ exact BigQ.div_mul_inv. exact BigQ.mul_inv_diag_l.
 Qed.
 
 Lemma BigQpowerth :
- power_theory 1 BigQ.mul BigQ.eq Z_of_N BigQ.power.
+ power_theory 1 BigQ.mul BigQ.eq Z.of_N BigQ.power.
 Proof.
 constructor. intros. BigQ.qify.
-replace ([r] ^ Z_of_N n)%Q with (pow_N 1 Qmult [r] n)%Q by (now destruct n).
+replace ([r] ^ Z.of_N n)%Q with (pow_N 1 Qmult [r] n)%Q by (now destruct n).
 destruct n. reflexivity.
 induction p; simpl; auto; rewrite ?BigQ.spec_mul, ?IHp; reflexivity.
 Qed.

@@ -1,23 +1,22 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: recordops.mli 13447 2010-09-21 13:23:45Z letouzey $ i*)
-
-(*i*)
 open Names
 open Nametab
 open Term
 open Libnames
 open Libobject
 open Library
-(*i*)
 
-(*s A structure S is a non recursive inductive type with a single
+(** Operations concerning records and canonical structures *)
+
+(** {6 Records } *)
+(** A structure S is a non recursive inductive type with a single
    constructor (the name of which defaults to Build_S) *)
 
 type struc_typ = {
@@ -26,37 +25,40 @@ type struc_typ = {
   s_PROJKIND : (name * bool) list;
   s_PROJ : constant option list }
 
-val declare_structure :
-  inductive * constructor * (name * bool) list * constant option list -> unit
+type struc_tuple =
+    inductive * constructor * (name * bool) list * constant option list
 
-(* [lookup_structure isp] returns the struc_typ associated to the
+val declare_structure : struc_tuple -> unit
+
+(** [lookup_structure isp] returns the struc_typ associated to the
    inductive path [isp] if it corresponds to a structure, otherwise
    it fails with [Not_found] *)
 val lookup_structure : inductive -> struc_typ
 
-(* [lookup_projections isp] returns the projections associated to the
+(** [lookup_projections isp] returns the projections associated to the
    inductive path [isp] if it corresponds to a structure, otherwise
    it fails with [Not_found] *)
 val lookup_projections : inductive -> constant option list
 
-(* raise [Not_found] if not a projection *)
+(** raise [Not_found] if not a projection *)
 val find_projection_nparams : global_reference -> int
 
-(* raise [Not_found] if not a projection *)
+(** raise [Not_found] if not a projection *)
 val find_projection : global_reference -> struc_typ
 
-(* we keep an index (dnet) of record's arguments + fields
+(** we keep an index (dnet) of record's arguments + fields
    (=methods). Here is how to declare them: *)
 val declare_method :
   global_reference -> Evd.evar -> Evd.evar_map -> unit
-  (* and here is how to search for methods matched by a given term: *)
+  (** and here is how to search for methods matched by a given term: *)
 val methods_matching : constr ->
   ((global_reference*Evd.evar*Evd.evar_map) *
      (constr*existential_key)*Termops.subst) list
 
-(*s A canonical structure declares "canonical" conversion hints between *)
-(*  the effective components of a structure and the projections of the  *)
-(*  structure *)
+(** {6 Canonical structures } *)
+(** A canonical structure declares "canonical" conversion hints between 
+    the effective components of a structure and the projections of the  
+    structure *)
 
 type cs_pattern =
     Const_cs of global_reference
@@ -66,11 +68,11 @@ type cs_pattern =
 
 type obj_typ = {
   o_DEF : constr;
-  o_INJ : int;      (* position of trivial argument *)
-  o_TABS : constr list;    (* ordered *)
-  o_TPARAMS : constr list; (* ordered *)
+  o_INJ : int;      (** position of trivial argument *)
+  o_TABS : constr list;    (** ordered *)
+  o_TPARAMS : constr list; (** ordered *)
   o_NPARAMS : int;
-  o_TCOMPS : constr list } (* ordered *)
+  o_TCOMPS : constr list } (** ordered *)
 
 val cs_pattern_of_constr : constr -> cs_pattern * int * constr list
 val pr_cs_pattern : cs_pattern -> Pp.std_ppcmds
@@ -78,6 +80,6 @@ val pr_cs_pattern : cs_pattern -> Pp.std_ppcmds
 val lookup_canonical_conversion : (global_reference * cs_pattern) -> obj_typ
 val declare_canonical_structure : global_reference -> unit
 val is_open_canonical_projection :
-  Evd.evar_map -> (constr * constr list) -> bool
+  Environ.env -> Evd.evar_map -> (constr * constr list) -> bool
 val canonical_projections : unit ->
   ((global_reference * cs_pattern) * obj_typ) list

@@ -5,8 +5,6 @@
 (*    //   *      This file is distributed under the terms of the      *)
 (*         *       GNU Lesser General Public License Version 2.1       *)
 (***********************************************************************)
-(* $Id: OrderedTypeAlt.v 12384 2009-10-13 14:39:51Z letouzey $ *)
-
 Require Import OrderedType.
 
 (** * An alternative (but equivalent) presentation for an Ordered Type

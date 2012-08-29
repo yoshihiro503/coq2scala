@@ -1,6 +1,19 @@
 
 (* File to include to install the pretty-printers in the ocaml toplevel *)
 
+(* Typical usage :
+
+   $ coqtop.byte    # or even better : rlwrap coqtop.byte
+   Coq < Drop.
+   # #use "include";;
+
+   Alternatively, you can avoid typing #use "include" after each Drop
+   by adding the following lines in your $HOME/.ocamlinit :
+
+   if Filename.basename Sys.argv.(0) = "coqtop.byte"
+   then ignore (Toploop.use_silently Format.std_formatter "include")
+*)
+
 (* For OCaml 3.10.x:
    clflags.cmi (a ocaml compilation by-product) must be in the library path.
    On Debian, install ocaml-compiler-libs, and uncomment the following:
@@ -14,7 +27,7 @@
 #install_printer  (* pp_stdcmds *) pppp;;
 
 #install_printer  (* pattern *) pppattern;;
-#install_printer  (* rawconstr *) pprawconstr;;
+#install_printer  (* glob_constr *) ppglob_constr;;
 
 #install_printer  (* constr *) ppconstr;;
 #install_printer  (* constr_substituted *) ppsconstr;; 
@@ -24,12 +37,14 @@
 #install_printer  (* judgement *) ppj;;
 
 #install_printer  (* hint_db *)  print_hint_db;;
+(*#install_printer  (* hints_path *)  pphintspath;;*)
 #install_printer  (* goal *)  ppgoal;;
-#install_printer  (* sigma goal *)  ppsigmagoal;;
-#install_printer  (* proof *)  pproof;;
-#install_printer  (* pftreestate *)  pppftreestate;;
+(*#install_printer  (* sigma goal *)  ppsigmagoal;;*)
+(*#install_printer  (* proof *)  pproof;;*)
+#install_printer  (* Goal.goal *)  ppgoalgoal;;
 #install_printer  (* metaset.t *) ppmetas;;
 #install_printer  (* evar_map *)  ppevm;;
+#install_printer  (* ExistentialSet.t *) ppexistentialset;;
 #install_printer  (* clenv *) ppclenv;;
 #install_printer  (* env *) ppenv;;
 

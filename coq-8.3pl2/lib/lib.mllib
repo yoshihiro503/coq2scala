@@ -1,3 +1,6 @@
+Xml_lexer
+Xml_parser
+Xml_utils
 Pp_control
 Pp
 Compat
@@ -5,19 +8,16 @@ Flags
 Segmenttree
 Unicodetable
 Util
+Errors
 Bigint
 Hashcons
 Dyn
 System
 Envars
-Bstack
-Edit
-Gset
 Gmap
 Fset
 Fmap
-Tlm
-tries
+Tries
 Gmapl
 Profile
 Explore
@@ -26,4 +26,6 @@ Rtree
 Heap
 Option
 Dnet
-
+Store
+Unionfind
+Hashtbl_alt

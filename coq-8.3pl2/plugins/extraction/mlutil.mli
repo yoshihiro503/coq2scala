@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: mlutil.mli 13733 2010-12-21 13:08:53Z letouzey $ i*)
 
 open Util
 open Names
@@ -20,7 +18,6 @@ open Table
 val reset_meta_count : unit -> unit
 val new_meta : 'a -> ml_type
 
-val type_subst : int -> ml_type -> ml_type -> ml_type
 val type_subst_list : ml_type list -> ml_type -> ml_type
 val type_subst_vect : ml_type array -> ml_type -> ml_type
 
@@ -29,6 +26,8 @@ val instantiation : ml_schema -> ml_type
 val needs_magic : ml_type * ml_type -> bool
 val put_magic_if : bool -> ml_ast -> ml_ast
 val put_magic : ml_type * ml_type -> ml_ast -> ml_ast
+
+val generalizable : ml_ast -> bool
 
 (*s ML type environment. *)
 
@@ -116,9 +115,11 @@ val normalize : ml_ast -> ml_ast
 val optimize_fix : ml_ast -> ml_ast
 val inline : global_reference -> ml_ast -> bool
 
+val is_basic_pattern : ml_pattern -> bool
+val has_deep_pattern : ml_branch array -> bool
+val is_regular_match : ml_branch array -> bool
+
 exception Impossible
-val branch_as_fun : ml_type list -> ml_branch -> ml_ast
-val branch_as_cst : ml_branch -> ml_ast
 
 (* Classification of signatures *)
 

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,14 +8,10 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: ZMulOrder.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Export ZAddOrder.
 
-Module Type ZMulOrderPropFunct (Import Z : ZAxiomsSig').
-Include ZAddOrderPropFunct Z.
-
-Local Notation "- 1" := (-(1)).
+Module Type ZMulOrderProp (Import Z : ZAxiomsMiniSig').
+Include ZAddOrderProp Z.
 
 Theorem mul_lt_mono_nonpos :
   forall n m p q, m <= 0 -> n < m -> q <= 0 -> p < q ->  m * q < n * p.
@@ -94,18 +90,11 @@ Qed.
 
 Notation mul_nonpos := le_mul_0 (only parsing).
 
-Theorem le_0_square : forall n, 0 <= n * n.
-Proof.
-intro n; destruct (neg_nonneg_cases n).
-apply lt_le_incl; now apply mul_neg_neg.
-now apply mul_nonneg_nonneg.
-Qed.
-
-Notation square_nonneg := le_0_square (only parsing).
+Notation le_0_square := square_nonneg (only parsing).
 
 Theorem nlt_square_0 : forall n, ~ n * n < 0.
 Proof.
-intros n H. apply -> lt_nge in H. apply H. apply square_nonneg.
+intros n H. apply lt_nge in H. apply H. apply square_nonneg.
 Qed.
 
 Theorem square_lt_mono_nonpos : forall n m, n <= 0 -> m < n -> n * n < m * m.
@@ -120,42 +109,38 @@ Qed.
 
 Theorem square_lt_simpl_nonpos : forall n m, m <= 0 -> n * n < m * m -> m < n.
 Proof.
-intros n m H1 H2. destruct (le_gt_cases n 0).
-destruct (lt_ge_cases m n).
-assumption. assert (F : m * m <= n * n) by now apply square_le_mono_nonpos.
-apply -> le_ngt in F. false_hyp H2 F.
-now apply le_lt_trans with 0.
+intros n m H1 H2. destruct (le_gt_cases n 0); [|order].
+destruct (lt_ge_cases m n) as [LE|GT]; trivial.
+apply square_le_mono_nonpos in GT; order.
 Qed.
 
 Theorem square_le_simpl_nonpos : forall n m, m <= 0 -> n * n <= m * m -> m <= n.
 Proof.
-intros n m H1 H2. destruct (le_gt_cases n 0).
-destruct (le_gt_cases m n).
-assumption. assert (F : m * m < n * n) by now apply square_lt_mono_nonpos.
-apply -> lt_nge in F. false_hyp H2 F.
-apply lt_le_incl; now apply le_lt_trans with 0.
+intros n m H1 H2. destruct (le_gt_cases n 0); [|order].
+destruct (le_gt_cases m n) as [LE|GT]; trivial.
+apply square_lt_mono_nonpos in GT; order.
 Qed.
 
 Theorem lt_1_mul_neg : forall n m, n < -1 -> m < 0 -> 1 < n * m.
 Proof.
-intros n m H1 H2. apply -> (mul_lt_mono_neg_r m) in H1.
-apply <- opp_pos_neg in H2. rewrite mul_opp_l, mul_1_l in H1.
+intros n m H1 H2. apply (mul_lt_mono_neg_r m) in H1.
+apply opp_pos_neg in H2. rewrite mul_opp_l, mul_1_l in H1.
 now apply lt_1_l with (- m).
 assumption.
 Qed.
 
-Theorem lt_mul_n1_neg : forall n m, 1 < n -> m < 0 -> n * m < -1.
+Theorem lt_mul_m1_neg : forall n m, 1 < n -> m < 0 -> n * m < -1.
 Proof.
-intros n m H1 H2. apply -> (mul_lt_mono_neg_r m) in H1.
-rewrite mul_1_l in H1. now apply lt_n1_r with m.
+intros n m H1 H2. apply (mul_lt_mono_neg_r m) in H1.
+rewrite mul_1_l in H1. now apply lt_m1_r with m.
 assumption.
 Qed.
 
-Theorem lt_mul_n1_pos : forall n m, n < -1 -> 0 < m -> n * m < -1.
+Theorem lt_mul_m1_pos : forall n m, n < -1 -> 0 < m -> n * m < -1.
 Proof.
-intros n m H1 H2. apply -> (mul_lt_mono_pos_r m) in H1.
+intros n m H1 H2. apply (mul_lt_mono_pos_r m) in H1.
 rewrite mul_opp_l, mul_1_l in H1.
-apply <- opp_neg_pos in H2. now apply lt_n1_r with (- m).
+apply opp_neg_pos in H2. now apply lt_m1_r with (- m).
 assumption.
 Qed.
 
@@ -163,39 +148,33 @@ Theorem lt_1_mul_l : forall n m, 1 < n ->
  n * m < -1 \/ n * m == 0 \/ 1 < n * m.
 Proof.
 intros n m H; destruct (lt_trichotomy m 0) as [H1 | [H1 | H1]].
-left. now apply lt_mul_n1_neg.
+left. now apply lt_mul_m1_neg.
 right; left; now rewrite H1, mul_0_r.
 right; right; now apply lt_1_mul_pos.
 Qed.
 
-Theorem lt_n1_mul_r : forall n m, n < -1 ->
+Theorem lt_m1_mul_r : forall n m, n < -1 ->
  n * m < -1 \/ n * m == 0 \/ 1 < n * m.
 Proof.
 intros n m H; destruct (lt_trichotomy m 0) as [H1 | [H1 | H1]].
 right; right. now apply lt_1_mul_neg.
 right; left; now rewrite H1, mul_0_r.
-left. now apply lt_mul_n1_pos.
+left. now apply lt_mul_m1_pos.
 Qed.
 
 Theorem eq_mul_1 : forall n m, n * m == 1 -> n == 1 \/ n == -1.
 Proof.
-assert (F : ~ 1 < -1).
-intro H.
-assert (H1 : -1 < 0). apply <- opp_neg_pos. apply lt_succ_diag_r.
-assert (H2 : 1 < 0) by now apply lt_trans with (-1).
-false_hyp H2 nlt_succ_diag_l.
+assert (F := lt_m1_0).
 zero_pos_neg n.
-intros m H; rewrite mul_0_l in H; false_hyp H neq_succ_diag_r.
-intros n H; split; apply <- le_succ_l in H; le_elim H.
-intros m H1; apply (lt_1_mul_l n m) in H.
-rewrite H1 in H; destruct H as [H | [H | H]].
-false_hyp H F. false_hyp H neq_succ_diag_l. false_hyp H lt_irrefl.
-intros; now left.
-intros m H1; apply (lt_1_mul_l n m) in H. rewrite mul_opp_l in H1;
-apply -> eq_opp_l in H1. rewrite H1 in H; destruct H as [H | [H | H]].
-false_hyp H lt_irrefl. apply -> eq_opp_l in H. rewrite opp_0 in H.
-false_hyp H neq_succ_diag_l. false_hyp H F.
-intros; right; symmetry; now apply opp_wd.
+(* n = 0 *)
+intros m. nzsimpl. now left.
+(* 0 < n, proving P n /\ P (-n) *)
+intros n Hn. rewrite <- le_succ_l, <- one_succ in Hn.
+le_elim Hn; split; intros m H.
+destruct (lt_1_mul_l n m) as [|[|]]; order'.
+rewrite mul_opp_l, eq_opp_l in H. destruct (lt_1_mul_l n m) as [|[|]]; order'.
+now left.
+intros; right. now f_equiv.
 Qed.
 
 Theorem lt_mul_diag_l : forall n m, n < 0 -> (1 < m <-> n * m < n).
@@ -229,5 +208,9 @@ apply mul_lt_mono_nonneg.
 now apply lt_le_incl. assumption. apply le_0_1. assumption.
 Qed.
 
-End ZMulOrderPropFunct.
+(** Alternative name : *)
+
+Definition mul_eq_1 := eq_mul_1.
+
+End ZMulOrderProp.
 

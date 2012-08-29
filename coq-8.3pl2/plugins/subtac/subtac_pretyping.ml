@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: subtac_pretyping.ml 13344 2010-07-28 15:04:36Z msozeau $ *)
 
 open Global
 open Pp
@@ -26,7 +24,7 @@ open List
 open Recordops
 open Evarutil
 open Pretype_errors
-open Rawterm
+open Glob_term
 open Evarconv
 open Pattern
 
@@ -60,20 +58,17 @@ let my_print_rec_info env t =
   str "Wf proof: " ++ my_print_constr env t.wf_proof ++ spc () ++
   str "Abbreviated Type: " ++ my_print_constr env t.f_type ++ spc () ++
   str "Full type: " ++ my_print_constr env t.f_fulltype
-(*   trace (str "pretype for " ++ (my_print_rawconstr env c) ++ *)
+(*   trace (str "pretype for " ++ (my_print_glob_constr env c) ++ *)
 (* 	   str " and tycon "++ my_print_tycon env tycon ++ *)
 (* 	   str " in environment: " ++ my_print_env env); *)
-
-let merge_evms x y =
-  Evd.fold (fun ev evi evm -> Evd.add evm ev evi) x y
 
 let interp env isevars c tycon =
   let j = pretype tycon env isevars ([],[]) c in
   let _ = isevars := Evarutil.nf_evar_map !isevars in
   let evd = consider_remaining_unif_problems env !isevars in
 (*   let unevd = undefined_evars evd in *)
-  let unevd' = Typeclasses.resolve_typeclasses ~onlyargs:true ~split:true ~fail:true env evd in
-  let unevd' = Typeclasses.resolve_typeclasses ~onlyargs:false ~split:true ~fail:false env unevd' in
+  let unevd' = Typeclasses.resolve_typeclasses ~filter:Subtac_utils.no_goals_or_obligations ~split:true ~fail:true env evd in
+  let unevd' = Typeclasses.resolve_typeclasses ~filter:Typeclasses.all_evars ~split:true ~fail:false env unevd' in
   let evm =  unevd' in
     isevars := unevd';
     nf_evar evm j.uj_val, nf_evar evm j.uj_type
@@ -86,9 +81,9 @@ let find_with_index x l =
 
 open Vernacexpr
 
-let coqintern_constr evd env : Topconstr.constr_expr -> Rawterm.rawconstr = 
+let coqintern_constr evd env : Topconstr.constr_expr -> Glob_term.glob_constr = 
   Constrintern.intern_constr evd env
-let coqintern_type evd env : Topconstr.constr_expr -> Rawterm.rawconstr = 
+let coqintern_type evd env : Topconstr.constr_expr -> Glob_term.glob_constr = 
   Constrintern.intern_type evd env
 
 let env_with_binders env isevars l =
@@ -119,14 +114,14 @@ let subtac_process ?(is_type=false) env isevars id bl c tycon =
       | Some t ->
 	  let t = Topconstr.prod_constr_expr t bl in
 	  let t = coqintern_type !isevars env t in
-	  let imps = Implicit_quantifiers.implicits_of_rawterm t in
+	  let imps = Implicit_quantifiers.implicits_of_glob_constr t in
 	  let coqt, ttyp = interp env isevars t empty_tycon in
 	    mk_tycon coqt, Some imps
   in
   let c = coqintern_constr !isevars env c in
   let imps = match imps with 
     | Some i -> i
-    | None -> Implicit_quantifiers.implicits_of_rawterm ~with_products:is_type c
+    | None -> Implicit_quantifiers.implicits_of_glob_constr ~with_products:is_type c
   in
   let coqc, ctyp = interp env isevars c tycon in
   let evm = non_instanciated_map env isevars !isevars in

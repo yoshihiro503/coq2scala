@@ -1,12 +1,17 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: cooking.ml 13323 2010-07-24 15:57:30Z herbelin $ i*)
+(* Created by Jean-Christophe Filliâtre out of V6.3 file constants.ml
+   as part of the rebuilding of Coq around a purely functional
+   abstract type-checker, Nov 1999 *)
+
+(* This module implements kernel-level discharching of local
+   declarations over global constants and inductive types *)
 
 open Pp
 open Util
@@ -99,7 +104,7 @@ let expmod_constr modlist c =
 
   in
   if modlist = empty_modlist then c
-  else under_outer_cast nf_betaiota (substrec c)
+  else substrec c
 
 let abstract_constant_type =
    List.fold_left (fun c d -> mkNamedProd_wo_LetIn d c)
@@ -112,16 +117,28 @@ type recipe = {
   d_abstract : named_context;
   d_modlist : work_list }
 
-let on_body f =
-  Option.map (fun c -> Declarations.from_val (f (Declarations.force c)))
+let on_body f = function
+  | Undef inl -> Undef inl
+  | Def cs -> Def (Declarations.from_val (f (Declarations.force cs)))
+  | OpaqueDef lc ->
+    OpaqueDef (Declarations.opaque_from_val (f (Declarations.force_opaque lc)))
+
+let constr_of_def = function
+  | Undef _ -> assert false
+  | Def cs -> Declarations.force cs
+  | OpaqueDef lc -> Declarations.force_opaque lc
 
 let cook_constant env r =
   let cb = r.d_from in
   let hyps = Sign.map_named_context (expmod_constr r.d_modlist) r.d_abstract in
-  let body =
-    on_body (fun c ->
-      abstract_constant_body (expmod_constr r.d_modlist c) hyps)
-      cb.const_body in
+  let body = on_body
+    (fun c -> abstract_constant_body (expmod_constr r.d_modlist c) hyps)
+    cb.const_body
+  in
+  let const_hyps =
+    Sign.fold_named_context (fun (h,_,_) hyps ->
+      List.filter (fun (id,_,_) -> id <> h) hyps)
+      hyps ~init:cb.const_hyps in
   let typ = match cb.const_type with
     | NonPolymorphicType t ->
 	let typ = abstract_constant_type (expmod_constr r.d_modlist t) hyps in
@@ -129,8 +146,7 @@ let cook_constant env r =
     | PolymorphicArity (ctx,s) ->
 	let t = mkArity (ctx,Type s.poly_level) in
 	let typ = abstract_constant_type (expmod_constr r.d_modlist t) hyps in
-	let j = make_judge (force (Option.get body)) typ in
+	let j = make_judge (constr_of_def body) typ in
 	Typeops.make_polymorphic_if_constant_for_ind env j
   in
-  let boxed = Cemitcodes.is_boxed cb.const_body_code in
-  (body, typ, cb.const_constraints, cb.const_opaque, boxed,false)
+  (body, typ, cb.const_constraints, const_hyps)

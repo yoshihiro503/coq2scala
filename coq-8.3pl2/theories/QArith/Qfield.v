@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Qfield.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Export Field.
 Require Export QArith_base.
@@ -40,7 +38,7 @@ Proof.
   exact Hp.
 Qed.
 
-Lemma Qpower_theory : power_theory 1 Qmult Qeq Z_of_N Qpower.
+Lemma Qpower_theory : power_theory 1 Qmult Qeq Z.of_N Qpower.
 Proof.
 constructor.
 intros r [|n];
@@ -68,7 +66,7 @@ Ltac Qpow_tac t :=
   match t with
   | Z0 => N0
   | Zpos ?n => Ncst (Npos n)
-  | Z_of_N ?n => Ncst n
+  | Z.of_N ?n => Ncst n
   | NtoZ ?n => Ncst n
   | _ => NotConstant
   end.

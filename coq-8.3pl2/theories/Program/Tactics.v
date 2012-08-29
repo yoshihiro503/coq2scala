@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Tactics.v 13693 2010-12-08 15:32:25Z msozeau $ i*)
 
 (** This module implements various tactics used to simplify the goals produced by Program,
    which are also generally useful. *)
@@ -61,12 +59,20 @@ Ltac destruct_pairs := repeat (destruct_one_pair).
 
 Ltac destruct_one_ex :=
   let tac H := let ph := fresh "H" in (destruct H as [H ph]) in
+  let tac2 H := let ph := fresh "H" in let ph' := fresh "H" in 
+    (destruct H as [H ph ph']) 
+  in
   let tacT H := let ph := fresh "X" in (destruct H as [H ph]) in
+  let tacT2 H := let ph := fresh "X" in let ph' := fresh "X" in 
+    (destruct H as [H ph ph']) 
+  in
     match goal with
       | [H : (ex _) |- _] => tac H
       | [H : (sig ?P) |- _ ] => tac H
       | [H : (sigT ?P) |- _ ] => tacT H
-      | [H : (ex2 _) |- _] => tac H
+      | [H : (ex2 _ _) |- _] => tac2 H
+      | [H : (sig2 ?P _) |- _ ] => tac2 H
+      | [H : (sigT2 ?P _) |- _ ] => tacT2 H
     end.
 
 (** Repeateadly destruct existentials. *)
@@ -304,18 +310,22 @@ Ltac refine_hyp c :=
    possibly using [program_simplify] to use standard goal-cleaning tactics. *)
 
 Ltac program_simplify :=
-  simpl in |- *; intros ; destruct_all_rec_calls ; repeat (destruct_conjs; simpl proj1_sig in *);
+simpl; intros ; destruct_all_rec_calls ; repeat (destruct_conjs; simpl proj1_sig in * );
   subst*; autoinjections ; try discriminates ;
     try (solve [ red ; intros ; destruct_conjs ; autoinjections ; discriminates ]).
 
-(** We only try to solve proposition goals automatically. *)
+(** Restrict automation to propositional obligations. *)
 
-Ltac program_solve :=
+Ltac program_solve_wf :=
   match goal with
     | |- well_founded _ => auto with *
     | |- ?T => match type of T with Prop => auto end
   end.
 
-Ltac program_simpl := program_simplify ; try program_solve.
+Create HintDb program discriminated.
+
+Ltac program_simpl := program_simplify ; try typeclasses eauto with program ; try program_solve_wf.
 
 Obligation Tactic := program_simpl.
+
+Definition obligation (A : Type) {a : A} := a.

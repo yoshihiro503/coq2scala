@@ -6,7 +6,7 @@ open Pp
 open Evd
 open Decl_kinds
 open Topconstr
-open Rawterm
+open Glob_term
 open Util
 open Evarutil
 open Names
@@ -15,11 +15,9 @@ open Sign
 val ($) : ('a -> 'b) -> 'a -> 'b
 val contrib_name : string
 val subtac_dir : string list
-val fix_sub_module : string
 val fixsub_module : string list
 val init_constant : string list -> string -> constr delayed
 val init_reference : string list -> string -> global_reference delayed
-val fixsub : constr delayed
 val well_founded_ref : global_reference delayed
 val acc_ref : global_reference delayed
 val acc_inv_ref : global_reference delayed
@@ -35,7 +33,8 @@ val build_sig : unit -> coq_sigma_data
 val sig_ : coq_sigma_data delayed
 
 val fix_proto : constr delayed
-val fix_proto_ref : unit -> constant
+
+val hide_obligation : constr delayed
 
 val eq_ind : constr delayed
 val eq_rec : constr delayed
@@ -52,11 +51,6 @@ val jmeq_ind : constr delayed
 val jmeq_rec : constr delayed
 val jmeq_refl : constr delayed
 
-val boolind : constr delayed
-val sumboolind : constr delayed
-val natind : constr delayed
-val intind : constr delayed
-val existSind : constr delayed
 val existS : coq_sigma_data delayed
 val prod : coq_sigma_data delayed
 
@@ -74,7 +68,7 @@ val my_print_context : env -> std_ppcmds
 val my_print_rel_context : env -> rel_context -> std_ppcmds
 val my_print_named_context : env -> std_ppcmds
 val my_print_env : env -> std_ppcmds
-val my_print_rawconstr : env -> rawconstr -> std_ppcmds
+val my_print_glob_constr : env -> glob_constr -> std_ppcmds
 val my_print_tycon_type : env -> type_constraint_type -> std_ppcmds
 
 
@@ -88,6 +82,7 @@ val app_opt : ('a -> 'a) option -> 'a -> 'a
 val print_args : env -> constr array -> std_ppcmds
 val make_existential : loc -> ?opaque:obligation_definition_status ->
   env -> evar_map ref -> types -> constr
+val no_goals_or_obligations : Typeclasses.evar_filter
 val make_existential_expr : loc -> 'a -> 'b -> constr_expr
 val string_of_hole_kind : hole_kind -> string
 val evars_of_term : evar_map -> evar_map -> constr -> evar_map

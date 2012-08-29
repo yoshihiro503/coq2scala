@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: inductiveops.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Util
 open Names
@@ -78,7 +76,7 @@ let mis_is_recursive_subset listind rarg =
     List.exists
       (fun ra ->
         match dest_recarg ra with
-	  | Mrec i -> List.mem i listind
+	  | Mrec (_,i) -> List.mem i listind
           | _ -> false) rvec
   in
   array_exists one_is_rec (dest_subterms rarg)
@@ -145,11 +143,8 @@ let make_case_info env ind style =
   let print_info = { ind_nargs = mip.mind_nrealargs_ctxt; style = style } in
   { ci_ind     = ind;
     ci_npar    = mib.mind_nparams;
-    ci_cstr_nargs = mip.mind_consnrealdecls;
+    ci_cstr_ndecls = mip.mind_consnrealdecls;
     ci_pp_info = print_info }
-
-let make_default_case_info env style ind =
-  make_case_info env ind style
 
 (*s Useful functions *)
 
@@ -201,12 +196,6 @@ let get_constructors env (ind,params) =
   let (mib,mip) = Inductive.lookup_mind_specif env ind in
   Array.init (Array.length mip.mind_consnames)
     (fun j -> get_constructor (ind,mib,mip,params) (j+1))
-
-let rec instantiate args c = match kind_of_term c, args with
-  | Prod (_,_,c), a::args -> instantiate args (subst1 a c)
-  | LetIn (_,b,_,c), args -> instantiate args (subst1 b c)
-  | _, [] -> c
-  | _ -> anomaly "too short arity"
 
 (* substitution in a signature *)
 
@@ -403,21 +392,6 @@ let arity_of_case_predicate env (ind,params) dep k =
 (* Inferring the sort of parameters of a polymorphic inductive type
    knowing the sort of the conclusion *)
 
-(* Check if u (sort of a parameter) appears in the sort of the
-   inductive (is). This is done by trying to enforce u > u' >= is
-   in the empty univ graph. If an inconsistency appears, then
-   is depends on u. *)
-let is_constrained is u =
-  try
-    let u' = fresh_local_univ() in
-    let _ =
-      merge_constraints
-        (enforce_geq u (super u')
-          (enforce_geq u' is Constraint.empty))
-        initial_universes in
-    false
-  with UniverseInconsistency _ -> true
-
 (* Compute the inductive argument types: replace the sorts
    that appear in the type of the inductive by the sort of the
    conclusion, and the other ones by fresh universes. *)
@@ -429,7 +403,9 @@ let rec instantiate_universes env scl is = function
   | (na,None,ty)::sign, Some u::exp ->
       let ctx,_ = Reduction.dest_arity env ty in
       let s =
-        if is_constrained is u then
+	(* Does the sort of parameter [u] appear in (or equal)
+           the sort of inductive [is] ? *)
+        if univ_depends u is then
           scl (* constrained sort: replace by scl *)
         else
           (* unconstriained sort: replace by fresh universe *)

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: library.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Pp
 open Util
@@ -68,8 +66,6 @@ let add_load_path isroot (phys_path,coq_path) =
 	  load_paths := (phys_path,coq_path,isroot) :: !load_paths;
       | _ -> anomaly ("Two logical paths are associated to "^phys_path)
 
-let physical_paths (dp,lp) = dp
-
 let extend_path_with_dirpath p dir =
   List.fold_left Filename.concat p
     (List.map string_of_id (List.rev (repr_dirpath dir)))
@@ -119,7 +115,7 @@ type compilation_unit_name = dir_path
 
 type library_disk = {
   md_name : compilation_unit_name;
-  md_compiled : compiled_library;
+  md_compiled : LightenLibrary.lightened_compiled_library;
   md_objects : Declaremods.library_objects;
   md_deps : (compilation_unit_name * Digest.t) list;
   md_imports : compilation_unit_name list }
@@ -215,9 +211,6 @@ let library_is_loaded dir =
 let library_is_opened dir =
   List.exists (fun m -> m.library_name = dir) !libraries_imports_list
 
-let library_is_exported dir =
-  List.exists (fun m -> m.library_name = dir) !libraries_exports_list
-
 let loaded_libraries () =
   List.map (fun m -> m.library_name) !libraries_loaded_list
 
@@ -307,7 +300,7 @@ let subst_import (_,o) = o
 let classify_import (_,export as obj) =
   if export then Substitute obj else Dispose
 
-let (in_import, out_import) =
+let in_import : dir_path * bool -> obj =
   declare_object {(default_object "IMPORT LIBRARY") with
        cache_function = cache_import;
        open_function = open_import;
@@ -389,24 +382,41 @@ let try_locate_qualified_library (loc,qid) =
 (************************************************************************)
 (* Internalise libraries *)
 
-let lighten_library m =
-  if !Flags.dont_load_proofs then lighten_library m else m
+let mk_library md table digest =
+  let md_compiled =
+    LightenLibrary.load ~load_proof:!Flags.load_proofs table md.md_compiled
+  in {
+    library_name     = md.md_name;
+    library_compiled = md_compiled;
+    library_objects  = md.md_objects;
+    library_deps     = md.md_deps;
+    library_imports  = md.md_imports;
+    library_digest    = digest
+  }
 
-let mk_library md digest = {
-  library_name = md.md_name;
-  library_compiled = lighten_library md.md_compiled;
-  library_objects = md.md_objects;
-  library_deps = md.md_deps;
-  library_imports = md.md_imports;
-  library_digest = digest }
+let fetch_opaque_table (f,pos,digest) =
+  try
+    let ch = System.with_magic_number_check raw_intern_library f in
+    seek_in ch pos;
+    if System.marshal_in ch <> digest then failwith "File changed!";
+    let table = (System.marshal_in ch : LightenLibrary.table) in
+    close_in ch;
+    table
+  with _ ->
+    error
+      ("The file "^f^" is inaccessible or has changed,\n" ^
+       "cannot load some opaque constant bodies in it.\n")
 
 let intern_from_file f =
   let ch = System.with_magic_number_check raw_intern_library f in
-  let md = System.marshal_in ch in
+  let lmd = System.marshal_in ch in
+  let pos = pos_in ch in
   let digest = System.marshal_in ch in
+  let table = lazy (fetch_opaque_table (f,pos,digest)) in
+  register_library_filename lmd.md_name f;
+  let library = mk_library lmd table digest in
   close_in ch;
-  register_library_filename md.md_name f;
-  mk_library md digest
+  library
 
 let rec intern_library needed (dir, f) =
   (* Look if in the current logical environment *)
@@ -453,9 +463,9 @@ let rec_intern_by_filename_only id f =
   (* We check no other file containing same library is loaded *)
   if library_is_loaded m.library_name then
     begin
-      Flags.if_verbose warning
-	((string_of_dirpath m.library_name)^" is already loaded from file "^
-	library_full_filename m.library_name);
+      Flags.if_warn msg_warning
+	(pr_dirpath m.library_name ++ str " is already loaded from file " ++
+	str (library_full_filename m.library_name));
       m.library_name, []
     end
  else
@@ -488,7 +498,7 @@ let rec_intern_library_from_file idopt f =
 
 type library_reference = dir_path list * bool option
 
-let register_library (dir,m) =
+let register_library m =
   Declaremods.register_library
     m.library_name
     m.library_compiled
@@ -516,7 +526,9 @@ let discharge_require (_,o) = Some o
 
 (* open_function is never called from here because an Anticipate object *)
 
-let (in_require, out_require) =
+type require_obj = library_t list * dir_path list * bool option
+
+let in_require : require_obj -> obj =
   declare_object {(default_object "REQUIRE") with
        cache_function = cache_require;
        load_function = load_require;
@@ -531,9 +543,10 @@ let xml_require = ref (fun d -> ())
 let set_xml_require f = xml_require := f
 
 let require_library_from_dirpath modrefl export =
-  let needed = List.rev (List.fold_left rec_intern_library [] modrefl) in
+  let needed = List.fold_left rec_intern_library [] modrefl in
+  let needed = List.rev_map snd needed in
   let modrefl = List.map fst modrefl in
-    if Lib.is_modtype () || Lib.is_module () then
+    if Lib.is_module_or_modtype () then
       begin
 	add_anonymous_leaf (in_require (needed,modrefl,None));
 	Option.iter (fun exp ->
@@ -551,8 +564,8 @@ let require_library qidl export =
 
 let require_library_from_file idopt file export =
   let modref,needed = rec_intern_library_from_file idopt file in
-  let needed = List.rev needed in
-  if Lib.is_modtype () || Lib.is_module () then begin
+  let needed = List.rev_map snd needed in
+  if Lib.is_module_or_modtype () then begin
     add_anonymous_leaf (in_require (needed,[modref],None));
     Option.iter (fun exp -> add_anonymous_leaf (in_import (modref,exp)))
       export
@@ -568,7 +581,7 @@ let import_module export (loc,qid) =
   try
     match Nametab.locate_module qid with
       | MPfile dir ->
-	  if Lib.is_modtype () || Lib.is_module () || not export then
+	  if Lib.is_module_or_modtype () || not export then
 	    add_anonymous_leaf (in_import (dir, export))
 	  else
 	    add_anonymous_leaf (in_import (dir, export))
@@ -620,6 +633,7 @@ let error_recursively_dependent_library dir =
    writing the content and computing the checksum... *)
 let save_library_to dir f =
   let cenv, seg = Declaremods.end_library dir in
+  let cenv, table = LightenLibrary.save cenv in
   let md = {
     md_name = dir;
     md_compiled = cenv;
@@ -632,8 +646,14 @@ let save_library_to dir f =
   try
     System.marshal_out ch md;
     flush ch;
+    (* The loading of the opaque definitions table is optional whereas
+       the digest is loaded all the time. As a consequence, the digest
+       must be serialized before the table (if we want to keep the
+       current simple layout of .vo files). This also entails that the
+       digest does not take opaque terms into account anymore. *)
     let di = Digest.file f' in
     System.marshal_out ch di;
+    System.marshal_out ch table;
     close_out ch
   with e -> warning ("Removed file "^f'); close_out ch; Sys.remove f'; raise e
 

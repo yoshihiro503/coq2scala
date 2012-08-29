@@ -10,7 +10,7 @@
 \label{typeclasses}
 
 \begin{flushleft}
-  \em The status of Type Classes is experimental.
+  \em The status of Type Classes is (extremely) experimental.
 \end{flushleft}
 
 This chapter presents a quick reference of the commands related to type
@@ -71,7 +71,7 @@ Leibniz equality on some type. An example implementation is:
 Instance unit_EqDec : EqDec unit :=
 { eqb x y := true ;
   eqb_leibniz x y H := 
-    match x, y return x = y with tt, tt => refl_equal tt end }.
+    match x, y return x = y with tt, tt => eq_refl tt end }.
 \end{coq_example*}
 
 If one does not give all the members in the \texttt{Instance}
@@ -128,7 +128,9 @@ particular support for type classes:
   methods. In the example above, \texttt{A} and \texttt{eqa} should be
   set maximally implicit.
 \item They support implicit quantification on partialy applied type
-  classes.
+  classes (\S \ref{implicit-generalization}).
+  Any argument not given as part of a type class binder will be
+  automatically generalized.
 \item They also support implicit quantification on superclasses
   (\S \ref{classes:superclasses})
 \end{itemize}
@@ -140,19 +142,6 @@ Definition neqb_impl `{eqa : EqDec A} (x y : A) := negb (eqb x y).
 
 Here \texttt{A} is implicitly generalized, and the resulting function
 is equivalent to the one above.
-
-The parsing of generalized type-class binders is different from regular
-binders:
-\begin{itemize}
-\item Implicit arguments of the class type are ignored.
-\item Superclasses arguments are automatically generalized.
-\item Any remaining arguments not given as part of a type class binder
-  will be automatically generalized. In other words, the rightmost
-  parameters are automatically generalized if not mentionned.
-\end{itemize}
-
-One can switch off this special treatment using the $!$ mark in front of
-the class name (see example below).
 
 \asection{Parameterized Instances}
 
@@ -242,9 +231,9 @@ Definition le_eqb `{Ord A} (x y : A) := andb (le x y) (le y x).
 \end{coq_example*}
 
 In some cases, to be able to specify sharing of structures, one may want to give
-explicitly the superclasses. It is possible to do it directly in regular
-generalized binders, and using the \texttt{!} modifier in class
-binders. For example:
+explicitly the superclasses. It is is possible to do it directly in regular
+binders, and using the \texttt{!} modifier in class binders. For
+example:
 \begin{coq_example*}
 Definition lt `{eqa : EqDec A, ! Ord eqa} (x y : A) := 
   andb (le x y) (neqb x y).
@@ -377,6 +366,12 @@ type class to the instance database. It can be used for redeclaring
 instances at the end of sections, or declaring structure projections as
 instances. This is almost equivalent to {\tt Hint Resolve {\ident} :
   typeclass\_instances}.
+
+\begin{Variants}
+\item {\tt Existing Instances {\ident}$_1$ \ldots {\ident}$_n$}
+  \comindex{Existing Instances}
+  With this command, several existing instances can be declared at once.
+\end{Variants}
 
 \subsection{\tt Context {\binder$_1$ \ldots \binder$_n$}}
 \comindex{Context}

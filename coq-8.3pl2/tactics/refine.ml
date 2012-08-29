@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: refine.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 (* JCF -- 6 janvier 1998  EXPERIMENTAL *)
 
@@ -114,8 +112,6 @@ let replace_by_meta env sigma = function
 	| _ -> invalid_arg "Tcc.replace_by_meta (TO DO)"
         *)
       in
-      if occur_meta ty then
-	error "Unable to manage a dependent metavariable of higher-order type.";
       mkCast (m,DEFAULTcast, ty),[n,ty],[Some th]
 
 exception NoMeta
@@ -197,8 +193,6 @@ let rec compute_metamap env sigma c = match kind_of_term c with
       end
 
   | Case (ci,p,cc,v) ->
-      if occur_meta p then
-       error "Unable to manage a metavariable in the return clause of a match.";
       (* bof... *)
       let nbr = Array.length v in
       let v = Array.append [|p;cc|] v in
@@ -394,12 +388,10 @@ let rec tcc_aux subst (TH (c,mm,sgp) as _th) gl =
 
 let refine (evd,c) gl =
   let sigma = project gl in
-  let evd = Typeclasses.resolve_typeclasses ~onlyargs:true (pf_env gl) evd in
+  let evd = Typeclasses.resolve_typeclasses ~filter:Typeclasses.no_goals (pf_env gl) evd in
   let c = Evarutil.nf_evar evd c in
   let (evd,c) = Evarutil.evars_to_metas sigma (evd,c) in
   (* Relies on Cast's put on Meta's by evars_to_metas, because it is otherwise
      complicated to update meta types when passing through a binder *)
   let th = compute_metamap (pf_env gl) evd c in
   tclTHEN (Refiner.tclEVARS evd) (tcc_aux [] th) gl
-
-let _ = Decl_proof_instr.set_refine refine (* dirty trick to solve circular dependency *)

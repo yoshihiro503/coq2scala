@@ -1,16 +1,15 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: explore.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
+(** {6 Search strategies. } *)
 
-(*s Search strategies. *)
-
-(*s A search problem implements the following signature [SearchProblem].
+(** {6 ... } *)
+(** A search problem implements the following signature [SearchProblem].
     [state] is the type of states of the search tree.
     [branching] is the branching function; if [branching s] returns an
     empty list, then search from [s] is aborted; successors of [s] are
@@ -28,11 +27,12 @@ module type SearchProblem = sig
 
   val success : state -> bool
 
-  val pp : state -> unit
+  val pp : state -> Pp.std_ppcmds
 
 end
 
-(*s Functor [Make] returns some search functions given a search problem.
+(** {6 ... } *)
+(** Functor [Make] returns some search functions given a search problem.
     Search functions raise [Not_found] if no success is found.
     States are always visited in the order they appear in the
     output of [branching] (whatever the search method is).

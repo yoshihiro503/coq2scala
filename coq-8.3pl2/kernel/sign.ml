@@ -1,12 +1,19 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: sign.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
+(* Created by Jean-Christophe Filliâtre out of names.ml as part of the
+   rebuilding of Coq around a purely functional abstract type-checker,
+   Aug 1999 *)
+(* Miscellaneous extensions, restructurations and bug-fixes by Hugo
+   Herbelin and Bruno Barras *)
+
+(* This file defines types and combinators regarding indexes-based and
+   names-based contexts *)
 
 open Names
 open Util
@@ -27,6 +34,7 @@ let rec lookup_named id = function
   | [] -> raise Not_found
 
 let named_context_length = List.length
+let named_context_equal = list_equal eq_named_declaration
 
 let vars_of_named_context = List.map (fun (id,_,_) -> id)
 

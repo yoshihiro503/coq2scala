@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: common.mli 14010 2011-04-15 16:05:07Z letouzey $ i*)
 
 open Names
 open Libnames
@@ -22,10 +20,19 @@ open Pp
 val fnl : unit -> std_ppcmds
 val fnl2 : unit -> std_ppcmds
 val space_if : bool -> std_ppcmds
-val sec_space_if : bool -> std_ppcmds
 
 val pp_par : bool -> std_ppcmds -> std_ppcmds
+
+(** [pp_apply] : a head part applied to arguments, possibly with parenthesis *)
 val pp_apply : std_ppcmds -> bool -> std_ppcmds list -> std_ppcmds
+
+(** Same as [pp_apply], but with also protection of the head by parenthesis *)
+val pp_apply2 : std_ppcmds -> bool -> std_ppcmds list -> std_ppcmds
+
+val pp_tuple_light : (bool -> 'a -> std_ppcmds) -> 'a list -> std_ppcmds
+val pp_tuple : ('a -> std_ppcmds) -> 'a list -> std_ppcmds
+val pp_boxed_tuple : ('a -> std_ppcmds) -> 'a list -> std_ppcmds
+
 val pr_binding : identifier list -> std_ppcmds
 
 val rename_id : identifier -> Idset.t -> identifier

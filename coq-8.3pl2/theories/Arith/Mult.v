@@ -1,19 +1,17 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Mult.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Export Plus.
 Require Export Minus.
 Require Export Lt.
 Require Export Le.
 
-Open Local Scope nat_scope.
+Local Open Scope nat_scope.
 
 Implicit Types m n p : nat.
 
@@ -25,7 +23,7 @@ Implicit Types m n p : nat.
 
 Lemma mult_0_r : forall n, n * 0 = 0.
 Proof.
-  intro; symmetry  in |- *; apply mult_n_O.
+  intro; symmetry ; apply mult_n_O.
 Qed.
 
 Lemma mult_0_l : forall n, 0 * n = 0.
@@ -37,7 +35,7 @@ Qed.
 
 Lemma mult_1_l : forall n, 1 * n = n.
 Proof.
-  simpl in |- *; auto with arith.
+  simpl; auto with arith.
 Qed.
 Hint Resolve mult_1_l: arith v62.
 
@@ -70,12 +68,12 @@ Hint Resolve mult_plus_distr_r: arith v62.
 Lemma mult_plus_distr_l : forall n m p, n * (m + p) = n * m + n * p.
 Proof.
   induction n. trivial.
-  intros. simpl in |- *. rewrite IHn. symmetry. apply plus_permute_2_in_4.
+  intros. simpl. rewrite IHn. symmetry. apply plus_permute_2_in_4.
 Qed.
 
 Lemma mult_minus_distr_r : forall n m p, (n - m) * p = n * p - m * p.
 Proof.
-  intros; induction n m using nat_double_ind; simpl; auto with arith.
+  intros; induction n, m using nat_double_ind; simpl; auto with arith.
   rewrite <- minus_plus_simpl_l_reverse; auto with arith.
 Qed.
 Hint Resolve mult_minus_distr_r: arith v62.
@@ -139,13 +137,13 @@ Qed.
 
 Lemma mult_O_le : forall n m, m = 0 \/ n <= m * n.
 Proof.
-  induction m; simpl in |- *; auto with arith.
+  induction m; simpl; auto with arith.
 Qed.
 Hint Resolve mult_O_le: arith v62.
 
 Lemma mult_le_compat_l : forall n m p, n <= m -> p * n <= p * m.
 Proof.
-  induction p as [| p IHp]; intros; simpl in |- *.
+  induction p as [| p IHp]; intros; simpl.
   apply le_n.
   auto using plus_le_compat.
 Qed.
@@ -169,7 +167,7 @@ Proof.
   assumption.
   apply le_plus_l.
   (* m*p<=m0*q -> m*p<=(S m0)*q *)
-  simpl in |- *; apply le_trans with (m0 * q).
+  simpl; apply le_trans with (m0 * q).
   assumption.
   apply le_plus_r.
 Qed.
@@ -177,19 +175,22 @@ Qed.
 Lemma mult_S_lt_compat_l : forall n m p, m < p -> S n * m < S n * p.
 Proof.
   induction n; intros; simpl in *.
-    rewrite <- 2! plus_n_O; assumption.
+    rewrite <- 2 plus_n_O; assumption.
     auto using plus_lt_compat.
 Qed.
 
 Hint Resolve mult_S_lt_compat_l: arith.
 
+Lemma mult_lt_compat_l : forall n m p, n < m -> 0 < p -> p * n < p * m.
+Proof.
+ intros m n p H Hp. destruct p. elim (lt_irrefl _ Hp).
+ now apply mult_S_lt_compat_l.
+Qed.
+
 Lemma mult_lt_compat_r : forall n m p, n < m -> 0 < p -> n * p < m * p.
 Proof.
-  intros m n p H H0.
-  induction p.
-  elim (lt_irrefl _ H0).
-  rewrite mult_comm.
-  replace (n * S p) with (S p * n); auto with arith.
+  intros m n p H Hp. destruct p. elim (lt_irrefl _ Hp).
+  rewrite (mult_comm m), (mult_comm n). now apply mult_S_lt_compat_l.
 Qed.
 
 Lemma mult_S_le_reg_l : forall n m p, S n * m <= S n * p -> m <= p.
@@ -231,7 +232,7 @@ Fixpoint mult_acc (s:nat) m n : nat :=
 
 Lemma mult_acc_aux : forall n m p, m + n * p = mult_acc m p n.
 Proof.
-  induction n as [| p IHp]; simpl in |- *; auto.
+  induction n as [| p IHp]; simpl; auto.
   intros s m; rewrite <- plus_tail_plus; rewrite <- IHp.
   rewrite <- plus_assoc_reverse; apply f_equal2; auto.
   rewrite plus_comm; auto.
@@ -241,7 +242,7 @@ Definition tail_mult n m := mult_acc 0 m n.
 
 Lemma mult_tail_mult : forall n m, n * m = tail_mult n m.
 Proof.
-  intros; unfold tail_mult in |- *; rewrite <- mult_acc_aux; auto.
+  intros; unfold tail_mult; rewrite <- mult_acc_aux; auto.
 Qed.
 
 (** [TailSimpl] transforms any [tail_plus] and [tail_mult] into [plus]
@@ -249,4 +250,4 @@ Qed.
 
 Ltac tail_simpl :=
   repeat rewrite <- plus_tail_plus; repeat rewrite <- mult_tail_mult;
-    simpl in |- *.
+    simpl.

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: lemmas.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 (* Created by Hugo Herbelin from contents related to lemma proofs in
    file command.ml, Aug 2009 *)
@@ -41,8 +39,8 @@ let retrieve_first_recthm = function
   | VarRef id ->
       (pi2 (Global.lookup_named id),variable_opacity id)
   | ConstRef cst ->
-      let {const_body=body;const_opaque=opaq} =	Global.lookup_constant cst in
-      (Option.map Declarations.force body,opaq)
+      let cb = Global.lookup_constant cst in
+      (Option.map Declarations.force (body_of_constant cb), is_opaque cb)
   | _ -> assert false
 
 let adjust_guardness_conditions const = function
@@ -126,13 +124,13 @@ let find_mutually_recursive_statements thms =
 	  assert (rest=[]);
           (* One occ. of common coind ccls and no common inductive hyps *)
 	  if common_same_indhyp <> [] then
-	    if_verbose warning "Assuming mutual coinductive statements.";
+	    if_verbose msgnl (str "Assuming mutual coinductive statements.");
 	  flush_all ();
           indccl, true, []
       | [], _::_ ->
 	  if same_indccl <> [] &&
 	     list_distinct (List.map pi1 (List.hd same_indccl)) then
-	    if_verbose warn (strbrk "Coinductive statements do not follow the order of definition, assume the proof to be by induction."); flush_all ();
+	    if_verbose msgnl (strbrk "Coinductive statements do not follow the order of definition, assuming the proof to be by induction."); flush_all ();
           let possible_guards = List.map (List.map pi3) inds_hyps in
 	  (* assume the largest indices as possible *)
 	  list_last common_same_indhyp, false, possible_guards
@@ -176,14 +174,6 @@ let save id const do_guard (locality,kind) hook =
   definition_message id;
   hook l r
 
-let save_hook = ref ignore
-let set_save_hook f = save_hook := f
-
-let save_named opacity =
-  let id,(const,do_guard,persistence,hook) = Pfedit.cook_proof !save_hook in
-  let const = { const with const_entry_opaque = opacity } in
-  save id const do_guard persistence hook
-
 let default_thm_id = id_of_string "Unnamed_thm"
 
 let compute_proof_name locality = function
@@ -209,7 +199,7 @@ let save_remaining_recthms (local,kind) body opaq i (id,(t_i,(_,imps))) =
           (Local,VarRef id,imps)
       | Global ->
           let k = IsAssumption Conjectural in
-          let kn = declare_constant id (ParameterEntry (t_i,false), k) in
+          let kn = declare_constant id (ParameterEntry (None,t_i,None), k) in
           (Global,ConstRef kn,imps))
   | Some body ->
       let k = logical_kind_of_goal_kind kind in
@@ -225,27 +215,34 @@ let save_remaining_recthms (local,kind) body opaq i (id,(t_i,(_,imps))) =
       | Global ->
           let const =
             { const_entry_body = body_i;
+              const_entry_secctx = None;
               const_entry_type = Some t_i;
-              const_entry_opaque = opaq;
-              const_entry_boxed = false (* copy of what cook_proof does *)} in
+              const_entry_opaque = opaq } in
           let kn = declare_constant id (DefinitionEntry const, k) in
           (Global,ConstRef kn,imps)
 
-(* 4.2| General support for goals *)
+let save_hook = ref ignore
+let set_save_hook f = save_hook := f
+
+let get_proof opacity =
+  let id,(const,do_guard,persistence,hook) = Pfedit.cook_proof !save_hook in
+  id,{const with const_entry_opaque = opacity},do_guard,persistence,hook
+
+let save_named opacity =
+  let id,const,do_guard,persistence,hook = get_proof opacity in
+  save id const do_guard persistence hook
 
 let check_anonymity id save_ident =
-  if atompart_of_id id <> "Unnamed_thm" then
+  if atompart_of_id id <> string_of_id (default_thm_id) then
     error "This command can only be used for unnamed theorem."
 
 let save_anonymous opacity save_ident =
-  let id,(const,do_guard,persistence,hook) = Pfedit.cook_proof !save_hook in
-  let const = { const with const_entry_opaque = opacity } in
+  let id,const,do_guard,persistence,hook = get_proof opacity in
   check_anonymity id save_ident;
   save save_ident const do_guard persistence hook
 
 let save_anonymous_with_strength kind opacity save_ident =
-  let id,(const,do_guard,_,hook) = Pfedit.cook_proof !save_hook in
-  let const = { const with const_entry_opaque = opacity } in
+  let id,const,do_guard,_,hook = get_proof opacity in
   check_anonymity id save_ident;
   (* we consider that non opaque behaves as local for discharge *)
   save save_ident const do_guard (Global, Proof kind) hook
@@ -256,8 +253,7 @@ let start_hook = ref ignore
 let set_start_hook = (:=) start_hook
 
 let start_proof id kind c ?init_tac ?(compute_guard=[]) hook =
-  let sign = Global.named_context () in
-  let sign = clear_proofs sign in
+  let sign = initialize_named_context_for_proof () in
   !start_hook c;
   Pfedit.start_proof id kind sign c ?init_tac ~compute_guard hook
 
@@ -314,11 +310,11 @@ let start_proof_with_initialization kind recguard thms snl hook =
       start_proof id kind t ?init_tac hook ~compute_guard:guard
 
 let start_proof_com kind thms hook =
-  let evdref = ref (create_evar_defs Evd.empty) in
+  let evdref = ref Evd.empty in
   let env0 = Global.env () in
   let thms = List.map (fun (sopt,(bl,t,guard)) ->
-    let (env, ctx), imps = interp_context_evars evdref env0 bl in
-    let t', imps' = interp_type_evars_impls ~evdref env t in
+    let impls, ((env, ctx), imps) = interp_context_evars evdref env0 bl in
+    let t', imps' = interp_type_evars_impls ~impls ~evdref env t in
     Sign.iter_rel_context (check_evars env Evd.empty !evdref) ctx;
     let ids = List.map pi1 ctx in
       (compute_proof_name (fst kind) sopt,
@@ -333,8 +329,9 @@ let start_proof_com kind thms hook =
 
 let admit () =
   let (id,k,typ,hook) = Pfedit.current_proof_statement () in
+  let e = Pfedit.get_used_variables(), typ, None in
   let kn =
-    declare_constant id (ParameterEntry (typ,false),IsAssumption Conjectural) in
+    declare_constant id (ParameterEntry e,IsAssumption Conjectural) in
   Pfedit.delete_current_proof ();
   assumption_message id;
   hook Global (ConstRef kn)

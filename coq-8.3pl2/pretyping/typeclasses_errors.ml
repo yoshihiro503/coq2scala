@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: typeclasses_errors.ml 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (*i*)
 open Names
@@ -18,6 +16,7 @@ open Environ
 open Nametab
 open Mod_subst
 open Topconstr
+open Compat
 open Util
 open Libnames
 (*i*)
@@ -47,7 +46,7 @@ let unsatisfiable_constraints env evd ev =
       raise (TypeClassError (env, UnsatisfiableConstraints (evd, None)))
   | Some ev ->
       let loc, kind = Evd.evar_source ev evd in
-	raise (Stdpp.Exc_located (loc, TypeClassError
+	raise (Loc.Exc_located (loc, TypeClassError
 	  (env, UnsatisfiableConstraints (evd, Some (ev, kind)))))
 
 let mismatched_ctx_inst env c n m = typeclass_error env (MismatchedContextInstance (c, n, m))
@@ -55,5 +54,5 @@ let mismatched_ctx_inst env c n m = typeclass_error env (MismatchedContextInstan
 let rec unsatisfiable_exception exn =
   match exn with
   | TypeClassError (_, UnsatisfiableConstraints _) -> true
-  | Stdpp.Exc_located(_, e) -> unsatisfiable_exception e
+  | Loc.Exc_located(_, e) -> unsatisfiable_exception e
   | _ -> false

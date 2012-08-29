@@ -1,10 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
+
+Require Import ZAxioms ZMulOrder ZSgnAbs NZDiv.
 
 (** * Euclidean Division for integers, Euclid convention
 
@@ -19,37 +21,29 @@
     Vol. 14, No.2, pp. 127-144, April 1992.
 
     See files [ZDivTrunc] and [ZDivFloor] for others conventions.
+
+    We simply extend NZDiv with a bound for modulo that holds
+    regardless of the sign of a and b. This new specification
+    subsume mod_bound_pos, which nonetheless stays there for
+    subtyping. Note also that ZAxiomSig now already contain
+    a div and a modulo (that follow the Floor convention).
+    We just ignore them here.
 *)
 
-Require Import ZAxioms ZProperties NZDiv.
+Module Type EuclidSpec (Import A : ZAxiomsSig')(Import B : DivMod' A).
+ Axiom mod_always_pos : forall a b, b ~= 0 -> 0 <= a mod b < abs b.
+End EuclidSpec.
 
-Module Type ZDivSpecific (Import Z : ZAxiomsExtSig')(Import DM : DivMod' Z).
- Axiom mod_always_pos : forall a b, 0 <= a mod b < abs b.
-End ZDivSpecific.
+Module Type ZEuclid (Z:ZAxiomsSig) := NZDiv.NZDiv Z <+ EuclidSpec Z.
+Module Type ZEuclid' (Z:ZAxiomsSig) := NZDiv.NZDiv' Z <+ EuclidSpec Z.
 
-Module Type ZDiv (Z:ZAxiomsExtSig)
- := DivMod Z <+ NZDivCommon Z <+ ZDivSpecific Z.
+Module ZEuclidProp
+ (Import A : ZAxiomsSig')
+ (Import B : ZMulOrderProp A)
+ (Import C : ZSgnAbsProp A B)
+ (Import D : ZEuclid' A).
 
-Module Type ZDivSig := ZAxiomsExtSig <+ ZDiv.
-Module Type ZDivSig' := ZAxiomsExtSig' <+ ZDiv <+ DivModNotation.
-
-Module ZDivPropFunct (Import Z : ZDivSig')(Import ZP : ZPropSig Z).
-
-(** We benefit from what already exists for NZ *)
-
- Module ZD <: NZDiv Z.
-  Definition div := div.
-  Definition modulo := modulo.
-  Definition div_wd := div_wd.
-  Definition mod_wd := mod_wd.
-  Definition div_mod := div_mod.
-  Lemma mod_bound : forall a b, 0<=a -> 0<b -> 0 <= a mod b < b.
-  Proof.
-  intros. rewrite <- (abs_eq b) at 3 by now apply lt_le_incl.
-  apply mod_always_pos.
-  Qed.
- End ZD.
- Module Import NZDivP := NZDivPropFunct Z ZP ZD.
+ Module Import Private_NZDiv := Nop <+ NZDivProp A D B.
 
 (** Another formulation of the main equation *)
 
@@ -117,7 +111,7 @@ Lemma div_opp_r : forall a b, b~=0 -> a/(-b) == -(a/b).
 Proof.
 intros. symmetry.
 apply div_unique with (a mod b).
-rewrite abs_opp; apply mod_always_pos.
+rewrite abs_opp; now apply mod_always_pos.
 rewrite mul_opp_opp; now apply div_mod.
 Qed.
 
@@ -125,7 +119,7 @@ Lemma mod_opp_r : forall a b, b~=0 -> a mod (-b) == a mod b.
 Proof.
 intros. symmetry.
 apply mod_unique with (-(a/b)).
-rewrite abs_opp; apply mod_always_pos.
+rewrite abs_opp; now apply mod_always_pos.
 rewrite mul_opp_opp; now apply div_mod.
 Qed.
 
@@ -274,6 +268,11 @@ Proof.
 intros. rewrite mod_eq, div_mul by trivial. rewrite mul_comm; apply sub_diag.
 Qed.
 
+Theorem div_unique_exact a b q: b~=0 -> a == b*q -> q == a/b.
+Proof.
+ intros Hb H. rewrite H, mul_comm. symmetry. now apply div_mul.
+Qed.
+
 (** * Order results about mod and div *)
 
 (** A modulo cannot grow beyond its starting point. *)
@@ -296,7 +295,7 @@ intros a b Hb.
 split.
 intros EQ.
 rewrite (div_mod a b Hb), EQ; nzsimpl.
-apply mod_always_pos.
+now apply mod_always_pos.
 intros. pos_or_neg b.
 apply div_small.
 now rewrite <- (abs_eq b).
@@ -365,7 +364,7 @@ intros.
 nzsimpl.
 rewrite (div_mod a b) at 1; try order.
 rewrite <- add_lt_mono_l.
-destruct (mod_always_pos a b).
+destruct (mod_always_pos a b). order.
 rewrite abs_eq in *; order.
 Qed.
 
@@ -375,7 +374,7 @@ intros a b Hb.
 rewrite mul_pred_r, <- add_opp_r.
 rewrite (div_mod a b) at 1; try order.
 rewrite <- add_lt_mono_l.
-destruct (mod_always_pos a b).
+destruct (mod_always_pos a b). order.
 rewrite <- opp_pos_neg in Hb. rewrite abs_neq' in *; order.
 Qed.
 
@@ -469,7 +468,7 @@ apply div_unique with ((a mod b)*c).
 (* ineqs *)
 rewrite abs_mul, (abs_eq c) by order.
 rewrite <-(mul_0_l c), <-mul_lt_mono_pos_r, <-mul_le_mono_pos_r by trivial.
-apply mod_always_pos.
+now apply mod_always_pos.
 (* equation *)
 rewrite (div_mod a b) at 1 by order.
 rewrite mul_add_distr_r.
@@ -556,17 +555,18 @@ Proof.
 Qed.
 
 (** With the current convention, the following result isn't always
-    true for negative divisors. For instance
-    [ 3/(-2)/(-2) = 1 <> 0 = 3 / (-2*-2) ]. *)
+    true with a negative intermediate divisor. For instance
+    [ 3/(-2)/(-2) = 1 <> 0 = 3 / (-2*-2) ] and
+    [ 3/(-2)/2 = -1 <> 0 = 3 / (-2*2) ]. *)
 
-Lemma div_div : forall a b c, 0<b -> 0<c ->
+Lemma div_div : forall a b c, 0<b -> c~=0 ->
  (a/b)/c == a/(b*c).
 Proof.
  intros a b c Hb Hc.
  apply div_unique with (b*((a/b) mod c) + a mod b).
  (* begin 0<= ... <abs(b*c) *)
  rewrite abs_mul.
- destruct (mod_always_pos (a/b) c), (mod_always_pos a b).
+ destruct (mod_always_pos (a/b) c), (mod_always_pos a b); try order.
  split.
  apply add_nonneg_nonneg; trivial.
  apply mul_nonneg_nonneg; order.
@@ -581,6 +581,22 @@ Proof.
  apply div_mod; order.
 Qed.
 
+(** Similarly, the following result doesn't always hold when [b<0].
+    For instance [3 mod (-2*-2)) = 3] while
+    [3 mod (-2) + (-2)*((3/-2) mod -2) = -1]. *)
+
+Lemma mod_mul_r : forall a b c, 0<b -> c~=0 ->
+ a mod (b*c) == a mod b + b*((a/b) mod c).
+Proof.
+ intros a b c Hb Hc.
+ apply add_cancel_l with (b*c*(a/(b*c))).
+ rewrite <- div_mod by (apply neq_mul_0; split; order).
+ rewrite <- div_div by trivial.
+ rewrite add_assoc, add_shuffle0, <- mul_assoc, <- mul_add_distr_l.
+ rewrite <- div_mod by order.
+ apply div_mod; order.
+Qed.
+
 (** A last inequality: *)
 
 Theorem div_mul_le:
@@ -590,16 +606,13 @@ Proof. exact div_mul_le. Qed.
 (** mod is related to divisibility *)
 
 Lemma mod_divides : forall a b, b~=0 ->
- (a mod b == 0 <-> exists c, a == b*c).
+ (a mod b == 0 <-> (b|a)).
 Proof.
 intros a b Hb. split.
-intros Hab. exists (a/b). rewrite (div_mod a b Hb) at 1.
- rewrite Hab; now nzsimpl.
-intros (c,Hc).
-rewrite Hc, mul_comm.
-now apply mod_mul.
+intros Hab. exists (a/b). rewrite mul_comm.
+ rewrite (div_mod a b Hb) at 1. rewrite Hab; now nzsimpl.
+intros (c,Hc). rewrite Hc. now apply mod_mul.
 Qed.
 
-
-End ZDivPropFunct.
+End ZEuclidProp.
 

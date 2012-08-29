@@ -1,18 +1,16 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: Bool_nat.v 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 Require Export Compare_dec.
 Require Export Peano_dec.
 Require Import Sumbool.
 
-Open Local Scope nat_scope.
+Local Open Scope nat_scope.
 
 Implicit Types m n x y : nat.
 

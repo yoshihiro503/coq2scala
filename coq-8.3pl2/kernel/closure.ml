@@ -1,12 +1,23 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: closure.ml 13340 2010-07-28 12:22:04Z barras $ *)
+(* Created by Bruno Barras with Benjamin Werner's account to implement
+   a call-by-value conversion algorithm and a lazy reduction machine
+   with sharing, Nov 1996 *)
+(* Addition of zeta-reduction (let-in contraction) by Hugo Herbelin, Oct 2000 *)
+(* Call-by-value machine moved to cbv.ml, Mar 01 *)
+(* Additional tools for module subtyping by Jacek Chrzaszcz, Aug 2002 *)
+(* Extension with closure optimization by Bruno Barras, Aug 2003 *)
+(* Support for evar reduction by Bruno Barras, Feb 2009 *)
+(* Miscellaneous other improvements by Bruno Barras, 1997-2009 *)
+
+(* This file implements a lazy reduction for the Calculus of Inductive
+   Constructions *)
 
 open Util
 open Pp
@@ -55,6 +66,9 @@ let with_stats c =
 let all_opaque = (Idpred.empty, Cpred.empty)
 let all_transparent = (Idpred.full, Cpred.full)
 
+let is_transparent_variable (ids, _) id = Idpred.mem id ids
+let is_transparent_constant (_, csts) cst = Cpred.mem cst csts
+
 module type RedFlagsSig = sig
   type reds
   type red_kind
@@ -70,7 +84,6 @@ module type RedFlagsSig = sig
   val red_add_transparent : reds -> transparent_state -> reds
   val mkflags : red_kind list -> reds
   val red_set : reds -> red_kind -> bool
-  val red_get_const : reds -> bool * evaluable_global_reference list
 end
 
 module RedFlags = (struct
@@ -144,16 +157,6 @@ module RedFlags = (struct
     | IOTA -> incr_cnt red.r_iota iota
     | DELTA -> (* Used for Rel/Var defined in context *)
 	incr_cnt red.r_delta delta
-
-  let red_get_const red =
-    let p1,p2 = red.r_const in
-    let (b1,l1) = Idpred.elements p1 in
-    let (b2,l2) = Cpred.elements p2 in
-    if b1=b2 then
-      let l1' = List.map (fun x -> EvalVarRef x) l1 in
-      let l2' = List.map (fun x -> EvalConstRef x) l2 in
-      (b1, l1' @ l2')
-    else error "unrepresentable pair of predicate"
 
 end : RedFlagsSig)
 
@@ -511,7 +514,7 @@ let optimise_closure env c =
     let (c',(_,s)) = compact_constr (0,[]) c 1 in
     let env' =
       Array.map (fun i -> clos_rel env i) (Array.of_list s) in
-    (subs_cons (env', ESID 0),c')
+    (subs_cons (env', subs_id 0),c')
 
 let mk_lambda env t =
   let (env,t) = optimise_closure env t in
@@ -644,7 +647,7 @@ let term_of_fconstr =
       | FFix(fx,e) when is_subs_id e & is_lift_id lfts -> mkFix fx
       | FCoFix(cfx,e) when is_subs_id e & is_lift_id lfts -> mkCoFix cfx
       | _ -> to_constr term_of_fconstr_lift lfts v in
-  term_of_fconstr_lift ELID
+  term_of_fconstr_lift el_id
 
 
 
@@ -679,16 +682,6 @@ let fapp_stack (m,stk) = zip m stk
    (strip_update_shift, through get_arg). *)
 
 (* optimised for the case where there are no shifts... *)
-let strip_update_shift head stk =
-  assert (head.norm <> Red);
-  let rec strip_rec h depth = function
-    | Zshift(k)::s -> strip_rec (lift_fconstr k h) (depth+k) s
-    | Zupdate(m)::s ->
-        strip_rec (update m (h.norm,h.term)) depth s
-    | stk -> (depth,stk) in
-  strip_rec head 0 stk
-
-(* optimised for the case where there are no shifts... *)
 let strip_update_shift_app head stk =
   assert (head.norm <> Red);
   let rec strip_rec rstk h depth = function
@@ -705,15 +698,14 @@ let strip_update_shift_app head stk =
 
 let get_nth_arg head n stk =
   assert (head.norm <> Red);
-  let rec strip_rec rstk h depth n = function
+  let rec strip_rec rstk h n = function
     | Zshift(k) as e :: s ->
-        strip_rec (e::rstk) (lift_fconstr k h) (depth+k) n s
+        strip_rec (e::rstk) (lift_fconstr k h) n s
     | Zapp args::s' ->
         let q = Array.length args in
         if n >= q
         then
-          strip_rec (Zapp args::rstk)
-            {norm=h.norm;term=FApp(h,args)} depth (n-q) s'
+          strip_rec (Zapp args::rstk) {norm=h.norm;term=FApp(h,args)} (n-q) s'
         else
           let bef = Array.sub args 0 n in
           let aft = Array.sub args (n+1) (q-n-1) in
@@ -721,9 +713,9 @@ let get_nth_arg head n stk =
             List.rev (if n = 0 then rstk else (Zapp bef :: rstk)) in
           (Some (stk', args.(n)), append_stack aft s')
     | Zupdate(m)::s ->
-        strip_rec rstk (update m (h.norm,h.term)) depth n s
+        strip_rec rstk (update m (h.norm,h.term)) n s
     | s -> (None, List.rev rstk @ s) in
-  strip_rec [] head 0 n stk
+  strip_rec [] head n stk
 
 (* Beta reduction: look for an applied argument in the stack.
    Since the encountered update marks are removed, h must be a whnf *)
@@ -746,6 +738,12 @@ let rec get_args n tys f e stk =
           get_args (n-na) etys f (subs_cons(l,e)) s
     | _ -> (Inr {norm=Cstr;term=FLambda(n,tys,f,e)}, stk)
 
+(* Eta expansion: add a reference to implicit surrounding lambda at end of stack *)
+let rec eta_expand_stack = function
+  | (Zapp _ | Zfix _ | Zcase _ | Zshift _ | Zupdate _ as e) :: s ->
+      e :: eta_expand_stack s
+  | [] ->
+      [Zshift 1; Zapp [|{norm=Norm; term= FRel 1}|]]
 
 (* Iota reduction: extract the arguments to be passed to the Case
    branches *)
@@ -965,7 +963,7 @@ let whd_val info v =
 let norm_val info v =
   with_stats (lazy (kl info v))
 
-let inject = mk_clos (ESID 0)
+let inject = mk_clos (subs_id 0)
 
 let whd_stack infos m stk =
   let k = kni infos m stk in

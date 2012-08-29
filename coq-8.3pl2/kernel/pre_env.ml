@@ -1,12 +1,17 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: pre_env.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
+(* Created by Benjamin Grégoire out of environ.ml for better
+   modularity in the design of the bytecode virtual evaluation
+   machine, Dec 2005 *)
+(* Bug fix by Jean-Marc Notin *)
+
+(* This file defines the type of kernel environments *)
 
 open Util
 open Names

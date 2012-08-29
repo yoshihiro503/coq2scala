@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: classops.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Util
 open Pp
@@ -19,7 +17,7 @@ open Libobject
 open Library
 open Term
 open Termops
-open Rawterm
+open Glob_term
 open Decl_kinds
 open Mod_subst
 
@@ -47,6 +45,13 @@ type coe_info_typ = {
   coe_strength : locality;
   coe_is_identity : bool;
   coe_param : int }
+
+let coe_info_typ_equal c1 c2 =
+  eq_constr c1.coe_value c2.coe_value &&
+    eq_constr c1.coe_type c2.coe_type &&
+    c1.coe_strength = c2.coe_strength &&
+    c1.coe_is_identity = c2.coe_is_identity &&
+    c1.coe_param = c2.coe_param
 
 type cl_index = int
 
@@ -134,9 +139,9 @@ let coercion_info coe = Gmap.find coe !coercion_tab
 
 let coercion_exists coe = Gmap.mem coe !coercion_tab
 
-(* find_class_type : env -> evar_map -> constr -> cl_typ * int *)
+(* find_class_type : evar_map -> constr -> cl_typ * constr list *)
 
-let find_class_type env sigma t =
+let find_class_type sigma t =
   let t', args = Reductionops.whd_betaiotazeta_stack sigma t in
   match kind_of_term t' with
     | Var id -> CL_SECVAR id, args
@@ -154,7 +159,7 @@ let subst_cl_typ subst ct = match ct with
   | CL_CONST kn ->
       let kn',t = subst_con subst kn in
 	if kn' == kn then ct else
-         fst (find_class_type (Global.env()) Evd.empty t)
+         fst (find_class_type Evd.empty t)
   | CL_IND (kn,i) ->
       let kn' = subst_ind subst kn in
 	if kn' == kn then ct else
@@ -169,12 +174,12 @@ let subst_coe_typ subst t = fst (subst_global subst t)
 let class_of env sigma t =
   let (t, n1, i, args) =
     try
-      let (cl,args) = find_class_type env sigma t in
+      let (cl,args) = find_class_type sigma t in
       let (i, { cl_param = n1 } ) = class_info cl in
       (t, n1, i, args)
     with Not_found ->
       let t = Tacred.hnf_constr env sigma t in
-      let (cl, args) = find_class_type env sigma t in
+      let (cl, args) = find_class_type sigma t in
       let (i, { cl_param = n1 } ) = class_info cl in
       (t, n1, i, args)
   in
@@ -182,7 +187,7 @@ let class_of env sigma t =
 
 let inductive_class_of ind = fst (class_info (CL_IND ind))
 
-let class_args_of env sigma c = snd (find_class_type env sigma c)
+let class_args_of env sigma c = snd (find_class_type sigma c)
 
 let string_of_class = function
   | CL_FUN -> "Funclass"
@@ -211,14 +216,14 @@ let lookup_path_to_sort_from_class s =
 
 let apply_on_class_of env sigma t cont =
   try
-    let (cl,args) = find_class_type env sigma t in
+    let (cl,args) = find_class_type sigma t in
     let (i, { cl_param = n1 } ) = class_info cl in
     if List.length args <> n1 then raise Not_found;
     t, cont i
   with Not_found ->
     (* Is it worth to be more incremental on the delta steps? *)
     let t = Tacred.hnf_constr env sigma t in
-    let (cl, args) = find_class_type env sigma t in
+    let (cl, args) = find_class_type sigma t in
     let (i, { cl_param = n1 } ) = class_info cl in
     if List.length args <> n1 then raise Not_found;
     t, cont i
@@ -308,7 +313,7 @@ let add_coercion_in_graph (ic,source,target) =
              try_add_new_path1 (s,target) (p@[ic]);
              Gmap.iter
 	       (fun (u,v) q ->
-                  if u<>v & (u = target) & (p <> q) then
+                  if u<>v & u = target &&  not (list_equal coe_info_typ_equal p q) then
 		    try_add_new_path1 (s,v) (p@[ic]@q))
                old_inheritance_graph
            end;
@@ -344,6 +349,7 @@ open Goptions
 let _ =
   declare_bool_option
     { optsync  = true;
+      optdepr  = false;
       optname  = "automatic import of coercions";
       optkey   = ["Automatic";"Coercions";"Import"];
       optread  = (fun () -> !automatically_import_coercions);
@@ -369,8 +375,8 @@ let load_coercion _ o =
   then
     cache_coercion o
 
-let open_coercion _ o =
-  if not
+let open_coercion i o =
+  if i = 1 && not
     (!automatically_import_coercions || Flags.version_less_or_equal Flags.V8_2)
   then
     cache_coercion o
@@ -400,7 +406,10 @@ let discharge_coercion (_,(coe,stre,isid,cls,clt,ps)) =
 let classify_coercion (coe,stre,isid,cls,clt,ps as obj) =
   if stre = Local then Dispose else Substitute obj
 
-let (inCoercion,_) =
+type coercion_obj =
+  coe_typ * Decl_kinds.locality * bool * cl_typ * cl_typ * int
+
+let inCoercion : coercion_obj -> obj =
   declare_object {(default_object "COERCION") with
     open_function = open_coercion;
     load_function = load_coercion;

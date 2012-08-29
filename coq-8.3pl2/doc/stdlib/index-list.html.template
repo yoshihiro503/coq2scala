@@ -56,6 +56,7 @@ through the <tt>Require Import</tt> command.</p>
     theories/Logic/Epsilon.v
     theories/Logic/IndefiniteDescription.v
     theories/Logic/FunctionalExtensionality.v
+    theories/Logic/ExtensionalityFacts.v
   </dd>
     
   <dt> <b>Structures</b>:
@@ -109,7 +110,6 @@ through the <tt>Require Import</tt> command.</p>
     (theories/Arith/Arith.v)
     theories/Arith/Min.v
     theories/Arith/Max.v
-    theories/Arith/MinMax.v
     theories/Arith/Compare.v
     theories/Arith/Div2.v
     theories/Arith/EqNat.v
@@ -118,31 +118,40 @@ through the <tt>Require Import</tt> command.</p>
     theories/Arith/Bool_nat.v
     theories/Arith/Factorial.v
     theories/Arith/Wf_nat.v
-    theories/Arith/NatOrderedType.v
   </dd>
-    
-  <dt> <b>NArith</b>:
+
+  <dt> <b>PArith</b>:
     Binary positive integers
   </dt>
-  <dd> 
-    theories/NArith/BinPos.v
+  <dd>
+    theories/PArith/BinPosDef.v
+    theories/PArith/BinPos.v
+    theories/PArith/Pnat.v
+    theories/PArith/POrderedType.v
+    (theories/PArith/PArith.v)
+  </dd>
+
+  <dt> <b>NArith</b>:
+    Binary natural numbers
+  </dt>
+  <dd>
+    theories/NArith/BinNatDef.v
     theories/NArith/BinNat.v
-    (theories/NArith/NArith.v)
-    theories/NArith/Pnat.v
     theories/NArith/Nnat.v
     theories/NArith/Ndigits.v
     theories/NArith/Ndist.v
     theories/NArith/Ndec.v
-    theories/NArith/NOrderedType.v
-    theories/NArith/Nminmax.v
-    theories/NArith/POrderedType.v
-    theories/NArith/Pminmax.v
+    theories/NArith/Ndiv_def.v
+    theories/NArith/Ngcd_def.v
+    theories/NArith/Nsqrt_def.v
+    (theories/NArith/NArith.v)
   </dd>
 
   <dt> <b>ZArith</b>:
        Binary integers
   </dt>
-  <dd> 
+  <dd>
+    theories/ZArith/BinIntDef.v
     theories/ZArith/BinInt.v
     theories/ZArith/Zorder.v
     theories/ZArith/Zcompare.v
@@ -160,20 +169,22 @@ through the <tt>Require Import</tt> command.</p>
     theories/ZArith/Zhints.v
     (theories/ZArith/ZArith_base.v)
     theories/ZArith/Zcomplements.v
-    theories/ZArith/Zsqrt.v
+    theories/ZArith/Zsqrt_compat.v
     theories/ZArith/Zpow_def.v
+    theories/ZArith/Zpow_alt.v
     theories/ZArith/Zpower.v
+    theories/ZArith/ZOdiv_def.v
+    theories/ZArith/ZOdiv.v
     theories/ZArith/Zdiv.v
+    theories/ZArith/Zquot.v
+    theories/ZArith/Zeuclid.v
     theories/ZArith/Zlogarithm.v
     (theories/ZArith/ZArith.v)
     theories/ZArith/Zgcd_alt.v
     theories/ZArith/Zwf.v
     theories/ZArith/Znumtheory.v
     theories/ZArith/Int.v
-    theories/ZArith/ZOdiv_def.v
-    theories/ZArith/ZOdiv.v
     theories/ZArith/Zpow_facts.v
-    theories/ZArith/ZOrderedType.v
     theories/ZArith/Zdigits.v
   </dd>
 
@@ -198,10 +209,9 @@ through the <tt>Require Import</tt> command.</p>
   <dt> <b>Numbers</b>: 
     An experimental modular architecture for arithmetic
   </dt>
-  <dd>
-    <dl>
-    <dt> <b>&nbsp;&nbsp;Prelude</b>:</dt>
+    <dt> <b>&nbsp;&nbsp;Prelude</b>: 
     <dd>
+    theories/Numbers/BinNums.v
     theories/Numbers/NumPrelude.v
     theories/Numbers/BigNumPrelude.v
     theories/Numbers/NaryFunctions.v
@@ -209,7 +219,6 @@ through the <tt>Require Import</tt> command.</p>
 
     <dt> <b>&nbsp;&nbsp;NatInt</b>:
        Abstract mixed natural/integer/cyclic arithmetic
-    </dt>
     <dd>
     theories/Numbers/NatInt/NZAdd.v
     theories/Numbers/NatInt/NZAddOrder.v
@@ -221,11 +230,17 @@ through the <tt>Require Import</tt> command.</p>
     theories/Numbers/NatInt/NZOrder.v
     theories/Numbers/NatInt/NZDomain.v
     theories/Numbers/NatInt/NZProperties.v
+    theories/Numbers/NatInt/NZParity.v
+    theories/Numbers/NatInt/NZPow.v
+    theories/Numbers/NatInt/NZSqrt.v
+    theories/Numbers/NatInt/NZLog.v
+    theories/Numbers/NatInt/NZGcd.v
+    theories/Numbers/NatInt/NZBits.v
     </dd>
-
-    <dt> <b>&nbsp;&nbsp;Cyclic</b>:
-       Abstract and 31-bits-based cyclic arithmetic
     </dt>
+
+    <dt> <b>&nbsp;&nbsp;Cyclic</b>: 
+       Abstract and 31-bits-based cyclic arithmetic
     <dd>
     theories/Numbers/Cyclic/Abstract/CyclicAxioms.v
     theories/Numbers/Cyclic/Abstract/NZCyclic.v
@@ -244,10 +259,10 @@ through the <tt>Require Import</tt> command.</p>
     theories/Numbers/Cyclic/Int31/Int31.v
     theories/Numbers/Cyclic/ZModulo/ZModulo.v
     </dd>
-
-    <dt> <b>&nbsp;&nbsp;Natural</b>:
-       Abstract and 31-bits-words-based natural arithmetic
     </dt>
+
+    <dt> <b>&nbsp;&nbsp;Natural</b>: 
+       Abstract and 31-bits-words-based natural arithmetic
     <dd>
     theories/Numbers/Natural/Abstract/NAdd.v
     theories/Numbers/Natural/Abstract/NAddOrder.v
@@ -260,6 +275,14 @@ through the <tt>Require Import</tt> command.</p>
     theories/Numbers/Natural/Abstract/NStrongRec.v
     theories/Numbers/Natural/Abstract/NSub.v
     theories/Numbers/Natural/Abstract/NDiv.v
+    theories/Numbers/Natural/Abstract/NMaxMin.v
+    theories/Numbers/Natural/Abstract/NParity.v
+    theories/Numbers/Natural/Abstract/NPow.v
+    theories/Numbers/Natural/Abstract/NSqrt.v
+    theories/Numbers/Natural/Abstract/NLog.v
+    theories/Numbers/Natural/Abstract/NGcd.v
+    theories/Numbers/Natural/Abstract/NLcm.v
+    theories/Numbers/Natural/Abstract/NBits.v
     theories/Numbers/Natural/Abstract/NProperties.v
     theories/Numbers/Natural/Binary/NBinary.v
     theories/Numbers/Natural/Peano/NPeano.v
@@ -270,10 +293,10 @@ through the <tt>Require Import</tt> command.</p>
     theories/Numbers/Natural/BigN/NMake.v
     theories/Numbers/Natural/BigN/NMake_gen.v
     </dd>
+    </dt>
 
     <dt> <b>&nbsp;&nbsp;Integer</b>: 
        Abstract and concrete (especially 31-bits-words-based) integer arithmetic
-    </dt>
     <dd>
     theories/Numbers/Integer/Abstract/ZAdd.v
     theories/Numbers/Integer/Abstract/ZAddOrder.v
@@ -282,11 +305,17 @@ through the <tt>Require Import</tt> command.</p>
     theories/Numbers/Integer/Abstract/ZLt.v
     theories/Numbers/Integer/Abstract/ZMul.v
     theories/Numbers/Integer/Abstract/ZMulOrder.v
+    theories/Numbers/Integer/Abstract/ZSgnAbs.v
+    theories/Numbers/Integer/Abstract/ZMaxMin.v
+    theories/Numbers/Integer/Abstract/ZParity.v
+    theories/Numbers/Integer/Abstract/ZPow.v
+    theories/Numbers/Integer/Abstract/ZGcd.v
+    theories/Numbers/Integer/Abstract/ZLcm.v
+    theories/Numbers/Integer/Abstract/ZBits.v
+    theories/Numbers/Integer/Abstract/ZProperties.v
     theories/Numbers/Integer/Abstract/ZDivEucl.v
     theories/Numbers/Integer/Abstract/ZDivFloor.v
     theories/Numbers/Integer/Abstract/ZDivTrunc.v
-    theories/Numbers/Integer/Abstract/ZProperties.v
-    theories/Numbers/Integer/Abstract/ZSgnAbs.v
     theories/Numbers/Integer/Binary/ZBinary.v
     theories/Numbers/Integer/NatPairs/ZNatPairs.v
     theories/Numbers/Integer/SpecViaZ/ZSig.v
@@ -294,17 +323,17 @@ through the <tt>Require Import</tt> command.</p>
     theories/Numbers/Integer/BigZ/BigZ.v
     theories/Numbers/Integer/BigZ/ZMake.v
     </dd>
+    </dt>
 
     <dt><b>&nbsp;&nbsp;Rational</b>:
        Abstract and 31-bits-words-based rational arithmetic
-    </dt>
     <dd>
     theories/Numbers/Rational/SpecViaQ/QSig.v
     theories/Numbers/Rational/BigQ/BigQ.v
     theories/Numbers/Rational/BigQ/QMake.v
     </dd>
-    </dl>
-  </dd>
+    </dt>
+  </dt>
   
   <dt> <b>Relations</b>:
        Relations (definitions and basic results)
@@ -344,7 +373,7 @@ through the <tt>Require Import</tt> command.</p>
     theories/Sets/Uniset.v
   </dd>
     
-  <dt> <b>Classes</b>:</dt>
+  <dt> <b>Classes</b>:
   <dd> 
     theories/Classes/Init.v
     theories/Classes/RelationClasses.v
@@ -359,7 +388,7 @@ through the <tt>Require Import</tt> command.</p>
     theories/Classes/RelationPairs.v
   </dd>
 
-  <dt> <b>Setoids</b>:</dt>
+  <dt> <b>Setoids</b>:
   <dd> 
     theories/Setoids/Setoid.v
   </dd>
@@ -371,10 +400,20 @@ through the <tt>Require Import</tt> command.</p>
     theories/Lists/List.v
     theories/Lists/ListSet.v
     theories/Lists/SetoidList.v
+    theories/Lists/SetoidPermutation.v
     theories/Lists/Streams.v
     theories/Lists/StreamMemo.v
-    theories/Lists/TheoryList.v
     theories/Lists/ListTactics.v
+  </dd>
+
+  <dt> <b>Vectors</b>:
+    Dependent datastructures storing their length
+  </dt>
+  <dd>
+    theories/Vectors/Fin.v
+    theories/Vectors/VectorDef.v
+    theories/Vectors/VectorSpec.v
+    (theories/Vectors/Vector.v)
   </dd>
 
   <dt> <b>Sorting</b>:
@@ -417,7 +456,9 @@ through the <tt>Require Import</tt> command.</p>
     theories/MSets/MSetEqProperties.v
     theories/MSets/MSetWeakList.v
     theories/MSets/MSetList.v
+    theories/MSets/MSetGenTree.v
     theories/MSets/MSetAVL.v
+    theories/MSets/MSetRBT.v
     theories/MSets/MSetPositive.v
     theories/MSets/MSetToFiniteSet.v
     (theories/MSets/MSets.v)
@@ -483,7 +524,10 @@ through the <tt>Require Import</tt> command.</p>
     theories/Reals/Rsigma.v
     theories/Reals/R_sqr.v
     theories/Reals/Rtrigo_fun.v
+    theories/Reals/Rtrigo1.v
     theories/Reals/Rtrigo.v
+    theories/Reals/Ratan.v
+    theories/Reals/Machin.v
     theories/Reals/SplitAbsolu.v
     theories/Reals/SplitRmult.v
     theories/Reals/Alembert.v
@@ -504,6 +548,8 @@ through the <tt>Require Import</tt> command.</p>
     theories/Reals/Ranalysis2.v
     theories/Reals/Ranalysis3.v
     theories/Reals/Ranalysis4.v
+    theories/Reals/Ranalysis5.v
+    theories/Reals/Ranalysis_reg.v
     theories/Reals/Rcomplete.v
     theories/Reals/RiemannInt.v
     theories/Reals/RiemannInt_SF.v
@@ -539,4 +585,11 @@ through the <tt>Require Import</tt> command.</p>
     theories/Program/Combinators.v
   </dd>
 
+  <dt> <b>Unicode</b>:
+    Unicode-based notations
+  </dt>
+  <dd>
+    theories/Unicode/Utf8_core.v
+    theories/Unicode/Utf8.v
+  </dd>
 </dl>

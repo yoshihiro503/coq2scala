@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: inductive.mli 9420 2006-12-08 15:34:09Z barras $ i*)
 
 (*i*)
 open Names
@@ -80,6 +78,7 @@ type guard_env =
     genv    : subterm_spec Lazy.t list;
   }
 
-val subterm_specif : guard_env -> constr -> subterm_spec
-val case_branches_specif : guard_env -> subterm_spec Lazy.t -> inductive ->
-  constr array -> (guard_env * constr) array
+type stack_element = |SClosure of guard_env*constr |SArg of subterm_spec Lazy.t
+val subterm_specif : guard_env -> stack_element list -> constr -> subterm_spec
+val branches_specif : guard_env -> subterm_spec Lazy.t -> case_info ->
+  subterm_spec Lazy.t list array

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: record.ml 13492 2010-10-04 21:20:01Z herbelin $ *)
 
 open Pp
 open Util
@@ -14,7 +12,6 @@ open Names
 open Libnames
 open Nameops
 open Term
-open Termops
 open Environ
 open Declarations
 open Entries
@@ -33,10 +30,10 @@ open Topconstr
 
 let interp_evars evdref env impls k typ =
   let typ' = intern_gen true ~impls !evdref env typ in
-  let imps = Implicit_quantifiers.implicits_of_rawterm typ' in
+  let imps = Implicit_quantifiers.implicits_of_glob_constr typ' in
     imps, Pretyping.Default.understand_tcc_evars evdref env k typ'
 
-let interp_fields_evars evars env nots l =
+let interp_fields_evars evars env impls_env nots l =
   List.fold_left2
     (fun (env, uimpls, params, impls) no ((loc, i), b, t) ->
       let impl, t' = interp_evars evars env impls Pretyping.IsType t in
@@ -44,12 +41,12 @@ let interp_fields_evars evars env nots l =
       let impls =
 	match i with
 	| Anonymous -> impls
-	| Name id -> (id, compute_internalization_data env Constrintern.Method t' impl) :: impls
+	| Name id -> Idmap.add id (compute_internalization_data env Constrintern.Method t' impl) impls
       in
       let d = (i,b',t') in
       List.iter (Metasyntax.set_notation_for_interpretation impls) no;
       (push_rel d env, impl :: uimpls, d::params, impls))
-    (env, [], [], []) nots l
+    (env, [], [], impls_env) nots l
 
 let binder_of_decl = function
   | Vernacexpr.AssumExpr(n,t) -> (n,None,t)
@@ -60,11 +57,23 @@ let binders_of_decls = List.map binder_of_decl
 let typecheck_params_and_fields id t ps nots fs =
   let env0 = Global.env () in
   let evars = ref Evd.empty in
-  let (env1,newps), imps = interp_context_evars evars env0 ps in
-  let fullarity = it_mkProd_or_LetIn (Option.cata (fun x -> x) (new_Type ()) t) newps in
+  let _ = 
+    let error bk (loc, name) = 
+      match bk with
+      | Default _ ->
+	  if name = Anonymous then 
+	    user_err_loc (loc, "record", str "Record parameters must be named")
+      | _ -> ()
+    in
+      List.iter 
+	(function LocalRawDef (b, _) -> error default_binder_kind b
+	   | LocalRawAssum (ls, bk, ce) -> List.iter (error bk) ls) ps
+  in 
+  let impls_env, ((env1,newps), imps) = interp_context_evars evars env0 ps in
+  let fullarity = it_mkProd_or_LetIn (Option.cata (fun x -> x) (Termops.new_Type ()) t) newps in
   let env_ar = push_rel_context newps (push_rel (Name id,None,fullarity) env0) in
   let env2,impls,newfs,data =
-    interp_fields_evars evars env_ar nots (binders_of_decls fs)
+    interp_fields_evars evars env_ar impls_env nots (binders_of_decls fs)
   in
   let evars = Evarconv.consider_remaining_unif_problems env_ar !evars in
   let evars = Typeclasses.resolve_typeclasses env_ar evars in
@@ -72,8 +81,8 @@ let typecheck_params_and_fields id t ps nots fs =
   let newps = Evarutil.nf_rel_context_evar sigma newps in
   let newfs = Evarutil.nf_rel_context_evar sigma newfs in
   let ce t = Evarutil.check_evars env0 Evd.empty evars t in
-    List.iter (fun (n, b, t) -> Option.iter ce b; ce t) newps;
-    List.iter (fun (n, b, t) -> Option.iter ce b; ce t) newfs;
+    List.iter (fun (n, b, t) -> Option.iter ce b; ce t) (List.rev newps);
+    List.iter (fun (n, b, t) -> Option.iter ce b; ce t) (List.rev newfs);
     imps, newps, impls, newfs
 
 let degenerate_decl (na,b,t) =
@@ -137,7 +146,10 @@ let subst_projection fid l c =
 	  match List.nth l (k-depth-2) with
 	    | Projection t -> lift depth t
 	    | NoProjection (Name id) -> bad_projs := id :: !bad_projs; mkRel k
-	    | NoProjection Anonymous -> assert false
+	    | NoProjection Anonymous ->
+                errorlabstrm "" (str "Field " ++ pr_id fid ++
+                  str " depends on the " ++ str (ordinal (k-depth-1)) ++ str
+                  " field which has no name.")
         else
 	  mkRel (k-lv)
     | _ -> map_constr_with_binders succ substrec depth c
@@ -150,7 +162,7 @@ let subst_projection fid l c =
 
 let instantiate_possibly_recursive_type indsp paramdecls fields =
   let subst = list_map_i (fun i _ -> mkRel i) 1 paramdecls in
-  substl_rel_context (subst@[mkInd indsp]) fields
+  Termops.substl_rel_context (subst@[mkInd indsp]) fields
 
 (* We build projections *)
 let declare_projections indsp ?(kind=StructureComponent) ?name coers fieldimpls fields =
@@ -158,11 +170,11 @@ let declare_projections indsp ?(kind=StructureComponent) ?name coers fieldimpls 
   let (mib,mip) = Global.lookup_inductive indsp in
   let paramdecls = mib.mind_params_ctxt in
   let r = mkInd indsp in
-  let rp = applist (r, extended_rel_list 0 paramdecls) in
-  let paramargs = extended_rel_list 1 paramdecls in (*def in [[params;x:rp]]*)
+  let rp = applist (r, Termops.extended_rel_list 0 paramdecls) in
+  let paramargs = Termops.extended_rel_list 1 paramdecls in (*def in [[params;x:rp]]*)
   let x = match name with Some n -> Name n | None -> Namegen.named_hd (Global.env()) r Anonymous in
   let fields = instantiate_possibly_recursive_type indsp paramdecls fields in
-  let lifted_fields = lift_rel_context 1 fields in
+  let lifted_fields = Termops.lift_rel_context 1 fields in
   let (_,kinds,sp_projs,_) =
     list_fold_left3
       (fun (nfi,kinds,sp_projs,subst) coe (fi,optci,ti) impls ->
@@ -191,11 +203,11 @@ let declare_projections indsp ?(kind=StructureComponent) ?name coers fieldimpls 
 	        try
 		  let cie = {
 		    const_entry_body = proj;
+                    const_entry_secctx = None;
                     const_entry_type = Some projtyp;
-                    const_entry_opaque = false;
-		    const_entry_boxed = Flags.boxed_definitions() } in
+                    const_entry_opaque = false } in
 		  let k = (DefinitionEntry cie,IsDefinition kind) in
-		  let kn = declare_internal_constant fid k in
+		  let kn = declare_constant ~internal:KernelSilent fid k in
 		  Flags.if_verbose message (string_of_id fid ^" is defined");
 		  kn
                 with Type_errors.TypeError (ctx,te) ->
@@ -205,7 +217,7 @@ let declare_projections indsp ?(kind=StructureComponent) ?name coers fieldimpls 
 	      Impargs.maybe_declare_manual_implicits false refi impls;
 	      if coe then begin
 	        let cl = Class.class_of_global (IndRef indsp) in
-	        Class.try_add_new_coercion_with_source refi Global cl
+	        Class.try_add_new_coercion_with_source refi Global ~source:cl
 	      end;
 	      let proj_args = (*Rel 1 refers to "x"*) paramargs@[mkRel 1] in
 	      let constr_fip = applist (constr_fi,proj_args) in
@@ -236,7 +248,7 @@ open Typeclasses
 let declare_structure finite infer id idbuild paramimpls params arity fieldimpls fields
     ?(kind=StructureComponent) ?name is_coe coers sign =
   let nparams = List.length params and nfields = List.length fields in
-  let args = extended_rel_list nfields params in
+  let args = Termops.extended_rel_list nfields params in
   let ind = applist (mkRel (1+nparams+nfields), args) in
   let type_constructor = it_mkProd_or_LetIn ind fields in
   let mie_ind =
@@ -250,8 +262,8 @@ let declare_structure finite infer id idbuild paramimpls params arity fieldimpls
   (* there is probably a way to push this to "declare_mutual" *)
   begin match  finite with
   | BiFinite ->
-      if dependent (mkRel (nparams+1)) (it_mkProd_or_LetIn mkProp fields) then
-	error "Records declared with the keyword Record or Structure cannot be recursive. Maybe you meant to define an Inductive or CoInductive record."
+      if Termops.dependent (mkRel (nparams+1)) (it_mkProd_or_LetIn mkProp fields) then
+	error "Records declared with the keyword Record or Structure cannot be recursive. You can, however, define recursive records using the Inductive or CoInductive command."
   | _ -> ()
   end;
   let mie =
@@ -279,18 +291,15 @@ let implicits_of_context ctx =
     in ExplByPos (i, explname), (true, true, true))
     1 (List.rev (Anonymous :: (List.map pi1 ctx)))
 
-let qualid_of_con c = 
-  Qualid (dummy_loc, shortest_qualid_of_global Idset.empty (ConstRef c))
-
-let declare_instance_cst glob con =
+let declare_instance_cst glob con pri =
   let instance = Typeops.type_of_constant (Global.env ()) con in
   let _, r = decompose_prod_assum instance in
     match class_of_constr r with
-      | Some tc -> add_instance (new_instance tc None glob (ConstRef con))
+      | Some (_, (tc, _)) -> add_instance (new_instance tc pri glob (ConstRef con))
       | None -> errorlabstrm "" (Pp.strbrk "Constant does not build instances of a declared type class.")
 
 let declare_class finite def infer id idbuild paramimpls params arity fieldimpls fields
-    ?(kind=StructureComponent) ?name is_coe coers sign =
+    ?(kind=StructureComponent) ?name is_coe coers priorities sign =
   let fieldimpls =
     (* Make the class and all params implicits in the projections *)
     let ctx_impls = implicits_of_context params in
@@ -304,21 +313,21 @@ let declare_class finite def infer id idbuild paramimpls params arity fieldimpls
 	let class_type = Option.map (fun ar -> it_mkProd_or_LetIn ar params) arity in
 	let class_entry =
 	  { const_entry_body = class_body;
+            const_entry_secctx = None;
 	    const_entry_type = class_type;
-	    const_entry_opaque = false;
-	    const_entry_boxed = false }
+	    const_entry_opaque = false }
 	in
 	let cst = Declare.declare_constant (snd id)
 	  (DefinitionEntry class_entry, IsDefinition Definition)
 	in
-	let inst_type = appvectc (mkConst cst) (rel_vect 0 (List.length params)) in
+	let inst_type = appvectc (mkConst cst) (Termops.rel_vect 0 (List.length params)) in
 	let proj_type = it_mkProd_or_LetIn (mkProd(Name (snd id), inst_type, lift 1 field)) params in
 	let proj_body = it_mkLambda_or_LetIn (mkLambda (Name (snd id), inst_type, mkRel 1)) params in
 	let proj_entry =
 	  { const_entry_body = proj_body;
+            const_entry_secctx = None;
 	    const_entry_type = Some proj_type;
-	    const_entry_opaque = false;
-	    const_entry_boxed = false }
+	    const_entry_opaque = false }
 	in
 	let proj_cst = Declare.declare_constant proj_name
 	  (DefinitionEntry proj_entry, IsDefinition Definition)
@@ -326,22 +335,27 @@ let declare_class finite def infer id idbuild paramimpls params arity fieldimpls
 	let cref = ConstRef cst in
 	Impargs.declare_manual_implicits false cref [paramimpls];
 	Impargs.declare_manual_implicits false (ConstRef proj_cst) [List.hd fieldimpls];
-	Classes.set_typeclass_transparency (EvalConstRef cst) false;
+	Classes.set_typeclass_transparency (EvalConstRef cst) false false;
 	if infer then Evd.fold (fun ev evi _ -> Recordops.declare_method (ConstRef cst) ev sign) sign ();
-	cref, [proj_name, Some proj_cst]
+	let sub = match List.hd coers with Some b -> Some ((if b then Backward else Forward), List.hd priorities) | None -> None in
+	  cref, [Name proj_name, sub, Some proj_cst]
     | _ ->
-	let idarg = Namegen.next_ident_away (snd id) (ids_of_context (Global.env())) in
+	let idarg = Namegen.next_ident_away (snd id) (Termops.ids_of_context (Global.env())) in
 	let ind = declare_structure BiFinite infer (snd id) idbuild paramimpls
-	  params (Option.cata (fun x -> x) (new_Type ()) arity) fieldimpls fields
+	  params (Option.default (Termops.new_Type ()) arity) fieldimpls fields
 	  ~kind:Method ~name:idarg false (List.map (fun _ -> false) fields) sign
 	in
-	  IndRef ind, (List.map2 (fun (id, _, _) y -> (Nameops.out_name id, y))
-			     (List.rev fields) (Recordops.lookup_projections ind))
+	let coers = List.map2 (fun coe pri -> 
+			       Option.map (fun b -> if b then Backward, pri else Forward, pri) coe) 
+	  coers priorities 
+	in
+	  IndRef ind, (list_map3 (fun (id, _, _) b y -> (id, b, y))
+			 (List.rev fields) coers (Recordops.lookup_projections ind))
   in
   let ctx_context =
     List.map (fun (na, b, t) ->
       match Typeclasses.class_of_constr t with
-      | Some cl -> Some (cl.cl_impl, true) (*List.exists (fun (_, n) -> n = na) supnames)*)
+      | Some (_, (cl, _)) -> Some (cl.cl_impl, true) (*List.exists (fun (_, n) -> n = na) supnames)*)
       | None -> None)
       params, params
   in
@@ -351,9 +365,9 @@ let declare_class finite def infer id idbuild paramimpls params arity fieldimpls
       cl_props = fields;
       cl_projs = projs }
   in
-    List.iter2 (fun p sub ->
-      if sub then match snd p with Some p -> declare_instance_cst true p | None -> ())
-      k.cl_projs coers;
+(*     list_iter3 (fun p sub pri -> *)
+(*       if sub then match p with (_, _, Some p) -> declare_instance_cst true p pri | _ -> ()) *)
+(*       k.cl_projs coers priorities; *)
   add_class k; impl
 
 let interp_and_check_sort sort =
@@ -366,10 +380,12 @@ let interp_and_check_sort sort =
 open Vernacexpr
 open Autoinstance
 
-(* [fs] corresponds to fields and [ps] to parameters; [coers] is a boolean
-   list telling if the corresponding fields must me declared as coercion *)
+(* [fs] corresponds to fields and [ps] to parameters; [coers] is a
+   list telling if the corresponding fields must me declared as coercions 
+   or subinstances *)
 let definition_structure (kind,finite,infer,(is_coe,(loc,idstruc)),ps,cfs,idbuild,s) =
   let cfs,notations = List.split cfs in
+  let cfs,priorities = List.split cfs in
   let coers,fs = List.split cfs in
   let extract_name acc = function
       Vernacexpr.AssumExpr((_,Name id),_) -> id::acc
@@ -377,6 +393,8 @@ let definition_structure (kind,finite,infer,(is_coe,(loc,idstruc)),ps,cfs,idbuil
     | _ -> acc in
   let allnames =  idstruc::(List.fold_left extract_name [] fs) in
   if not (list_distinct allnames) then error "Two objects have the same name";
+  if not (kind = Class false) && List.exists ((<>) None) priorities then
+    error "Priorities only allowed for type class substructures";
   (* Now, younger decl in params and fields is on top *)
   let sc = interp_and_check_sort s in
   let implpars, params, implfs, fields =
@@ -386,13 +404,14 @@ let definition_structure (kind,finite,infer,(is_coe,(loc,idstruc)),ps,cfs,idbuil
     match kind with
     | Class def ->
 	let gr = declare_class finite def infer (loc,idstruc) idbuild
-	  implpars params sc implfs fields is_coe coers sign in
+	  implpars params sc implfs fields is_coe coers priorities sign in
 	if infer then search_record declare_class_instance gr sign;
 	gr
     | _ ->
-	let arity = Option.default (new_Type ()) sc in
+	let arity = Option.default (Termops.new_Type ()) sc in
 	let implfs = List.map
 	  (fun impls -> implpars @ Impargs.lift_implicits (succ (List.length params)) impls) implfs in
-	let ind = declare_structure finite infer idstruc idbuild implpars params arity implfs fields is_coe coers sign in
+	let ind = declare_structure finite infer idstruc idbuild implpars params arity implfs 
+	  fields is_coe (List.map (fun coe -> coe <> None) coers) sign in
 	if infer then search_record declare_record_instance (ConstructRef (ind,1)) sign;
 	IndRef ind

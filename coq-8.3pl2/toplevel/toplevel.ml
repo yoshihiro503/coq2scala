@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: toplevel.ml 13668 2010-12-02 17:43:59Z herbelin $ *)
 
 open Pp
 open Util
@@ -15,6 +13,7 @@ open Cerrors
 open Vernac
 open Vernacexpr
 open Pcoq
+open Compat
 
 (* A buffer for the character read from a channel. We store the command
  * entered to be able to report errors without pretty-printing. *)
@@ -48,13 +47,12 @@ let resynch_buffer ibuf =
     | _ -> ()
 
 
-(* emacs special character for prompt end (fast) detection. Prefer
-   (Char.chr 6) since it does not interfere with utf8. For
-    compatibility we let (Char.chr 249) as default for a while. *)
+(* emacs special prompt tag for easy detection. No special character,
+   to avoid interfering with utf8. Compatibility code removed. *)
 
-let emacs_prompt_startstring() = Printer.emacs_str "" "<prompt>"
+let emacs_prompt_startstring() = Printer.emacs_str "<prompt>"
 
-let emacs_prompt_endstring() = Printer.emacs_str (String.make 1 (Char.chr 249)) "</prompt>"
+let emacs_prompt_endstring() = Printer.emacs_str "</prompt>"
 
 (* Read a char in an input channel, displaying a prompt at every
    beginning of line. *)
@@ -165,26 +163,26 @@ let print_location_in_file s inlibrary fname loc =
       hov 0 (errstrm ++ str"Module " ++ str ("\""^fname^"\"") ++ spc() ++
              str"characters " ++ Cerrors.print_loc loc) ++ fnl ()
     else
-    let (bp,ep) = unloc loc in
-    let ic = open_in fname in
-    let rec line_of_pos lin bol cnt =
-      if cnt < bp then
-        if input_char ic == '\n'
-        then line_of_pos (lin + 1) (cnt +1) (cnt+1)
-        else line_of_pos lin bol (cnt+1)
-      else (lin, bol)
-    in
-    try
-      let (line, bol) = line_of_pos 1 0 0 in
-      close_in ic;
-      hov 0 (* No line break so as to follow emacs error message format *)
-        (errstrm ++ str"File " ++ str ("\""^fname^"\"") ++
-         str", line " ++ int line ++ str", characters " ++
-         Cerrors.print_loc (make_loc (bp-bol,ep-bol))) ++ str":" ++
-      fnl ()
-    with e ->
-      (close_in ic;
-       hov 1 (errstrm ++ spc() ++ str"(invalid location):") ++ fnl ())
+      let (bp,ep) = unloc loc in
+      let ic = open_in fname in
+      let rec line_of_pos lin bol cnt =
+        if cnt < bp then
+          if input_char ic == '\n'
+          then line_of_pos (lin + 1) (cnt +1) (cnt+1)
+          else line_of_pos lin bol (cnt+1)
+        else (lin, bol)
+      in
+      try
+        let (line, bol) = line_of_pos 1 0 0 in
+        close_in ic;
+        hov 0 (* No line break so as to follow emacs error message format *)
+          (errstrm ++ str"File " ++ str ("\""^fname^"\"") ++
+           str", line " ++ int line ++ str", characters " ++
+           Cerrors.print_loc (make_loc (bp-bol,ep-bol))) ++ str":" ++
+        fnl ()
+      with e ->
+        (close_in ic;
+         hov 1 (errstrm ++ spc() ++ str"(invalid location):") ++ fnl ())
 
 let print_command_location ib dloc =
   match dloc with
@@ -274,7 +272,7 @@ let set_prompt prompt =
 let rec is_pervasive_exn = function
   | Out_of_memory | Stack_overflow | Sys.Break -> true
   | Error_in_file (_,_,e) -> is_pervasive_exn e
-  | Stdpp.Exc_located (_,e) -> is_pervasive_exn e
+  | Loc.Exc_located (_,e) -> is_pervasive_exn e
   | DuringCommandInterp (_,e) -> is_pervasive_exn e
   | _ -> false
 
@@ -290,7 +288,7 @@ let print_toplevel_error exc =
   in
   let (locstrm,exc) =
     match exc with
-      | Stdpp.Exc_located (loc, ie) ->
+      | Loc.Exc_located (loc, ie) ->
           if valid_buffer_loc top_buffer dloc loc then
             (print_highlight_location top_buffer loc, ie)
           else
@@ -310,13 +308,13 @@ let print_toplevel_error exc =
 	raise Vernacexpr.Quit
     | _ ->
 	(if is_pervasive_exn exc then (mt ()) else locstrm) ++
-        Cerrors.explain_exn exc
+        Errors.print exc
 
 (* Read the input stream until a dot is encountered *)
 let parse_to_dot =
-  let rec dot st = match Stream.next st with
-    | ("", ".") -> ()
-    | ("EOI", "") -> raise End_of_input
+  let rec dot st = match get_tok (Stream.next st) with
+    | Tok.KEYWORD "." -> ()
+    | Tok.EOI -> raise End_of_input
     | _ -> dot st
   in
   Gram.Entry.of_parser "Coqtoplevel.dot" dot
@@ -324,8 +322,8 @@ let parse_to_dot =
 (* We assume that when a lexer error occurs, at least one char was eaten *)
 let rec discard_to_dot () =
   try
-    Gram.Entry.parse parse_to_dot top_buffer.tokens
-  with Stdpp.Exc_located(_,(Token.Error _|Lexer.Error _)) ->
+    Gram.entry_parse parse_to_dot top_buffer.tokens
+  with Loc.Exc_located(_,(Token.Error _|Lexer.Error.E _)) ->
     discard_to_dot()
 
 
@@ -369,9 +367,6 @@ let do_vernac () =
 
 let rec loop () =
   Sys.catch_break true;
-  (* ensure we have a command separator object (DOT) so that the first
-     command can be reseted. *)
-  Lib.mark_end_of_command();
   try
     reset_input_buffer stdin top_buffer;
     while true do do_vernac() done

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: table.mli 14012 2011-04-15 16:45:27Z letouzey $ i*)
 
 open Names
 open Libnames
@@ -21,6 +19,7 @@ val safe_basename_of_global : global_reference -> identifier
 (*s Warning and Error messages. *)
 
 val warning_axioms : unit -> unit
+val warning_opaques : bool -> unit
 val warning_both_mod_and_cst :
  qualid -> module_path -> global_reference -> unit
 val warning_id : string -> unit
@@ -30,11 +29,11 @@ val error_inductive : global_reference -> 'a
 val error_nb_cons : unit -> 'a
 val error_module_clash : module_path -> module_path -> 'a
 val error_no_module_expr : module_path -> 'a
+val error_singleton_become_prop : identifier -> 'a
 val error_unknown_module : qualid -> 'a
 val error_scheme : unit -> 'a
 val error_not_visible : global_reference -> 'a
 val error_MPfile_as_mod : module_path -> bool -> 'a
-val error_record : global_reference -> 'a
 val check_inside_module : unit -> unit
 val check_inside_section : unit -> unit
 val check_loaded_modfile : module_path -> unit
@@ -59,10 +58,8 @@ val at_toplevel : module_path -> bool
 val visible_con : constant -> bool
 val mp_length : module_path -> int
 val prefixes_mp : module_path -> MPset.t
-val modfile_of_mp : module_path -> module_path
 val common_prefix_from_list :
   module_path -> module_path list -> module_path option
-val add_labels_mp : module_path -> label list -> module_path
 val get_nth_label_mp : int -> module_path -> label
 val labels_of_ref : global_reference -> module_path * label list
 
@@ -77,6 +74,14 @@ val lookup_type : constant -> ml_schema
 val add_ind : mutual_inductive -> mutual_inductive_body -> ml_ind -> unit
 val lookup_ind : mutual_inductive -> mutual_inductive_body * ml_ind
 
+val add_inductive_kind : mutual_inductive -> inductive_kind -> unit
+val is_coinductive : global_reference -> bool
+val is_coinductive_type : ml_type -> bool
+(* What are the fields of a record (empty for a non-record) *)
+val get_record_fields :
+  global_reference -> global_reference option list
+val record_fields_of_type : ml_type -> global_reference option list
+
 val add_recursors : Environ.env -> mutual_inductive -> unit
 val is_recursor : global_reference -> bool
 
@@ -88,7 +93,14 @@ val add_info_axiom : global_reference -> unit
 val remove_info_axiom : global_reference -> unit
 val add_log_axiom : global_reference -> unit
 
+val add_opaque : global_reference -> unit
+val remove_opaque : global_reference -> unit
+
 val reset_tables : unit -> unit
+
+(*s AccessOpaque parameter *)
+
+val access_opaque : unit -> bool
 
 (*s AutoInline parameter *)
 
@@ -97,6 +109,10 @@ val auto_inline : unit -> bool
 (*s TypeExpand parameter *)
 
 val type_expand : unit -> bool
+
+(*s KeepSingleton parameter *)
+
+val keep_singleton : unit -> bool
 
 (*s Optimize parameter *)
 
@@ -120,10 +136,19 @@ val optims :  unit -> opt_flag
 type lang = Ocaml | Haskell | Scheme
 val lang : unit -> lang
 
-(*s Extraction mode: modular or monolithic *)
+(*s Extraction modes: modular or monolithic, library or minimal ?
+
+Nota:
+ - Recursive Extraction : monolithic, minimal
+ - Separate Extraction : modular, minimal
+ - Extraction Library : modular, library
+*)
 
 val set_modular : bool -> unit
 val modular : unit -> bool
+
+val set_library : bool -> unit
+val library : unit -> bool
 
 (*s Table for custom inlining *)
 
@@ -157,6 +182,7 @@ val extract_constant_inline :
   bool -> reference -> string list -> string -> unit
 val extract_inductive :
   reference -> string -> string list -> string option -> unit
+
 
 type int_or_id = ArgInt of int | ArgId of identifier
 val extraction_implicit : reference -> int_or_id list -> unit

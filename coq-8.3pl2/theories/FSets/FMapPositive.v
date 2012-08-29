@@ -6,14 +6,12 @@
 (*         *       GNU Lesser General Public License Version 2.1       *)
 (***********************************************************************)
 
-(* $Id: FMapPositive.v 13297 2010-07-19 23:32:42Z letouzey $ *)
-
 (** * FMapPositive : an implementation of FMapInterface for [positive] keys. *)
 
 Require Import Bool ZArith OrderedType OrderedTypeEx FMapInterface.
 
 Set Implicit Arguments.
-Open Local Scope positive_scope.
+Local Open Scope positive_scope.
 
 Local Unset Elimination Schemes.
 Local Unset Case Analysis Schemes.
@@ -86,7 +84,7 @@ Module PositiveMap <: S with Module E:=PositiveOrderedTypeBits.
   Section A.
   Variable A:Type.
 
-  Implicit Arguments Leaf [A].
+  Arguments Leaf [A].
 
   Definition empty : t A := Leaf.
 
@@ -496,9 +494,9 @@ Module PositiveMap <: S with Module E:=PositiveOrderedTypeBits.
 
   Definition lt_key (p p':positive*A) := E.lt (fst p) (fst p').
 
-  Global Instance eqk_equiv : Equivalence eq_key.
-  Global Instance eqke_equiv : Equivalence eq_key_elt.
-  Global Instance ltk_strorder : StrictOrder lt_key.
+  Global Program Instance eqk_equiv : Equivalence eq_key.
+  Global Program Instance eqke_equiv : Equivalence eq_key_elt.
+  Global Program Instance ltk_strorder : StrictOrder lt_key.
 
   Lemma mem_find :
     forall m x, mem x m = match find x m with None => false | _ => true end.
@@ -816,7 +814,7 @@ Module PositiveMap <: S with Module E:=PositiveOrderedTypeBits.
   Variable A B C : Type.
   Variable f : option A -> option B -> option C.
 
-  Implicit Arguments Leaf [A].
+  Arguments Leaf [A].
 
   Fixpoint xmap2_l (m : t A) : t C :=
       match m with

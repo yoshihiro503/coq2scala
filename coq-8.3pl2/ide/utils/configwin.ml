@@ -27,8 +27,8 @@ type parameter_kind = Configwin_types.parameter_kind
 
 type configuration_structure =
     Configwin_types.configuration_structure =
-    Section of string * parameter_kind list
-  | Section_list of string * configuration_structure list
+    Section of string * GtkStock.id option * parameter_kind list
+  | Section_list of string * GtkStock.id option * configuration_structure list
 
 type return_button =
     Configwin_types.return_button =
@@ -60,9 +60,9 @@ let html = Configwin_ihm.html
 
 let edit
     ?(apply=(fun () -> ()))
-    title ?(width=400) ?(height=400)
+    title ?width ?height
     conf_struct_list =
-  Configwin_ihm.edit ~with_apply: true ~apply title ~width ~height conf_struct_list
+  Configwin_ihm.edit ~with_apply: true ~apply title ?width ?height conf_struct_list
 
 let get = Configwin_ihm.edit ~with_apply: false ~apply: (fun () -> ())
 

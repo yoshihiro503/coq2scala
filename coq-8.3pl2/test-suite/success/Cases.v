@@ -100,7 +100,7 @@ Type (fun x : nat => match x return nat with
                      | x => x
                      end).
 
-Section testlist.
+Module Type testlist.
 Parameter A : Set.
 Inductive list : Set :=
   | nil : list
@@ -119,7 +119,6 @@ Definition titi (a : A) (l : list) :=
   | nil => l
   | cons b l => l
   end.
-Reset list.
 End testlist.
 
 
@@ -543,7 +542,7 @@ Type
    end).
 
 (* Nested Cases: the SYNTH of the Cases on n used to make Multcase believe
- * it has to synthtize the predicate on O (which he can't)
+ * it has to synthesize the predicate on O (which he can't)
  *)
 Type
   match 0 as n return match n with
@@ -611,31 +610,52 @@ Type
    | Consn n a (Consn m b l) => n + m
    end).
 
-(*
-Type [A:Set][n:nat][l:(Listn A n)]
-                   <[_:nat](Listn A O)>Cases l of
-                         (Niln  as b) => b
-                      | (Consn  n a (Niln  as b))=> (Niln A)
-                      | (Consn  n a (Consn m b l)) => (Niln A)
-                      end.
+(* This example was deactivated in Cristina's code
 
-Type [A:Set][n:nat][l:(Listn A n)]
-                    Cases l of
-                         (Niln  as b) => b
-                      | (Consn  n a (Niln  as b))=> (Niln A)
-                      | (Consn  n a (Consn m b l)) => (Niln A)
-                      end.
+Type
+  (fun (A:Set) (n:nat) (l:Listn A n) =>
+    match l return Listn A O with
+      | Niln  as b => b
+      | Consn  n a (Niln  as b) => (Niln A)
+      | Consn  n a (Consn m b l) => (Niln A)
+    end).
 *)
-(******** This example rises an error unconstrained_variables!
-Type [A:Set][n:nat][l:(Listn A n)]
-                    Cases l of
-                         (Niln  as b) => (Consn A O O b)
-                      | ((Consn  n a Niln) as L) =>  L
-                      | (Consn  n a _)  =>  (Consn A O O (Niln A))
-                      end.
+
+(* This one is (still) failing: too weak unification
+
+Type
+  (fun (A:Set) (n:nat) (l:Listn A n) =>
+    match l with
+      | Niln  as b => b
+      | Consn  n a (Niln  as b) => (Niln A)
+      | Consn  n a (Consn m b l) => (Niln A)
+    end).
+*)
+
+(* This one is failing: alias L not chosen of the right type
+
+Type
+  (fun (A:Set) (n:nat) (l:Listn A n) =>
+    match l return Listn A (S 0) with
+      | Niln  as b => Consn A O O b
+      | Consn n a Niln as L => L
+      | Consn n a _ => Consn A O O (Niln A)
+    end).
+*)
+
+(******** This example (still) failed
+
+Type
+  (fun (A:Set) (n:nat) (l:Listn A n) =>
+    match l return Listn A (S 0) with
+      | Niln  as b => Consn A O O b
+      | Consn n a Niln as L => L
+      | Consn n a _ => Consn A O O (Niln A)
+    end).
+
 **********)
 
-(* To test tratement of as-patterns in depth *)
+(* To test treatment of as-patterns in depth *)
 Type
   (fun (A : Set) (l : List A) =>
    match l with
@@ -892,71 +912,77 @@ Type
    | LeS n m _ => (S n, S m)
    end).
 
-
+Module Type F_v1.
 Fixpoint F (n m : nat) (h : Le n m) {struct h} : Le n (S m) :=
   match h in (Le n m) return (Le n (S m)) with
   | LeO m' => LeO (S m')
   | LeS n' m' h' => LeS n' (S m') (F n' m' h')
   end.
+End F_v1.
 
-Reset F.
-
+Module Type F_v2.
 Fixpoint F (n m : nat) (h : Le n m) {struct h} : Le n (S m) :=
   match h in (Le n m) return (Le n (S m)) with
   | LeS n m h => LeS n (S m) (F n m h)
   | LeO m => LeO (S m)
   end.
+End F_v2.
 
 (* Rend la longueur de la liste *)
-Definition length1 (n : nat) (l : listn n) :=
+
+Module Type L1.
+Definition length (n : nat) (l : listn n) :=
   match l return nat with
   | consn n _ (consn m _ _) => S (S m)
   | consn n _ _ => 1
   | _ => 0
   end.
+End L1.
 
-Reset length1.
-Definition length1 (n : nat) (l : listn n) :=
+Module Type L1'.
+Definition length (n : nat) (l : listn n) :=
   match l with
   | consn n _ (consn m _ _) => S (S m)
   | consn n _ _ => 1
   | _ => 0
   end.
+End L1'.
 
-
-Definition length2 (n : nat) (l : listn n) :=
+Module Type L2.
+Definition length (n : nat) (l : listn n) :=
   match l return nat with
   | consn n _ (consn m _ _) => S (S m)
   | consn n _ _ => S n
   | _ => 0
   end.
+End L2.
 
-Reset length2.
-
-Definition length2 (n : nat) (l : listn n) :=
+Module Type L2'.
+Definition length (n : nat) (l : listn n) :=
   match l with
   | consn n _ (consn m _ _) => S (S m)
   | consn n _ _ => S n
   | _ => 0
   end.
+End L2'.
 
-Definition length3 (n : nat) (l : listn n) :=
+Module Type L3.
+Definition length (n : nat) (l : listn n) :=
   match l return nat with
   | consn n _ (consn m _ l) => S n
   | consn n _ _ => 1
   | _ => 0
   end.
+End L3.
 
-
-Reset length3.
-
-Definition length3 (n : nat) (l : listn n) :=
+Module Type L3'.
+Definition length (n : nat) (l : listn n) :=
   match l with
   | consn n _ (consn m _ l) => S n
   | consn n _ _ => 1
   | _ => 0
   end.
-
+End L3'.
 
 Type match LeO 0 return nat with
      | LeS n m h => n + m
@@ -1064,7 +1090,7 @@ Type
    | Consn n a (Consn m b l) => fun _ : nat => n + m
    end).
 
-(* Alsos tests for multiple _ patterns *)
+(* Also tests for multiple _ patterns *)
 Type
   (fun (A : Set) (n : nat) (l : Listn A n) =>
    match l in (Listn _ n) return (Listn A n) with
@@ -1072,14 +1098,14 @@ Type
    | Consn _ _ _ as b => b
    end).
 
-(** Horrible error message!
+(** This one was said to raised once an "Horrible error message!" *)
 
-Type [A:Set][n:nat][l:(Listn A n)]
-                        Cases l of
-                        (Niln as b) => b
-                      | ((Consn _ _ _ ) as b)=>  b
-                      end.
-******)
+Type
+  (fun (A:Set) (n:nat) (l:Listn A n) =>
+   match l with
+   | Niln as b => b
+   | Consn _ _ _  as b =>  b
+   end).
 
 Type
   match niln in (listn n) return (listn n) with
@@ -1235,7 +1261,7 @@ Type match (0, 0) with
      | (x, y) => (S x, S y)
      end.
 
-
+Module Type test_concat.
 
 Parameter concat : forall A : Set, List A -> List A -> List A.
 
@@ -1252,6 +1278,7 @@ Type
   | _, _ => Nil nat
   end.
 
+End test_concat.
 
 Inductive redexes : Set :=
   | VAR : nat -> redexes
@@ -1274,7 +1301,6 @@ Type (fun n : nat => match n with
                      | _ => 0
                      end).
 
-Reset concat.
 Parameter
   concat :
     forall n : nat, listn n -> forall m : nat, listn m -> listn (n + m).
@@ -1362,6 +1388,7 @@ Type
 (* I.e. to test manipulation of elimination predicate                    *)
 (* ===================================================================== *)
 
+Module Type test_term.
 
 Parameter LTERM : nat -> Set.
 Inductive TERM : Type :=
@@ -1376,7 +1403,8 @@ Type
   | oper op1 l1, oper op2 l2 => False
   | _, _ => False
   end.
-Reset LTERM.
+
+End test_term.
 
 
 
@@ -1472,6 +1500,7 @@ Type
   end.
 
 
+Module Type ff.
 
 Parameter ff : forall n m : nat, n <> m -> S n <> S m.
 Parameter discr_r : forall n : nat, 0 <> S n.
@@ -1484,6 +1513,7 @@ Type
    | S x => or_intror (S x = 0) (discr_l x)
    end).
 
+Module Type eqdec.
 
 Fixpoint eqdec (n m : nat) {struct n} : n = m \/ n <> m :=
   match n, m return (n = m \/ n <> m) with
@@ -1497,7 +1527,9 @@ Fixpoint eqdec (n m : nat) {struct n} : n = m \/ n <> m :=
       end
   end.
 
-Reset eqdec.
+End eqdec.
+
+Module Type eqdec'.
 
 Fixpoint eqdec (n : nat) : forall m : nat, n = m \/ n <> m :=
   match n return (forall m : nat, n = m \/ n <> m) with
@@ -1519,6 +1551,7 @@ Fixpoint eqdec (n : nat) : forall m : nat, n = m \/ n <> m :=
       end
   end.
 
+End eqdec'.
 
 Inductive empty : forall n : nat, listn n -> Prop :=
     intro_empty : empty 0 niln.
@@ -1533,7 +1566,10 @@ Type
    | consn n a y as b => or_intror (empty (S n) b) (inv_empty n a y)
    end).
 
-Reset ff.
+End ff.
+
+Module Type ff'.
+
 Parameter ff : forall n m : nat, n <> m -> S n <> S m.
 Parameter discr_r : forall n : nat, 0 <> S n.
 Parameter discr_l : forall n : nat, S n <> 0.
@@ -1545,6 +1581,7 @@ Type
    | S x => or_intror (S x = 0) (discr_l x)
    end).
 
+Module Type eqdec.
 
 Fixpoint eqdec (n m : nat) {struct n} : n = m \/ n <> m :=
   match n, m return (n = m \/ n <> m) with
@@ -1557,7 +1594,10 @@ Fixpoint eqdec (n m : nat) {struct n} : n = m \/ n <> m :=
       | or_intror h => or_intror (S x = S y) (ff x y h)
       end
   end.
-Reset eqdec.
+
+End eqdec.
+
+Module Type eqdec'.
 
 Fixpoint eqdec (n : nat) : forall m : nat, n = m \/ n <> m :=
   match n return (forall m : nat, n = m \/ n <> m) with
@@ -1579,6 +1619,8 @@ Fixpoint eqdec (n : nat) : forall m : nat, n = m \/ n <> m :=
       end
   end.
 
+End eqdec'.
+End ff'.
 
 (* ================================================== *)
 (* Pour tester parametres                             *)

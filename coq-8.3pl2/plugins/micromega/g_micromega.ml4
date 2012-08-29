@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,18 +8,18 @@
 (*                                                                      *)
 (* Micromega: A reflexive tactic using the Positivstellensatz           *)
 (*                                                                      *)
+(* * Mappings from Coq tactics to Caml function calls                   *)
+(*                                                                      *)
 (*  Frédéric Besson (Irisa/Inria) 2006-2008			        *)
 (*                                                                      *)
 (************************************************************************)
 
 (*i camlp4deps: "parsing/grammar.cma" i*)
 
-(* $Id: g_micromega.ml4 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 open Quote
 open Ring
 open Mutils
-open Rawterm
+open Glob_term
 open Util
 
 let out_arg = function
@@ -34,6 +34,11 @@ END
 TACTIC EXTEND ZOmicron
 [ "xlia"  ] -> [ Coq_micromega.xlia]
 END
+
+TACTIC EXTEND Nlia
+[ "xnlia"  ] -> [ Coq_micromega.xnlia]
+END
+
 
 
 TACTIC EXTEND Sos_Z
@@ -57,8 +62,6 @@ TACTIC EXTEND QOmicron
 [ "psatzl_Q"  ] -> [ Coq_micromega.psatzl_Q]
 END
 
-
-
 TACTIC EXTEND ROmicron
 [ "psatzl_R"  ] -> [ Coq_micromega.psatzl_R]
 END
@@ -67,7 +70,6 @@ TACTIC EXTEND RMicromega
 | [ "psatz_R" int_or_var(i) ] -> [ Coq_micromega.psatz_R (out_arg i) ]
 | [ "psatz_R" ] -> [ Coq_micromega.psatz_R (-1) ]
 END
-
 
 TACTIC EXTEND QMicromega
 | [ "psatz_Q" int_or_var(i) ] -> [ Coq_micromega.psatz_Q (out_arg i) ]

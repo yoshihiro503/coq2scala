@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: leminv.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Pp
 open Util
@@ -24,7 +22,6 @@ open Entries
 open Inductiveops
 open Environ
 open Tacmach
-open Proof_trees
 open Proof_type
 open Pfedit
 open Evar_refiner
@@ -36,8 +33,6 @@ open Inv
 open Vernacexpr
 open Safe_typing
 open Decl_kinds
-
-let not_work_message = "tactic fails to build the inversion lemma, may be because the predicate has arguments that depend on other arguments"
 
 let no_inductive_inconstr env constr =
   (str "Cannot recognize an inductive predicate in " ++
@@ -88,18 +83,6 @@ let no_inductive_inconstr env constr =
    the respective assumption in each subgoal.
 
  *)
-
-let thin_ids env (hyps,vars) =
-  fst
-    (List.fold_left
-       (fun ((ids,globs) as sofar) (id,c,a) ->
-          if List.mem id globs then
-	    match c with
-	      | None -> (id::ids,(global_vars env a)@globs)
-	      | Some body ->
-                  (id::ids,(global_vars env body)@(global_vars env a)@globs)
-          else sofar)
-       ([],vars) hyps)
 
 (* returns the sub_signature of sign corresponding to those identifiers that
  * are not global. *)
@@ -192,10 +175,6 @@ let compute_first_inversion_scheme env sigma ind sort dep_option =
   let extenv = push_named (p,None,npty) env in
   extenv, goal
 
-let whd_meta_from_map metamap c = match kind_of_term c with
-  | Meta p -> (try List.assoc p metamap with Not_found -> c)
-  | _ -> c
-
 (* [inversion_scheme sign I]
 
    Given a local signature, [sign], and an instance of an inductive
@@ -221,29 +200,32 @@ let inversion_scheme env sigma t sort dep_option inv_op =
     errorlabstrm "lemma_inversion"
     (str"Computed inversion goal was not closed in initial signature.");
   *)
-  let invSign = named_context_val invEnv in
-  let pfs = mk_pftreestate (mk_goal invSign invGoal None) in
-  let pfs = solve_pftreestate (tclTHEN intro (onLastHypId inv_op)) pfs in
-  let (pfterm,meta_types) = extract_open_pftreestate pfs in
+  let pf = Proof.start [invEnv,invGoal] in
+  Proof.run_tactic env (Proofview.V82.tactic (tclTHEN intro (onLastHypId inv_op))) pf;
+  let pfterm = List.hd (Proof.partial_proof pf) in
   let global_named_context = Global.named_context () in
-  let ownSign =
+  let ownSign = ref begin
     fold_named_context
       (fun env (id,_,_ as d) sign ->
          if mem_named_context id global_named_context then sign
 	 else add_named_decl d sign)
       invEnv ~init:empty_named_context
+  end in
+  let avoid = ref [] in
+  let { sigma=sigma } = Proof.V82.subgoals pf in
+  let rec fill_holes c =
+    match kind_of_term c with
+    | Evar (e,args) ->
+	let h = next_ident_away (id_of_string "H") !avoid in
+	let ty,inst = Evarutil.generalize_evar_over_rels sigma (e,args) in
+	avoid := h::!avoid;
+	ownSign := add_named_decl (h,None,ty) !ownSign;
+	applist (mkVar h, inst)
+    | _ -> map_constr fill_holes c
   in
-  let (_,ownSign,mvb) =
-    List.fold_left
-      (fun (avoid,sign,mvb) (mv,mvty) ->
-         let h = next_ident_away (id_of_string "H") avoid in
-	 (h::avoid, add_named_decl (h,None,mvty) sign, (mv,mkVar h)::mvb))
-      (ids_of_context invEnv, ownSign, [])
-      meta_types
-  in
-  let invProof =
-    it_mkNamedLambda_or_LetIn
-      (local_strong (fun _ -> whd_meta_from_map mvb) Evd.empty pfterm) ownSign
+  let c = fill_holes pfterm in
+  (* warning: side-effect on ownSign *)
+  let invProof = it_mkNamedLambda_or_LetIn c !ownSign
   in
   invProof
 
@@ -253,32 +235,23 @@ let add_inversion_lemma name env sigma t sort dep inv_op =
     declare_constant name
     (DefinitionEntry
        { const_entry_body = invProof;
+         const_entry_secctx = None;
          const_entry_type = None;
-         const_entry_opaque = false;
-	 const_entry_boxed = true && (Flags.boxed_definitions())},
+         const_entry_opaque = false },
      IsProof Lemma)
   in ()
-
-(* open Pfedit *)
 
 (* inv_op = Inv (derives de complete inv. lemma)
  * inv_op = InvNoThining (derives de semi inversion lemma) *)
 
 let inversion_lemma_from_goal n na (loc,id) sort dep_option inv_op =
   let pts = get_pftreestate() in
-  let gl = nth_goal_of_pftreestate n pts in
+  let { it=gls ; sigma=sigma } = Proof.V82.subgoals pts in
+  let gl = { it = List.nth gls (n-1) ; sigma=sigma } in
   let t =
     try pf_get_hyp_typ gl id
     with Not_found -> Pretype_errors.error_var_not_found_loc loc id in
   let env = pf_env gl and sigma = project gl in
-(* Pourquoi ???
-  let fv = global_vars env t in
-  let thin_ids = thin_ids (hyps,fv) in
-  if not(list_subset thin_ids fv) then
-    errorlabstrm "lemma_inversion"
-      (str"Cannot compute lemma inversion when there are" ++ spc () ++
-	 str"free variables in the types of an inductive" ++ spc () ++
-	 str"which are not free in its instance."); *)
   add_inversion_lemma na env sigma t sort dep_option inv_op
 
 let add_inversion_lemma_exn na com comsort bool tac =
@@ -296,11 +269,10 @@ let add_inversion_lemma_exn na com comsort bool tac =
 (* ================================= *)
 
 let lemInv id c gls =
-  ignore (pf_get_hyp gls id); (* ensure id exists *)
   try
     let clause = mk_clenv_type_of gls c in
     let clause = clenv_constrain_last_binding (mkVar id) clause in
-    Clenvtac.res_pf clause ~allow_K:true gls
+    Clenvtac.res_pf clause ~flags:Unification.elim_flags gls
   with
     | NoSuchBinding ->
 	errorlabstrm ""

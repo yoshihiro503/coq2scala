@@ -1,17 +1,17 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: coq_config.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 val local : bool        (* local use (no installation) *)
 
-val coqlib : string     (* where the std library is installed *)
-val coqsrc : string     (* where are the sources *)
+val coqlib : string option (* where the std library is installed *)
+val configdir : string option (* where configuration files are installed *)
+val datadir : string option (* where extra data files are installed *)
+val docdir : string     (* where the doc is installed *)
 
 val ocaml : string      (* names of ocaml binaries *)
 val ocamlc : string
@@ -60,6 +60,7 @@ val browser : string
     variable COQREMOTEBROWSER *)
 
 val has_coqide : string
+val gtk_platform : [`QUARTZ | `WIN32 | `X11]
 
 val has_natdynlink : bool
 val natdynlinkflag : string (* special cases of natdynlink (e.g. MacOS 10.5) *)

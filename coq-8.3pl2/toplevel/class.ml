@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: class.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Util
 open Pp
@@ -94,7 +92,9 @@ let check_target clt = function
 let uniform_cond nargs lt =
   let rec aux = function
     | (0,[]) -> true
-    | (n,t::l) -> (strip_outer_cast t = mkRel n) & (aux ((n-1),l))
+    | (n,t::l) ->
+      let t = strip_outer_cast t in
+      isRel t && destRel t = n && aux ((n-1),l)
     | _ -> false
   in
   aux (nargs,lt)
@@ -126,7 +126,7 @@ let get_source lp source =
 	let (cl1,lv1) =
           match lp with
 	    | [] -> raise Not_found
-            | t1::_ -> find_class_type (Global.env()) Evd.empty t1
+            | t1::_ -> find_class_type Evd.empty t1
         in
 	(cl1,lv1,1)
     | Some cl ->
@@ -134,7 +134,7 @@ let get_source lp source =
 	  | [] -> raise Not_found
 	  | t1::lt ->
 	      try
-		let cl1,lv1 = find_class_type (Global.env()) Evd.empty t1 in
+		let cl1,lv1 = find_class_type Evd.empty t1 in
 		if cl = cl1 then cl1,lv1,(List.length lt+1)
 		else raise Not_found
               with Not_found -> aux lt
@@ -144,7 +144,7 @@ let get_target t ind =
   if (ind > 1) then
     CL_FUN
   else
-    fst (find_class_type (Global.env()) Evd.empty t)
+    fst (find_class_type Evd.empty t)
 
 let prods_of t =
   let rec aux acc d = match kind_of_term d with
@@ -212,16 +212,16 @@ let build_id_coercion idf_opt source =
     match idf_opt with
       | Some idf -> idf
       | None ->
-	  let cl,_ = find_class_type (Global.env()) Evd.empty t in
+	  let cl,_ = find_class_type Evd.empty t in
 	  id_of_string ("Id_"^(ident_key_of_class source)^"_"^
                         (ident_key_of_class cl))
   in
   let constr_entry = (* Cast is necessary to express [val_f] is identity *)
     DefinitionEntry
       { const_entry_body = mkCast (val_f, DEFAULTcast, typ_f);
+        const_entry_secctx = None;
 	const_entry_type = Some typ_f;
-        const_entry_opaque = false;
-	const_entry_boxed = Flags.boxed_definitions()} in
+        const_entry_opaque = false } in
   let kn = declare_constant idf (constr_entry,IsDefinition IdentityCoercion) in
   ConstRef kn
 
@@ -255,7 +255,7 @@ let add_new_coercion_core coef stre source target isid =
   in
   check_source (Some cls);
   if not (uniform_cond (llp-ind) lvs) then
-    raise (CoercionError NotUniform);
+    warning (Pp.string_of_ppcmds (explain_coercion_error coef NotUniform));
   let clt =
     try
       get_target tg ind
@@ -266,7 +266,7 @@ let add_new_coercion_core coef stre source target isid =
   check_arity cls;
   check_arity clt;
   let stre' = get_strength stre coef cls clt in
-  declare_coercion coef stre' isid cls clt (List.length lvs)
+  declare_coercion coef stre' ~isid ~src:cls ~target:clt ~params:(List.length lvs)
 
 let try_add_new_coercion_core ref b c d e =
   try add_new_coercion_core ref b c d e

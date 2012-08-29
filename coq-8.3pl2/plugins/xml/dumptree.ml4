@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -42,7 +42,7 @@ let thin_sign osign sign =
 ;;
 
 let pr_tactic_xml = function
-  | TacArg (Tacexp t) -> str "<tactic cmd=\"" ++ xmlstream (Pptactic.pr_glob_tactic (Global.env()) t) ++ str "\"/>"
+  | TacArg (_,Tacexp t) -> str "<tactic cmd=\"" ++ xmlstream (Pptactic.pr_glob_tactic (Global.env()) t) ++ str "\"/>"
   | t -> str "<tactic cmd=\"" ++ xmlstream (Pptactic.pr_tactic (Global.env()) t) ++ str "\"/>"
 ;;
 
@@ -56,13 +56,11 @@ let pr_rule_xml pr = function
       hov 2 (str "<cmpdrule>" ++ fnl () ++
         begin match cmpd with
           Tactic (texp, _) -> pr_tactic_xml texp
-        | Proof_instr (_,instr) -> pr_proof_instr_xml instr
         end ++ fnl ()
         ++ pr subtree
       ) ++ fnl () ++ str "</cmpdrule>"
   | Daimon -> str "<daimon/>"
   | Decl_proof _ -> str "<proof/>"
-(*  | Change_evars -> str "<chgevars/>"*)
 ;;
 
 let pr_var_decl_xml env (id,c,typ) =
@@ -109,17 +107,17 @@ let pr_context_xml env =
 
 let pr_subgoal_metas_xml metas env=
   let pr_one (meta, typ) =
-    fnl () ++ str "<meta index=\"" ++ int meta ++ str " type=\"" ++ xmlstream (pr_ltype_env_at_top env typ) ++
+    fnl () ++ str "<meta index=\"" ++ int meta ++ str " type=\"" ++ xmlstream (pr_goal_concl_style_env env typ) ++
       str "\"/>"
   in
   List.fold_left (++) (mt ()) (List.map pr_one metas)
 ;;
 
-let pr_goal_xml g =
-  let env = try evar_unfiltered_env g with _ -> empty_env in
-  if g.evar_extra = None then
+let pr_goal_xml sigma g =
+  let env = try Goal.V82.unfiltered_env sigma g with _ -> empty_env in
+  if Decl_mode.try_get_info sigma g = None then
     (hov 2 (str "<goal>" ++ fnl () ++ str "<concl type=\"" ++
-    xmlstream (pr_ltype_env_at_top env g.evar_concl) ++
+    xmlstream (pr_goal_concl_style_env env (Goal.V82.concl sigma g)) ++
     str "\"/>" ++
     (pr_context_xml env)) ++
     fnl () ++ str "</goal>")
@@ -129,23 +127,9 @@ let pr_goal_xml g =
     fnl () ++ str "</goal>")
 ;;
 
-let rec print_proof_xml sigma osign pf =
-  let hyps = Environ.named_context_of_val pf.goal.evar_hyps in
-  let hyps' = thin_sign osign hyps in
-  match pf.ref with
-    | None -> hov 2 (str "<tree>" ++ fnl () ++ (pr_goal_xml {pf.goal with evar_hyps=hyps'})) ++ fnl () ++ str "</tree>"
-    | Some(r,spfl) ->
-        hov 2 (str "<tree>" ++ fnl () ++
-        (pr_goal_xml {pf.goal with evar_hyps=hyps'}) ++ fnl () ++ (pr_rule_xml (print_proof_xml sigma osign) r) ++
-        (List.fold_left (fun x y -> x ++ fnl () ++ y) (mt ()) (List.map (print_proof_xml sigma hyps) spfl))) ++ fnl () ++ str "</tree>"
-;;
-
 let print_proof_xml () =
-  let pp = print_proof_xml Evd.empty Sign.empty_named_context
-      (Tacmach.proof_of_pftreestate (Refiner.top_of_tree (Pfedit.get_pftreestate ())))
-  in
-  msgnl pp
-;;
+  Util.anomaly "Dump Tree command not supported in this version."
+
 
 VERNAC COMMAND EXTEND DumpTree
   [ "Dump" "Tree" ] -> [ print_proof_xml () ]

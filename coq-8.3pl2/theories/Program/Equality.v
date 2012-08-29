@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Equality.v 13730 2010-12-19 13:32:01Z msozeau $ i*)
 
 (** Tactics related to (dependent) equality and proof irrelevance. *)
 
@@ -14,9 +12,6 @@ Require Export ProofIrrelevance.
 Require Export JMeq.
 
 Require Import Coq.Program.Tactics.
-
-Local Notation "'Π'  x .. y , P" := (forall x, .. (forall y, P) ..)
-  (at level 200, x binder, y binder, right associativity) : type_scope.
 
 Ltac is_ground_goal := 
   match goal with
@@ -33,17 +28,11 @@ Hint Extern 10 => is_ground_goal ; progress exfalso : exfalso.
 Definition block {A : Type} (a : A) := a.
 
 Ltac block_goal := match goal with [ |- ?T ] => change (block T) end.
-Ltac unblock_goal := unfold block at 1.
-Ltac unblock_all := unfold block in *.
+Ltac unblock_goal := unfold block in *.
 
 (** Notation for heterogenous equality. *)
 
 Notation " x ~= y " := (@JMeq _ x _ y) (at level 70, no associativity).
-
-(** Notation for the single element of [x = x] and [x ~= x]. *)
-
-Implicit Arguments eq_refl [[A] [x]] [A].
-Implicit Arguments JMeq_refl [[A] [x]] [A].
 
 (** Do something on an heterogeneous equality appearing in the context. *)
 
@@ -177,15 +166,15 @@ Hint Rewrite <- eq_rect_eq : refl_id.
    [coerce_* t eq_refl = t]. *)
 
 Lemma JMeq_eq_refl {A} (x : A) : JMeq_eq (@JMeq_refl _ x) = eq_refl.
-Proof. intros. apply proof_irrelevance. Qed.
+Proof. apply proof_irrelevance. Qed.
 
-Lemma UIP_refl_refl : Π A (x : A),
+Lemma UIP_refl_refl A (x : A) :
   Eqdep.EqdepTheory.UIP_refl A x eq_refl = eq_refl.
-Proof. intros. apply UIP_refl. Qed.
+Proof. apply UIP_refl. Qed.
 
-Lemma inj_pairT2_refl : Π A (x : A) (P : A -> Type) (p : P x),
+Lemma inj_pairT2_refl A (x : A) (P : A -> Type) (p : P x) :
   Eqdep.EqdepTheory.inj_pairT2 A P x p p eq_refl = eq_refl.
-Proof. intros. apply UIP_refl. Qed.
+Proof. apply UIP_refl. Qed.
 
 Hint Rewrite @JMeq_eq_refl @UIP_refl_refl @inj_pairT2_refl : refl_id.
 
@@ -225,7 +214,8 @@ Ltac simplify_eqs :=
 
 Ltac simplify_IH_hyps := repeat
   match goal with
-    | [ hyp : context [ block _ ] |- _ ] => specialize_eqs hyp ; unfold block in hyp
+    | [ hyp : context [ block _ ] |- _ ] => 
+      specialize_eqs hyp
   end.
 
 (** We split substitution tactics in the two directions depending on which 
@@ -285,27 +275,33 @@ Ltac elim_ind p := elim_tac ltac:(fun p el => induction p using el) p.
 
 (** Lemmas used by the simplifier, mainly rephrasings of [eq_rect], [eq_ind]. *)
 
-Lemma solution_left : Π A (B : A -> Type) (t : A), B t -> (Π x, x = t -> B x).
-Proof. intros; subst. apply X. Defined.
+Lemma solution_left A (B : A -> Type) (t : A) :
+  B t -> (forall x, x = t -> B x).
+Proof. intros; subst; assumption. Defined.
 
-Lemma solution_right : Π A (B : A -> Type) (t : A), B t -> (Π x, t = x -> B x).
-Proof. intros; subst; apply X. Defined.
+Lemma solution_right A (B : A -> Type) (t : A) :
+  B t -> (forall x, t = x -> B x).
+Proof. intros; subst; assumption. Defined.
 
-Lemma deletion : Π A B (t : A), B -> (t = t -> B).
+Lemma deletion A B (t : A) : B -> (t = t -> B).
 Proof. intros; assumption. Defined.
 
-Lemma simplification_heq : Π A B (x y : A), (x = y -> B) -> (JMeq x y -> B).
-Proof. intros; apply X; apply (JMeq_eq H). Defined.
+Lemma simplification_heq A B (x y : A) :
+  (x = y -> B) -> (JMeq x y -> B).
+Proof. intros H J; apply H; apply (JMeq_eq J). Defined.
 
-Lemma simplification_existT2 : Π A (P : A -> Type) B (p : A) (x y : P p),
-  (x = y -> B) -> (existT P p x = existT P p y -> B).
-Proof. intros. apply X. apply inj_pair2. exact H. Defined.
+Definition conditional_eq {A} (x y : A) := eq x y.
 
-Lemma simplification_existT1 : Π A (P : A -> Type) B (p q : A) (x : P p) (y : P q),
-  (p = q -> existT P p x = existT P q y -> B) -> (existT P p x = existT P q y -> B).
-Proof. intros. injection H. intros ; auto. Defined.
-  
-Lemma simplification_K : Π A (x : A) (B : x = x -> Type), B eq_refl -> (Π p : x = x, B p).
+Lemma simplification_existT2 A (P : A -> Type) B (p : A) (x y : P p) :
+  (x = y -> B) -> (conditional_eq (existT P p x) (existT P p y) -> B).
+Proof. intros H E. apply H. apply inj_pair2. assumption. Defined.
+
+Lemma simplification_existT1 A (P : A -> Type) B (p q : A) (x : P p) (y : P q) :
+  (p = q -> conditional_eq (existT P p x) (existT P q y) -> B) -> (existT P p x = existT P q y -> B).
+Proof. injection 2. auto. Defined.
+
+Lemma simplification_K A (x : A) (B : x = x -> Type) :
+  B eq_refl -> (forall p : x = x, B p).
 Proof. intros. rewrite (UIP_refl A). assumption. Defined.
 
 (** This hint database and the following tactic can be used with [autounfold] to 
@@ -320,35 +316,22 @@ Hint Unfold solution_left solution_right deletion simplification_heq
    constructor forms). Compare with the lemma 16 of the paper.
    We don't have a [noCycle] procedure yet. *)
 
-Ltac block_equality id :=
-  match type of id with
-    | @eq ?A ?t ?u => change (block (@eq A t u)) in id
-    | _ => idtac
-  end.
-
-Ltac revert_blocking_until id := 
-  Tactics.on_last_hyp ltac:(fun id' =>
-    match id' with
-      | id => idtac
-      | _ => block_equality id' ; revert id' ; revert_blocking_until id
-    end).
-
 Ltac simplify_one_dep_elim_term c :=
   match c with
     | @JMeq _ _ _ _ -> _ => refine (simplification_heq _ _ _ _ _)
     | ?t = ?t -> _ => intros _ || refine (simplification_K _ t _ _)
-    | eq (existT _ ?p _) (existT _ ?q _) -> _ =>
-      refine (simplification_existT2 _ _ _ _ _ _ _) ||
-        match goal with
-          | H : p = q |- _ => intro
-          | _ => refine (simplification_existT1 _ _ _ _ _ _ _ _)
-        end
+    | eq (existT _ _ _) (existT _ _ _) -> _ =>
+        refine (simplification_existT1 _ _ _ _ _ _ _ _)
+    | conditional_eq (existT _ _ _) (existT _ _ _) -> _ =>
+        refine (simplification_existT2 _ _ _ _ _ _ _) ||
+               (unfold conditional_eq; intro)
     | ?x = ?y -> _ => (* variables case *)
+      (unfold x) || (unfold y) ||
       (let hyp := fresh in intros hyp ;
-        move hyp before x ; revert_blocking_until hyp ; generalize dependent x ;
+        move hyp before x ; revert_until hyp ; generalize dependent x ;
           refine (solution_left _ _ _ _)(*  ; intros until 0 *)) ||
       (let hyp := fresh in intros hyp ;
-        move hyp before y ; revert_blocking_until hyp ; generalize dependent y ;
+        move hyp before y ; revert_until hyp ; generalize dependent y ;
           refine (solution_right _ _ _ _)(*  ; intros until 0 *))
     | ?f ?x = ?g ?y -> _ => let H := fresh in progress (intros H ; injection H ; clear H)
     | ?t = ?u -> _ => let hyp := fresh in
@@ -399,25 +382,34 @@ Ltac is_introduced H :=
   end.
 
 Tactic Notation "intro_block" hyp(H) :=
-  (is_introduced H ; block_goal ; revert_until H) ||
+  (is_introduced H ; block_goal ; revert_until H ; block_goal) ||
     (let H' := fresh H in intros until H' ; block_goal) || (intros ; block_goal).
 
 Tactic Notation "intro_block_id" ident(H) :=
-  (is_introduced H ; block_goal ; revert_until H) ||
+  (is_introduced H ; block_goal ; revert_until H; block_goal) ||
     (let H' := fresh H in intros until H' ; block_goal) || (intros ; block_goal).
 
-Ltac simpl_dep_elim := simplify_dep_elim ; simplify_IH_hyps ; unblock_all.
+Ltac unblock_dep_elim :=
+  match goal with
+    | |- block ?T => 
+      match T with context [ block _ ] => 
+        change T ; intros ; unblock_goal
+      end
+    | _ => unblock_goal
+  end.
+
+Ltac simpl_dep_elim := simplify_dep_elim ; simplify_IH_hyps ; unblock_dep_elim.
 
 Ltac do_intros H :=
   (try intros until H) ; (intro_block_id H || intro_block H).
 
-Ltac do_depelim_nosimpl tac H := do_intros H ; generalize_eqs H ; block_goal ; tac H ; unblock_goal.
+Ltac do_depelim_nosimpl tac H := do_intros H ; generalize_eqs H ; tac H.
 
 Ltac do_depelim tac H := do_depelim_nosimpl tac H ; simpl_dep_elim.
 
 Ltac do_depind tac H := 
-  do_intros H ; generalize_eqs_vars H ; block_goal ; tac H ; 
-  unblock_goal ; simplify_dep_elim ; simplify_IH_hyps ; unblock_all.
+  (try intros until H) ; intro_block H ;
+  generalize_eqs_vars H ; tac H ; simpl_dep_elim.
 
 (** To dependent elimination on some hyp. *)
 
@@ -433,26 +425,26 @@ Ltac depind id := do_depind ltac:(fun hyp => do_ind hyp) id.
 
 (** A variant where generalized variables should be given by the user. *)
 
-Ltac do_depelim' tac H :=
-  (try intros until H) ; block_goal ; generalize_eqs H ; block_goal ; tac H ; unblock_goal ;
-    simplify_dep_elim ; simplify_IH_hyps ; unblock_all.
+Ltac do_depelim' rev tac H :=
+  (try intros until H) ; block_goal ; rev H ;
+  (try revert_until H ; block_goal) ; generalize_eqs H ; tac H ; simpl_dep_elim.
 
 (** Calls [destruct] on the generalized hypothesis, results should be similar to inversion.
    By default, we don't try to generalize the hyp by its variable indices.  *)
 
 Tactic Notation "dependent" "destruction" ident(H) := 
-  do_depelim' ltac:(fun hyp => do_case hyp) H.
+  do_depelim' ltac:(fun hyp => idtac) ltac:(fun hyp => do_case hyp) H.
 
 Tactic Notation "dependent" "destruction" ident(H) "using" constr(c) := 
-  do_depelim' ltac:(fun hyp => destruct hyp using c) H.
+  do_depelim' ltac:(fun hyp => idtac) ltac:(fun hyp => destruct hyp using c) H.
 
 (** This tactic also generalizes the goal by the given variables before the elimination. *)
 
 Tactic Notation "dependent" "destruction" ident(H) "generalizing" ne_hyp_list(l) := 
-  do_depelim' ltac:(fun hyp => revert l ; do_case hyp) H.
+  do_depelim' ltac:(fun hyp => revert l) ltac:(fun hyp => do_case hyp) H.
 
 Tactic Notation "dependent" "destruction" ident(H) "generalizing" ne_hyp_list(l) "using" constr(c) := 
-  do_depelim' ltac:(fun hyp => revert l ; destruct hyp using c) H.
+  do_depelim' ltac:(fun hyp => revert l) ltac:(fun hyp => destruct hyp using c) H.
 
 (** Then we have wrappers for usual calls to induction. One can customize the induction tactic by 
    writting another wrapper calling do_depelim. We suppose the hyp has to be generalized before
@@ -467,7 +459,7 @@ Tactic Notation "dependent" "induction" ident(H) "using" constr(c) :=
 (** This tactic also generalizes the goal by the given variables before the induction. *)
 
 Tactic Notation "dependent" "induction" ident(H) "generalizing" ne_hyp_list(l) := 
-  do_depelim' ltac:(fun hyp => generalize l ; clear l ; do_ind hyp) H.
+  do_depelim' ltac:(fun hyp => revert l) ltac:(fun hyp => do_ind hyp) H.
 
 Tactic Notation "dependent" "induction" ident(H) "generalizing" ne_hyp_list(l) "using" constr(c) := 
-  do_depelim' ltac:(fun hyp => generalize l ; clear l ; induction hyp using c) H.
+  do_depelim' ltac:(fun hyp => revert l) ltac:(fun hyp => induction hyp using c) H.

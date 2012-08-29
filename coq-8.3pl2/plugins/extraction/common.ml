@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: common.ml 14010 2011-04-15 16:05:07Z letouzey $ i*)
 
 open Pp
 open Util
@@ -35,17 +33,41 @@ let is_mp_bound = function MPbound _ -> true | _ -> false
 
 let pp_par par st = if par then str "(" ++ st ++ str ")" else st
 
+(** [pp_apply] : a head part applied to arguments, possibly with parenthesis *)
+
 let pp_apply st par args = match args with
   | [] -> st
   | _  -> hov 2 (pp_par par (st ++ spc () ++ prlist_with_sep spc identity args))
+
+(** Same as [pp_apply], but with also protection of the head by parenthesis *)
+
+let pp_apply2 st par args =
+  let par' = args <> [] || par in
+  pp_apply (pp_par par' st) par args
 
 let pr_binding = function
   | [] -> mt ()
   | l  -> str " " ++ prlist_with_sep (fun () -> str " ") pr_id l
 
+let pp_tuple_light f = function
+  | [] -> mt ()
+  | [x] -> f true x
+  | l ->
+      pp_par true (prlist_with_sep (fun () -> str "," ++ spc ()) (f false) l)
+
+let pp_tuple f = function
+  | [] -> mt ()
+  | [x] -> f x
+  | l -> pp_par true (prlist_with_sep (fun () -> str "," ++ spc ()) f l)
+
+let pp_boxed_tuple f = function
+  | [] -> mt ()
+  | [x] -> f x
+  | l -> pp_par true (hov 0 (prlist_with_sep (fun () -> str "," ++ spc ()) f l))
+
 (** By default, in module Format, you can do horizontal placing of blocks
     even if they include newlines, as long as the number of chars in the
-    blocks are less that a line length. To avoid this awkward situation,
+    blocks is less that a line length. To avoid this awkward situation,
     we attach a big virtual size to [fnl] newlines. *)
 
 let fnl () = stras (1000000,"") ++ fnl ()
@@ -53,8 +75,6 @@ let fnl () = stras (1000000,"") ++ fnl ()
 let fnl2 () = fnl () ++ fnl ()
 
 let space_if = function true -> str " " | false -> mt ()
-
-let sec_space_if = function true -> spc () | false -> mt ()
 
 let is_digit = function
   | '0'..'9' -> true
@@ -177,7 +197,17 @@ let empty_env () = [], get_global_ids ()
 let mktable autoclean =
   let h = Hashtbl.create 97 in
   if autoclean then register_cleanup (fun () -> Hashtbl.clear h);
-  (Hashtbl.add h, Hashtbl.find h, fun () -> Hashtbl.clear h)
+  (Hashtbl.replace h, Hashtbl.find h, fun () -> Hashtbl.clear h)
+
+(* We might have built [global_reference] whose canonical part is
+   inaccurate. We must hence compare only the user part,
+   hence using a Hashtbl might be incorrect *)
+
+let mktable_ref autoclean =
+  let m = ref Refmap'.empty in
+  let clear () = m := Refmap'.empty in
+  if autoclean then register_cleanup clear;
+  (fun r v -> m := Refmap'.add r v !m), (fun r -> Refmap'.find r !m), clear
 
 (* A table recording objects in the first level of all MPfile *)
 
@@ -342,12 +372,13 @@ let ref_renaming_fun (k,r) =
   let l = mp_renaming mp in
   let l = if lang () <> Ocaml && not (modular ()) then [""] else l in
   let s =
+    let idg = safe_basename_of_global r in
     if l = [""] (* this happens only at toplevel of the monolithic case *)
     then
       let globs = Idset.elements (get_global_ids ()) in
-      let id = next_ident_away (kindcase_id k (safe_basename_of_global r)) globs in
+      let id = next_ident_away (kindcase_id k idg) globs in
       string_of_id id
-    else modular_rename k (safe_basename_of_global r)
+    else modular_rename k idg
   in
   add_global_ids (id_of_string s);
   s::l
@@ -355,10 +386,10 @@ let ref_renaming_fun (k,r) =
 (* Cached version of the last function *)
 
 let ref_renaming =
-  let add,get,_ = mktable true in
-  fun x ->
-    try if is_mp_bound (base_mp (modpath_of_r (snd x))) then raise Not_found; get x
-    with Not_found -> let y = ref_renaming_fun x in add x y; y
+  let add,get,_ = mktable_ref true in
+  fun ((k,r) as x) ->
+    try if is_mp_bound (base_mp (modpath_of_r r)) then raise Not_found; get r
+    with Not_found -> let y = ref_renaming_fun x in add r y; y
 
 (* [visible_clash mp0 (k,s)] checks if [mp0-s] of kind [k]
    can be printed as [s] in the current context of visible

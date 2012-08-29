@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: inductiveops.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 open Names
 open Term
@@ -15,19 +13,19 @@ open Environ
 open Evd
 open Sign
 
-(* The following three functions are similar to the ones defined in
+(** The following three functions are similar to the ones defined in
    Inductive, but they expect an env *)
 
 val type_of_inductive    : env -> inductive -> types
 
-(* Return type as quoted by the user *)
+(** Return type as quoted by the user *)
 val type_of_constructor  : env -> constructor -> types
 val type_of_constructors : env -> inductive -> types array
 
-(* Return constructor types in normal form *)
+(** Return constructor types in normal form *)
 val arities_of_constructors : env -> inductive -> types array
 
-(* An inductive type with its parameters *)
+(** An inductive type with its parameters *)
 type inductive_family
 val make_ind_family : inductive * constr list -> inductive_family
 val dest_ind_family : inductive_family -> inductive * constr list
@@ -37,7 +35,7 @@ val lift_inductive_family  : int -> inductive_family -> inductive_family
 val substnl_ind_family :
   constr list -> int -> inductive_family -> inductive_family
 
-(* An inductive type with its parameters and real arguments *)
+(** An inductive type with its parameters and real arguments *)
 type inductive_type = IndType of inductive_family * constr list
 val make_ind_type : inductive_family * constr list -> inductive_type
 val dest_ind_type : inductive_type -> inductive_family * constr list
@@ -53,14 +51,15 @@ val mis_is_recursive :
 val mis_nf_constructor_type :
   inductive * mutual_inductive_body * one_inductive_body -> int -> constr
 
-(* Extract information from an inductive name *)
+(** Extract information from an inductive name *)
 
+(** Arity of constructors excluding parameters and local defs *)
 val mis_constr_nargs : inductive -> int array
 val mis_constr_nargs_env : env -> inductive -> int array
 
 val nconstructors : inductive -> int
 
-(* Return the lengths of parameters signature and real arguments signature *)
+(** Return the lengths of parameters signature and real arguments signature *)
 val inductive_nargs : env -> inductive -> int * int
 
 val mis_constructor_nargs_env : env -> constructor -> int
@@ -71,14 +70,14 @@ val get_full_arity_sign : env -> inductive -> rel_context
 
 val allowed_sorts : env -> inductive -> sorts_family list
 
-(* Extract information from an inductive family *)
+(** Extract information from an inductive family *)
 
 type constructor_summary = {
-  cs_cstr : constructor;
-  cs_params : constr list;
-  cs_nargs : int;
-  cs_args : rel_context;
-  cs_concl_realargs : constr array;
+  cs_cstr : constructor;    (* internal name of the constructor *)
+  cs_params : constr list;  (* parameters of the constructor in current ctx *)
+  cs_nargs : int;           (* length of arguments signature (letin included) *)
+  cs_args : rel_context;    (* signature of the arguments (letin included) *)
+  cs_concl_realargs : constr array; (* actual realargs in the concl of cstr *)
 }
 val lift_constructor : int -> constructor_summary -> constructor_summary
 val get_constructor :
@@ -92,22 +91,24 @@ val make_arity_signature : env -> bool -> inductive_family -> rel_context
 val make_arity : env -> bool -> inductive_family -> sorts -> types
 val build_branch_type : env -> bool -> constr -> constructor_summary -> types
 
-(* Raise [Not_found] if not given an valid inductive type *)
+(** Raise [Not_found] if not given an valid inductive type *)
 val extract_mrectype : constr -> inductive * constr list
-val find_mrectype    : env -> evar_map -> constr -> inductive * constr list
-val find_rectype     : env -> evar_map -> constr -> inductive_type
-val find_inductive   : env -> evar_map -> constr -> inductive * constr list
-val find_coinductive : env -> evar_map -> constr -> inductive * constr list
+val find_mrectype    : env -> evar_map -> types -> inductive * constr list
+val find_rectype     : env -> evar_map -> types -> inductive_type
+val find_inductive   : env -> evar_map -> types -> inductive * constr list
+val find_coinductive : env -> evar_map -> types -> inductive * constr list
 
 (********************)
 
-(* Builds the case predicate arity (dependent or not) *)
+(** Builds the case predicate arity (dependent or not) *)
 val arity_of_case_predicate :
   env -> inductive_family -> bool -> sorts -> types
 
 val type_case_branches_with_names :
   env -> inductive * constr list -> constr -> constr ->
     types array * types
+
+(** Annotation for cases *)
 val make_case_info : env -> inductive -> case_style -> case_info
 
 (*i Compatibility

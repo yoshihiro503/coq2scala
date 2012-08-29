@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -13,8 +13,6 @@
 (************************************************************************)
 
 (*i camlp4deps: "parsing/grammar.cma" i*)
-
-(* $Id: eqdecide.ml4 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Util
 open Names
@@ -29,7 +27,6 @@ open Auto
 open Pattern
 open Matching
 open Hipattern
-open Proof_trees
 open Proof_type
 open Tacmach
 open Coqlib
@@ -163,8 +160,7 @@ let decideGralEquality g =
 
 let decideEqualityGoal = tclTHEN intros decideGralEquality
 
-let decideEquality c1 c2 g =
-  let rectype = (pf_type_of g c1) in
+let decideEquality rectype g =
   let decide  = mkGenDecideEqGoal rectype g in
   (tclTHENS (cut decide) [default_auto;decideEqualityGoal]) g
 
@@ -178,13 +174,12 @@ let compare c1 c2 g =
             [(tclTHEN  intro
              (tclTHEN (onLastHyp simplest_case)
                        clear_last));
-             decideEquality c1 c2]) g
+             decideEquality (pf_type_of g c1)]) g
 
 
 (* User syntax *)
 
 TACTIC EXTEND decide_equality
-  [ "decide" "equality" constr(c1) constr(c2) ] -> [ decideEquality c1 c2 ]
 | [ "decide" "equality" ] -> [ decideEqualityGoal ]
 END
 

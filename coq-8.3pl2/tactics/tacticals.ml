@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: tacticals.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Pp
 open Util
@@ -23,7 +21,7 @@ open Refiner
 open Tacmach
 open Clenv
 open Clenvtac
-open Rawterm
+open Glob_term
 open Pattern
 open Matching
 open Genarg
@@ -55,14 +53,14 @@ let tclREPEAT_MAIN   = Refiner.tclREPEAT_MAIN
 let tclFIRST         = Refiner.tclFIRST
 let tclSOLVE         = Refiner.tclSOLVE
 let tclTRY           = Refiner.tclTRY
-let tclINFO          = Refiner.tclINFO
 let tclCOMPLETE      = Refiner.tclCOMPLETE
 let tclAT_LEAST_ONCE = Refiner.tclAT_LEAST_ONCE
 let tclFAIL          = Refiner.tclFAIL
 let tclFAIL_lazy     = Refiner.tclFAIL_lazy
 let tclDO            = Refiner.tclDO
-let tclPROGRESS      = Refiner.tclPROGRESS
+let tclTIMEOUT       = Refiner.tclTIMEOUT
 let tclWEAK_PROGRESS = Refiner.tclWEAK_PROGRESS
+let tclPROGRESS      = Refiner.tclPROGRESS
 let tclNOTSAMEGOAL   = Refiner.tclNOTSAMEGOAL
 let tclTHENTRY       = Refiner.tclTHENTRY
 let tclIFTHENELSE    = Refiner.tclIFTHENELSE
@@ -173,12 +171,9 @@ let fullGoal gl = None :: List.map Option.make (pf_ids_of_hyps gl)
 
 let onAllHyps tac gl = tclMAP tac (pf_ids_of_hyps gl) gl
 let onAllHypsAndConcl tac gl = tclMAP tac (fullGoal gl) gl
-let onAllHypsAndConclLR tac gl = tclMAP tac (List.rev (fullGoal gl)) gl
 
 let tryAllHyps tac gl = tclFIRST_PROGRESS_ON tac (pf_ids_of_hyps gl) gl
 let tryAllHypsAndConcl tac gl = tclFIRST_PROGRESS_ON tac (fullGoal gl) gl
-let tryAllHypsAndConclLR tac gl =
-  tclFIRST_PROGRESS_ON tac (List.rev (fullGoal gl)) gl
 
 let onClause tac cl gls = tclMAP tac (simple_clause_of cl gls) gls
 let onClauseLR tac cl gls = tclMAP tac (List.rev (simple_clause_of cl gls)) gls
@@ -292,7 +287,7 @@ let compute_construtor_signatures isrec (_,k as ity) =
     | Prod (_,_,c), recarg::rest ->
 	let b = match dest_recarg recarg with
 	  | Norec | Imbr _  -> false
-	  | Mrec j  -> isrec & j=k
+	  | Mrec (_,j)  -> isrec & j=k
 	in b :: (analrec c rest)
     | LetIn (_,_,_,c), rest -> false :: (analrec c rest)
     | _, [] -> []
@@ -367,7 +362,8 @@ let general_elim_then_using mk_elim
     match predicate with
        | None   -> elimclause'
        | Some p ->
-           clenv_unify true Reduction.CONV (mkMeta pmv) p elimclause'
+           clenv_unify ~flags:Unification.elim_flags
+             Reduction.CONV (mkMeta pmv) p elimclause'
   in
   elim_res_pf_THEN_i elimclause' branchtacs gl
 

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: type_errors.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Names
 open Term
@@ -20,7 +18,7 @@ type guard_error =
   (* Fixpoints *)
   | NotEnoughAbstractionInFixBody
   | RecursionNotOnInductiveType of constr
-  | RecursionOnIllegalTerm of int * constr * int list * int list
+  | RecursionOnIllegalTerm of int * (env * constr) * int list * int list
   | NotEnoughArgumentsForFixCall of int
   (* CoFixpoints *)
   | CodomainNotInductiveType of constr
@@ -50,7 +48,7 @@ type type_error =
   | CaseNotInductive of unsafe_judgment
   | WrongCaseInfo of inductive * case_info
   | NumberBranches of unsafe_judgment * int
-  | IllFormedBranch of constr * int * constr * constr
+  | IllFormedBranch of constr * constructor * constr * constr
   | Generalization of (name * types) * unsafe_judgment
   | ActualType of unsafe_judgment * types
   | CantApplyBadType of
@@ -111,4 +109,9 @@ let error_ill_formed_rec_body env why lna i fixenv vdefj =
 let error_ill_typed_rec_body env i lna vdefj vargs =
   raise (TypeError (env, IllTypedRecBody (i,lna,vdefj,vargs)))
 
+let error_elim_explain kp ki =
+  match kp,ki with
+  | (InType | InSet), InProp -> NonInformativeToInformative
+  | InType, InSet -> StrongEliminationOnNonSmallType (* if Set impredicative *)
+  | _ -> WrongArity
 

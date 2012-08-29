@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: coqdep.ml 13983 2011-04-08 17:57:56Z herbelin $ *)
 
 open Printf
 open Coqdep_lexer
@@ -40,7 +38,7 @@ let rec warning_mult suf iter =
 let add_coqlib_known phys_dir log_dir f =
   match get_extension f [".vo"] with
     | (basename,".vo") ->
-	let name = log_dir@[basename] in
+        let name = log_dir@[basename] in
 	let paths = suffixes name in
         List.iter (fun f -> Hashtbl.add coqlibKnown f ()) paths
     | _ -> ()
@@ -192,6 +190,7 @@ let coqdep () =
   if Array.length Sys.argv < 2 then usage ();
   parse (List.tl (Array.to_list Sys.argv));
   if not Coq_config.has_natdynlink then option_natdynlk := false;
+  (* NOTE: These directories are searched from last to first *)
   if !Flags.boot then begin
     add_rec_dir add_known "theories" ["Coq"];
     add_rec_dir add_known "plugins" ["Coq"]
@@ -200,7 +199,9 @@ let coqdep () =
     add_rec_dir add_coqlib_known (coqlib//"theories") ["Coq"];
     add_rec_dir add_coqlib_known (coqlib//"plugins") ["Coq"];
     let user = coqlib//"user-contrib" in
-    if Sys.file_exists user then add_rec_dir add_coqlib_known user []
+    if Sys.file_exists user then add_rec_dir add_coqlib_known user [];
+    List.iter (fun s -> add_rec_dir add_coqlib_known s []) Envars.xdg_dirs;
+    List.iter (fun s -> add_rec_dir add_coqlib_known s []) Envars.coqpath;
   end;
   List.iter (fun (f,d) -> add_mli_known f d) !mliAccu;
   List.iter (fun (f,d) -> add_mllib_known f d) !mllibAccu;

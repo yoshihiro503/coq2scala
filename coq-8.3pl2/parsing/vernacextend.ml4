@@ -1,14 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i camlp4use: "pa_extend.cmo q_MLast.cmo" i*)
-
-(* $Id: vernacextend.ml4 13799 2011-01-25 17:38:40Z glondu $ *)
+(*i camlp4deps: "tools/compat5b.cmo" i*)
 
 open Util
 open Genarg
@@ -18,6 +16,7 @@ open Argextend
 open Tacextend
 open Pcoq
 open Egrammar
+open Compat
 
 let rec make_let e = function
   | [] -> e
@@ -28,11 +27,6 @@ let rec make_let e = function
       <:expr< let $lid:p$ = Genarg.out_gen $make_rawwit loc t$ $lid:p$ in $e$ >>
   | _::l -> make_let e l
 
-let add_clause s (_,pt,e) l =
-  let p = make_patt pt in
-  let w = Some (make_when (MLast.loc_of_expr e) pt) in
-  (p, <:vala<w>>, make_let e pt)::l
-
 let check_unicity s l =
   let l' = List.map (fun (_,l,_) -> extract_signature l) l in
   if not (Util.list_distinct l') then
@@ -40,31 +34,37 @@ let check_unicity s l =
       ("Two distinct rules of entry "^s^" have the same\n"^
       "non-terminals in the same order: put them in distinct vernac entries")
 
-let make_clauses s l =
+let make_clause (_,pt,e) =
+  (make_patt pt,
+   vala (Some (make_when (MLast.loc_of_expr e) pt)),
+   make_let e pt)
+
+let make_fun_clauses loc s l =
   check_unicity s l;
-  let default =
-    (<:patt< _ >>,<:vala<None>>,
-     <:expr< failwith "Vernac extension: cannot occur" >>) in
-  List.fold_right (add_clause s) l [default]
+  Compat.make_fun loc (List.map make_clause l)
 
 let mlexpr_of_clause =
   mlexpr_of_list
-    (fun (a,b,c) -> mlexpr_of_list make_prod_item (GramTerminal a::b))
+    (fun (a,b,c) -> mlexpr_of_list make_prod_item 
+       (Option.List.cons (Option.map (fun a -> GramTerminal a) a) b))
 
-let declare_command loc s cl =
+let declare_command loc s nt cl =
+  let se = mlexpr_of_string s in
   let gl = mlexpr_of_clause cl in
-  let icl = make_clauses s cl in
-  <:str_item<
-    declare
-      open Pcoq;
-      open Extrawit;
-      try Vernacinterp.vinterp_add $mlexpr_of_string s$ (fun [ $list:icl$ ])
-      with e -> Pp.pp (Cerrors.explain_exn e);
-      Egrammar.extend_vernac_command_grammar $mlexpr_of_string s$ $gl$;
-    end
-  >>
+  let funcl = make_fun_clauses loc s cl in
+  declare_str_items loc
+    [ <:str_item< do {
+	try Vernacinterp.vinterp_add $se$ $funcl$
+	with e ->
+	  Pp.msg_warning
+	    (Stream.iapp
+	       (Pp.str ("Exception in vernac extend " ^ $se$ ^": "))
+	       (Errors.print e));
+	Egrammar.extend_vernac_command_grammar $se$ $nt$ $gl$
+      } >> ]
 
 open Pcaml
+open PcamlSig
 
 EXTEND
   GLOBAL: str_item;
@@ -72,13 +72,22 @@ EXTEND
     [ [ "VERNAC"; "COMMAND"; "EXTEND"; s = UIDENT;
         OPT "|"; l = LIST1 rule SEP "|";
         "END" ->
-         declare_command loc s l ] ]
+         declare_command loc s <:expr<None>> l 
+      | "VERNAC"; nt = LIDENT ; "EXTEND"; s = UIDENT;
+        OPT "|"; l = LIST1 rule SEP "|";
+        "END" ->
+          declare_command loc s <:expr<Some $lid:nt$>> l ] ]
   ;
+  (* spiwack: comment-by-guessing: it seems that the isolated string (which
+      otherwise could have been another argument) is not passed to the
+      VernacExtend interpreter function to discriminate between the clauses. *)
   rule:
     [ [ "["; s = STRING; l = LIST0 args; "]"; "->"; "["; e = Pcaml.expr; "]"
         ->
       if s = "" then Util.user_err_loc (loc,"",Pp.str"Command name is empty.");
-      (s,l,<:expr< fun () -> $e$ >>)
+      (Some s,l,<:expr< fun () -> $e$ >>)
+      | "[" ; "-" ; l = LIST1 args ; "]" ; "->" ; "[" ; e = Pcaml.expr ; "]" ->
+	  (None,l,<:expr< fun () -> $e$ >>)
     ] ]
   ;
   args:

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -23,8 +23,6 @@
 (* to the Newton Institute for providing an exceptional work environment    *)
 (* in Summer 1995. Several developments by E. Ledinot were an inspiration.  *)
 (****************************************************************************)
-
-(*i $Id: Finite_sets_facts.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Export Finite_sets.
 Require Export Constructive_sets.
@@ -64,7 +62,7 @@ Section Finite_sets_facts.
   Theorem Singleton_is_finite : forall x:U, Finite U (Singleton U x).
   Proof.
     intro x; rewrite <- (Empty_set_zero U (Singleton U x)).
-    change (Finite U (Add U (Empty_set U) x)) in |- *; auto with sets.
+    change (Finite U (Add U (Empty_set U) x)); auto with sets.
   Qed.
 
   Theorem Union_preserves_Finite :
@@ -136,15 +134,15 @@ Section Finite_sets_facts.
     cut (S (pred n) = pred (S n)).
     intro H'5; rewrite <- H'5.
     apply card_add; auto with sets.
-    red in |- *; intro H'6; elim H'6.
+    red; intro H'6; elim H'6.
     intros H'7 H'8; try assumption.
     elim H'1; auto with sets.
-    unfold pred at 2 in |- *; symmetry  in |- *.
+    unfold pred at 2; symmetry .
     apply S_pred with (m := 0).
-    change (n > 0) in |- *.
+    change (n > 0).
     apply inh_card_gt_O with (X := X); auto with sets.
     apply Inhabited_intro with (x := x0); auto with sets.
-    red in |- *; intro H'3.
+    red; intro H'3.
     apply H'1.
     elim H'3; auto with sets.
     rewrite H'3; auto with sets.
@@ -154,7 +152,7 @@ Section Finite_sets_facts.
     intro H'4; rewrite H'4; auto with sets.
     intros H'3 H'4; try assumption.
     absurd (In U (Add U X x) x0); auto with sets.
-    red in |- *; intro H'5; try exact H'5.
+    red; intro H'5; try exact H'5.
     lapply (Add_inv U X x x0); tauto.
   Qed.
 
@@ -175,21 +173,21 @@ Section Finite_sets_facts.
     clear H'2 c2 Y.
     intros X0 c2 H'2 H'3 x0 H'4 H'5.
     elim (classic (In U X0 x)).
-    intro H'6; apply f_equal with nat.
+    intro H'6; apply f_equal.
     apply H'0 with (Y := Subtract U (Add U X0 x0) x).
     elimtype (pred (S c2) = c2); auto with sets.
     apply card_soustr_1; auto with sets.
     rewrite <- H'5.
     apply Sub_Add_new; auto with sets.
     elim (classic (x = x0)).
-    intros H'6 H'7; apply f_equal with nat.
+    intros H'6 H'7; apply f_equal.
     apply H'0 with (Y := X0); auto with sets.
     apply Simplify_add with (x := x); auto with sets.
-    pattern x at 2 in |- *; rewrite H'6; auto with sets.
+    pattern x at 2; rewrite H'6; auto with sets.
     intros H'6 H'7.
     absurd (Add U X x = Add U X0 x0); auto with sets.
     clear H'0 H' H'3 n H'5 H'4 H'2 H'1 c2.
-    red in |- *; intro H'.
+    red; intro H'.
     lapply (Extension U (Add U X x) (Add U X0 x0)); auto with sets.
     clear H'.
     intro H'; red in H'.
@@ -256,7 +254,7 @@ Section Finite_sets_facts.
     apply H'0 with (Y := X0); auto with sets arith.
     apply sincl_add_x with (x := x0).
     rewrite <- H'6; auto with sets arith.
-    pattern x0 at 1 in |- *; rewrite <- H'6; trivial with sets arith.
+    pattern x0 at 1; rewrite <- H'6; trivial with sets arith.
     intros H'6 H'7; red in H'5.
     elim H'5; intros H'8 H'9; try exact H'8; clear H'5.
     red in H'8.

@@ -1,14 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: summary.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
-(* This module registers the declaration of global tables, which will be kept
+(** This module registers the declaration of global tables, which will be kept
    in synchronization during the various backtracks of the system. *)
 
 type 'a summary_declaration = {

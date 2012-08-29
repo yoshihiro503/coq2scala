@@ -1,7 +1,6 @@
 open Printer
 open Util
 open Term
-open Termops
 open Namegen
 open Names
 open Declarations
@@ -114,9 +113,8 @@ let compute_new_princ_type_from_rel rel_to_fun sorts princ_type =
   in
   let pre_princ =
     it_mkProd_or_LetIn
-      ~init:
       (it_mkProd_or_LetIn
-	 ~init:(Option.fold_right
+	 (Option.fold_right
 			   mkProd_or_LetIn
 			   princ_type_info.indarg
 			   princ_type_info.concl
@@ -140,15 +138,9 @@ let compute_new_princ_type_from_rel rel_to_fun sorts princ_type =
   in
   let dummy_var = mkVar (id_of_string "________") in
   let mk_replacement c i args =
-    let res = mkApp(rel_to_fun.(i),Array.map pop (array_get_start args)) in
+    let res = mkApp(rel_to_fun.(i), Array.map Termops.pop (array_get_start args)) in
 (*     observe (str "replacing " ++ pr_lconstr c ++ str " by "  ++ pr_lconstr res); *)
     res
-  in
-  let rec has_dummy_var t  =
-    fold_constr
-      (fun b t -> b || (eq_constr t dummy_var) || (has_dummy_var t))
-      false
-      t
   in
   let rec compute_new_princ_type remove env pre_princ : types*(constr list) =
     let (new_princ_type,_) as res =
@@ -199,58 +191,58 @@ let compute_new_princ_type_from_rel rel_to_fun sorts princ_type =
     begin
       try
 	let new_t,binders_to_remove_from_t = compute_new_princ_type remove env t in
-	let new_x : name = get_name (ids_of_context env) x in
+	let new_x : name = get_name (Termops.ids_of_context env) x in
 	let new_env = Environ.push_rel (x,None,t) env in
 	let new_b,binders_to_remove_from_b = compute_new_princ_type remove new_env b in
 	 if List.exists (eq_constr (mkRel 1)) binders_to_remove_from_b
-	 then (pop new_b),filter_map (eq_constr (mkRel 1)) pop binders_to_remove_from_b
+	 then (Termops.pop new_b), filter_map (eq_constr (mkRel 1)) Termops.pop binders_to_remove_from_b
 	 else
 	   (
 	     bind_fun(new_x,new_t,new_b),
 	     list_union_eq
 	       eq_constr
 	       binders_to_remove_from_t
-	       (List.map pop binders_to_remove_from_b)
+	       (List.map Termops.pop binders_to_remove_from_b)
 	   )
 
        with
 	 | Toberemoved ->
 (* 	    observe (str "Decl of "++Ppconstr.pr_name x ++ str " is removed "); *)
 	    let new_b,binders_to_remove_from_b = compute_new_princ_type remove env (substnl [dummy_var] 1 b)  in
-	    new_b, List.map pop binders_to_remove_from_b
+	    new_b, List.map Termops.pop binders_to_remove_from_b
 	| Toberemoved_with_rel (n,c) ->
 (* 	    observe (str "Decl of "++Ppconstr.pr_name x ++ str " is removed "); *)
 	    let new_b,binders_to_remove_from_b = compute_new_princ_type remove env (substnl [c] n b)  in
-	    new_b, list_add_set_eq eq_constr (mkRel n) (List.map pop binders_to_remove_from_b)
+	    new_b, list_add_set_eq eq_constr (mkRel n) (List.map Termops.pop binders_to_remove_from_b)
     end
   and compute_new_princ_type_for_letin remove env x v t b =
     begin
       try
 	let new_t,binders_to_remove_from_t = compute_new_princ_type remove env t in
 	let new_v,binders_to_remove_from_v = compute_new_princ_type remove env v in
-	let new_x : name = get_name (ids_of_context env) x in
+	let new_x : name = get_name (Termops.ids_of_context env) x in
 	let new_env = Environ.push_rel (x,Some v,t) env in
 	let new_b,binders_to_remove_from_b = compute_new_princ_type remove new_env b in
 	if List.exists (eq_constr (mkRel 1)) binders_to_remove_from_b
-	then (pop new_b),filter_map (eq_constr (mkRel 1)) pop binders_to_remove_from_b
+	then (Termops.pop new_b),filter_map (eq_constr (mkRel 1)) Termops.pop binders_to_remove_from_b
 	else
 	  (
 	    mkLetIn(new_x,new_v,new_t,new_b),
 	    list_union_eq
 	      eq_constr
 	      (list_union_eq eq_constr binders_to_remove_from_t binders_to_remove_from_v)
-	      (List.map pop binders_to_remove_from_b)
+	      (List.map Termops.pop binders_to_remove_from_b)
 	  )
 
       with
 	| Toberemoved ->
 (* 	    observe (str "Decl of "++Ppconstr.pr_name x ++ str " is removed "); *)
 	    let new_b,binders_to_remove_from_b = compute_new_princ_type remove env (substnl [dummy_var] 1 b)  in
-	    new_b, List.map pop binders_to_remove_from_b
+	    new_b, List.map Termops.pop binders_to_remove_from_b
 	| Toberemoved_with_rel (n,c) ->
 (* 	    observe (str "Decl of "++Ppconstr.pr_name x ++ str " is removed "); *)
 	    let new_b,binders_to_remove_from_b = compute_new_princ_type remove env (substnl [c] n b)  in
-	    new_b, list_add_set_eq eq_constr (mkRel n) (List.map pop binders_to_remove_from_b)
+	    new_b, list_add_set_eq eq_constr (mkRel n) (List.map Termops.pop binders_to_remove_from_b)
     end
   and  compute_new_princ_type_with_acc remove env e (c_acc,to_remove_acc)  =
     let new_e,to_remove_from_e = compute_new_princ_type remove env e
@@ -267,10 +259,10 @@ let compute_new_princ_type_from_rel rel_to_fun sorts princ_type =
       (lift (List.length ptes_vars) pre_res)
   in
   it_mkProd_or_LetIn
-    ~init:(it_mkProd_or_LetIn
-	     ~init:pre_res (List.map (fun (id,t,b) -> Name(Hashtbl.find tbl id), t,b)
-			      new_predicates)
-	  )
+    (it_mkProd_or_LetIn
+       pre_res (List.map (fun (id,t,b) -> Name(Hashtbl.find tbl id), t,b)
+          	      new_predicates)
+    )
     princ_type_info.params
 
 
@@ -283,7 +275,7 @@ let change_property_sort toSort princ princName =
      compose_prod args (mkSort toSort)
     )
   in
-  let princName_as_constr = Tacinterp.constr_of_id (Global.env ()) princName in
+  let princName_as_constr = Constrintern.global_reference princName in
   let init =
     let nargs =  (princ_info.nparams + (List.length  princ_info.predicates)) in
     mkApp(princName_as_constr,
@@ -291,8 +283,7 @@ let change_property_sort toSort princ princName =
 	    (fun i -> mkRel (nargs - i )))
   in
   it_mkLambda_or_LetIn
-    ~init:
-    (it_mkLambda_or_LetIn ~init
+    (it_mkLambda_or_LetIn init
        (List.map change_sort_in_predicate princ_info.predicates)
     )
     princ_info.params
@@ -384,10 +375,9 @@ let generate_functional_principle
 	(*       Pp.msgnl (str "new principle := " ++ pr_lconstr value); *)
 	let ce =
 	  { const_entry_body = value;
+            const_entry_secctx = None;
 	    const_entry_type = None;
-	    const_entry_opaque = false;
-	    const_entry_boxed = Flags.boxed_definitions()
-	  }
+	    const_entry_opaque = false }
 	in
 	ignore(
 	  Declare.declare_constant
@@ -450,7 +440,7 @@ let get_funs_constant mp dp =
   in
   function const ->
     let find_constant_body const =
-      match (Global.lookup_constant const ).const_body with
+      match body_of_constant (Global.lookup_constant const) with
 	| Some b ->
 	    let body = force b in
 	    let body = Tacred.cbv_norm_flags
@@ -475,7 +465,7 @@ let get_funs_constant mp dp =
       let first_params = List.hd l_params  in
       List.iter
 	(fun params ->
-	   if not ((=) first_params params)
+	   if not (list_equal (fun (n1, c1) (n2, c2) -> n1 = n2 && eq_constr c1 c2) first_params params)
 	   then error "Not a mutal recursive block"
 	)
 	l_params
@@ -493,7 +483,10 @@ let get_funs_constant mp dp =
 	in
 	let first_infos = extract_info true (List.hd l_bodies) in
 	let check body  = (* Hope this is correct *)
-	  if not (first_infos = (extract_info false body))
+	  let eq_infos (ia1, na1, ta1, ca1) (ia2, na2, ta2, ca2) =
+	    ia1 = ia2 && na1 = na2 && array_equal eq_constr ta1 ta2 && array_equal eq_constr ca1 ca2
+	  in
+	  if not (eq_infos first_infos (extract_info false body))
 	  then  error "Not a mutal recursive block"
 	in
 	List.iter check l_bodies
@@ -504,7 +497,7 @@ let get_funs_constant mp dp =
 exception No_graph_found
 exception Found_type of int
 
-let make_scheme (fas : (constant*Rawterm.rawsort) list) : Entries.definition_entry list =
+let make_scheme (fas : (constant*Glob_term.glob_sort) list) : Entries.definition_entry list =
   let env = Global.env ()
   and sigma = Evd.empty in
   let funs = List.map fst fas in
@@ -584,7 +577,7 @@ let make_scheme (fas : (constant*Rawterm.rawsort) list) : Entries.definition_ent
     let finfos = find_Function_infos this_block_funs.(0) in
     try
       let equation =  Option.get finfos.equation_lemma in
-      (Global.lookup_constant equation).Declarations.const_opaque
+      Declarations.is_opaque (Global.lookup_constant equation)
     with Option.IsNone -> (* non recursive definition *)
       false
   in
@@ -639,7 +632,7 @@ let make_scheme (fas : (constant*Rawterm.rawsort) list) : Entries.definition_ent
 	     const
 	 with Found_type i ->
 	   let princ_body =
-	     Termops.it_mkLambda_or_LetIn ~init:(mkFix((idxs,i),decl)) ctxt
+	     Termops.it_mkLambda_or_LetIn (mkFix((idxs,i),decl)) ctxt
 	   in
 	   {const with
 	      Entries.const_entry_body = princ_body;
@@ -688,7 +681,7 @@ let build_case_scheme fa =
   let env = Global.env ()
   and sigma = Evd.empty in
 (*   let id_to_constr id =  *)
-(*     Tacinterp.constr_of_id env  id *)
+(*     Constrintern.global_reference  id *)
 (*   in  *)
   let funs =  (fun (_,f,_) ->
 		 try Libnames.constr_of_global (Nametab.global f)

@@ -6,8 +6,6 @@
 (*         *       GNU Lesser General Public License Version 2.1       *)
 (***********************************************************************)
 
-(* $Id: FSetWeakList.v 12641 2010-01-07 15:32:52Z letouzey $ *)
-
 (** * Finite sets library *)
 
 (** This file proposes an implementation of the non-dependant

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Sumbool.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (** Here are collected some results about the type sumbool (see INIT/Specif.v)
    [sumbool A B], which is written [{A}+{B}], is the informative
@@ -68,4 +66,4 @@ Definition bool_of_sumbool :
   intros A B H.
   elim H; intro; [exists true | exists false]; assumption.
 Defined.
-Implicit Arguments bool_of_sumbool.
+Arguments bool_of_sumbool : default implicits.

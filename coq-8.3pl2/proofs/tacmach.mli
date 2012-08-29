@@ -1,33 +1,27 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: tacmach.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
-(*i*)
 open Names
 open Term
 open Sign
 open Environ
 open Evd
 open Reduction
-open Proof_trees
 open Proof_type
 open Refiner
 open Redexpr
 open Tacexpr
-open Rawterm
+open Glob_term
 open Pattern
-(*i*)
 
-(* Operations for handling terms under a local typing context. *)
+(** Operations for handling terms under a local typing context. *)
 
 type 'a sigma   = 'a Evd.sigma;;
-type validation = Proof_type.validation;;
 type tactic     = Proof_type.tactic;;
 
 val sig_it  : 'a sigma   -> 'a
@@ -38,7 +32,7 @@ val re_sig : 'a -> evar_map -> 'a sigma
 val unpackage : 'a sigma -> evar_map ref * 'a
 val repackage : evar_map ref -> 'a -> 'a sigma
 val apply_sig_tac :
-  evar_map ref -> (goal sigma -> (goal list) sigma * validation) -> goal -> (goal list) * validation
+  evar_map ref -> (goal sigma -> (goal list) sigma) -> goal -> (goal list) 
 
 val pf_concl              : goal sigma -> types
 val pf_env                : goal sigma -> env
@@ -53,9 +47,6 @@ val pf_parse_const        : goal sigma -> string -> constr
 val pf_type_of            : goal sigma -> constr -> types
 val pf_check_type         : goal sigma -> constr -> types -> unit
 val pf_hnf_type_of        : goal sigma -> constr -> types
-
-val pf_interp_constr      : goal sigma -> Topconstr.constr_expr -> constr
-val pf_interp_type        : goal sigma -> Topconstr.constr_expr -> types
 
 val pf_get_hyp            : goal sigma -> identifier -> named_declaration
 val pf_get_hyp_typ        : goal sigma -> identifier -> types
@@ -90,40 +81,8 @@ val pf_conv_x_leq  : goal sigma -> constr -> constr -> bool
 val pf_matches     : goal sigma -> constr_pattern -> constr -> patvar_map
 val pf_is_matching : goal sigma -> constr_pattern -> constr -> bool
 
-type transformation_tactic = proof_tree -> (goal list * validation)
 
-val frontier : transformation_tactic
-
-
-(*s Functions for handling the state of the proof editor. *)
-
-type pftreestate = Refiner.pftreestate
-
-val proof_of_pftreestate    : pftreestate -> proof_tree
-val cursor_of_pftreestate   : pftreestate -> int list
-val is_top_pftreestate      : pftreestate -> bool
-val evc_of_pftreestate      : pftreestate -> evar_map
-val top_goal_of_pftreestate : pftreestate -> goal sigma
-val nth_goal_of_pftreestate : int -> pftreestate -> goal sigma
-val traverse                : int -> pftreestate -> pftreestate
-val weak_undo_pftreestate   : pftreestate -> pftreestate
-val solve_nth_pftreestate   : int -> tactic -> pftreestate -> pftreestate
-val solve_pftreestate       : tactic -> pftreestate -> pftreestate
-val mk_pftreestate          : goal -> pftreestate
-val extract_open_pftreestate : pftreestate -> constr * Termops.meta_type_map
-val extract_pftreestate     : pftreestate -> constr
-val first_unproven          : pftreestate -> pftreestate
-val last_unproven           : pftreestate -> pftreestate
-val nth_unproven            : int -> pftreestate -> pftreestate
-val node_prev_unproven      : int -> pftreestate -> pftreestate
-val node_next_unproven      : int -> pftreestate -> pftreestate
-val next_unproven           : pftreestate -> pftreestate
-val prev_unproven           : pftreestate -> pftreestate
-val top_of_tree             : pftreestate -> pftreestate
-val change_constraints_pftreestate :
-  evar_map -> pftreestate -> pftreestate
-
-(*s The most primitive tactics. *)
+(** {6 The most primitive tactics. } *)
 
 val refiner                   : rule -> tactic
 val introduction_no_check     : identifier -> tactic
@@ -142,7 +101,7 @@ val mutual_fix      :
   identifier -> int -> (identifier * int * constr) list -> int -> tactic
 val mutual_cofix    : identifier -> (identifier * constr) list -> int -> tactic
 
-(*s The most primitive tactics with consistency and type checking *)
+(** {6 The most primitive tactics with consistency and type checking } *)
 
 val introduction     : identifier -> tactic
 val internal_cut     : bool -> identifier -> types -> tactic
@@ -155,11 +114,11 @@ val thin_body        : identifier list -> tactic
 val move_hyp         : bool -> identifier -> identifier move_location -> tactic
 val rename_hyp       : (identifier*identifier) list -> tactic
 
-(*s Tactics handling a list of goals. *)
+(** {6 Tactics handling a list of goals. } *)
 
 type validation_list = proof_tree list -> proof_tree list
 
-type tactic_list = (goal list sigma) -> (goal list sigma) * validation_list
+type tactic_list = Refiner.tactic_list
 
 val first_goal         : 'a list sigma -> 'a sigma
 val goal_goal_list     : 'a sigma -> 'a list sigma
@@ -169,6 +128,6 @@ val tactic_list_tactic : tactic_list -> tactic
 val tclFIRSTLIST       : tactic_list list -> tactic_list
 val tclIDTAC_list      : tactic_list
 
-(*s Pretty-printing functions (debug only). *)
+(** {6 Pretty-printing functions (debug only). } *)
 val pr_gls    : goal sigma -> Pp.std_ppcmds
 val pr_glls   : goal list sigma -> Pp.std_ppcmds

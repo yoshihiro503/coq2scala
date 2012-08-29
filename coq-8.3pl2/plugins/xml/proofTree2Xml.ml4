@@ -14,11 +14,6 @@
 
 let prooftreedtdname = "http://mowgli.cs.unibo.it/dtd/prooftree.dtd";;
 
-let std_ppcmds_to_string s =
-   Pp.msg_with Format.str_formatter s;
-   Format.flush_str_formatter ()
-;;
-
 let idref_of_id id = "v" ^ id;;
 
 (* Transform a constr to an Xml.token Stream.t *)
@@ -149,22 +144,24 @@ Pp.ppnl (Pp.(++) (Pp.str
          Proof2aproof.ProofTreeHash.find proof_tree_to_flattened_proof_tree node
         in begin
         match tactic_expr with
-        | T.TacArg (T.Tacexp _) ->
+        | T.TacArg (_,T.Tacexp _) ->
             (* We don't need to keep the level of abstraction introduced at *)
             (* user-level invocation of tactic... (see Tacinterp.hide_interp)*)
             aux flat_proof old_hyps
         | _ ->
          (****** la tactique employee *)
 	 let prtac = Pptactic.pr_tactic (Global.env()) in
-         let tac = std_ppcmds_to_string (prtac tactic_expr) in
+         let tac = Pp.string_of_ppcmds (prtac tactic_expr) in
          let tacname= first_word tac in
          let of_attribute = ("name",tacname)::("script",tac)::of_attribute in
 
          (****** le but *)
-         let {Evd.evar_concl=concl;
-              Evd.evar_hyps=hyps}=goal in
+
+	 let concl = Goal.V82.concl sigma goal in
+	 let hyps = Goal.V82.hyps sigma goal in
 
          let env = Global.env_of_context hyps in
+	   
 
          let xgoal =
           X.xml_nempty "Goal" [] (constr_to_xml concl sigma env) in
@@ -188,14 +185,12 @@ Pp.ppnl (Pp.(++) (Pp.str
           [<(build_hyps new_hyps) ; (aux flat_proof nhyps)>]
         end
 
-     | {PT.ref=Some((PT.Nested(PT.Proof_instr (_,_),_)|PT.Decl_proof _),nodes)} ->
-         Util.anomaly "Not Implemented"
-
      | {PT.ref=Some(PT.Daimon,_)} ->
          X.xml_empty "Hidden_open_goal" of_attribute
 
      | {PT.ref=None;PT.goal=goal} ->
          X.xml_empty "Open_goal" of_attribute
+     | {PT.ref=Some(PT.Decl_proof _, _)} -> failwith "TODO: xml and decl_proof"
   in
    [< X.xml_cdata "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n" ;
       X.xml_cdata ("<!DOCTYPE ProofTree SYSTEM \""^prooftreedtdname ^"\">\n\n");

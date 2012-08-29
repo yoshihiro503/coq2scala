@@ -2,7 +2,7 @@
 
 (* Submitted by Pierre Crégut *)
 (* Checks substitution of x *)
-Ltac f x := unfold x in |- *; idtac.
+Ltac f x := unfold x; idtac.
 
 Lemma lem1 : 0 + 0 = 0.
 f plus.
@@ -86,7 +86,7 @@ assert t.
 exact H.
 intro H1.
 apply H.
-symmetry  in |- *.
+symmetry .
 assumption.
 Qed.
 
@@ -105,7 +105,7 @@ sym'.
 exact H.
 intro H1.
 apply H.
-symmetry  in |- *.
+symmetry .
 assumption.
 Qed.
 
@@ -193,7 +193,7 @@ Abort.
 (* Used to fail in V8.1 *)
 
 Tactic Notation "test" constr(t) integer(n) :=
-   set (k := t) in |- * at n.
+   set (k := t) at n.
 
 Goal forall x : nat, x = 1 -> x + x + x = 3.
 intros x H.
@@ -244,6 +244,29 @@ reflexivity.
 apply I.
 Qed.
 
+(* Test binding of open terms with non linear matching *)
+
+Ltac f_non_linear t :=
+  match t with
+    (forall x y, ?u = 0) -> (forall y x, ?u = 0) =>
+       assert (forall x y:nat, u = u)
+  end.
+
+Goal True.
+f_non_linear ((forall x y, x+y = 0) -> (forall x y, y+x = 0)).
+reflexivity.
+f_non_linear ((forall a b, a+b = 0) -> (forall a b, b+a = 0)).
+reflexivity.
+f_non_linear ((forall a b, a+b = 0) -> (forall x y, y+x = 0)).
+reflexivity.
+f_non_linear ((forall x y, x+y = 0) -> (forall a b, b+a = 0)).
+reflexivity.
+f_non_linear ((forall x y, x+y = 0) -> (forall y x, x+y = 0)).
+reflexivity.
+f_non_linear ((forall x y, x+y = 0) -> (forall y x, y+x = 0)) (* should fail *)
+|| exact I.
+Qed.
+
 (* Test regular failure when clear/intro breaks soundness of the
    interpretation of terms in current environment *)
 
@@ -275,3 +298,7 @@ evar(foo:nat).
 let evval := eval compute in foo in not_eq evval 1.
 let evval := eval compute in foo in not_eq 1 evval.
 Abort.
+
+(* Check that this returns an error and not an anomaly (see r13667) *)
+
+Fail Local Tactic Notation "myintro" := intro.

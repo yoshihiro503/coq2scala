@@ -1,19 +1,17 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Compare_dec.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Import Le.
 Require Import Lt.
 Require Import Gt.
 Require Import Decidable.
 
-Open Local Scope nat_scope.
+Local Open Scope nat_scope.
 
 Implicit Types m n x y : nat.
 
@@ -22,21 +20,21 @@ Proof.
   destruct n; auto with arith.
 Defined.
 
-Definition lt_eq_lt_dec : forall n m, {n < m} + {n = m} + {m < n}.
+Definition lt_eq_lt_dec n m : {n < m} + {n = m} + {m < n}.
 Proof.
-  induction n; destruct m; auto with arith.
+  induction n in m |- *; destruct m; auto with arith.
   destruct (IHn m) as [H|H]; auto with arith.
   destruct H; auto with arith.
 Defined.
 
-Definition gt_eq_gt_dec : forall n m, {m > n} + {n = m} + {n > m}.
+Definition gt_eq_gt_dec n m : {m > n} + {n = m} + {n > m}.
 Proof.
   intros; apply lt_eq_lt_dec; assumption.
 Defined.
 
-Definition le_lt_dec : forall n m, {n <= m} + {m < n}.
+Definition le_lt_dec n m : {n <= m} + {m < n}.
 Proof.
-  induction n.
+  induction n in m |- *.
   auto with arith.
   destruct m.
   auto with arith.
@@ -140,7 +138,7 @@ Proof.
 Qed.
 
 
-(** A ternary comparison function in the spirit of [Zcompare]. *)
+(** A ternary comparison function in the spirit of [Z.compare]. *)
 
 Fixpoint nat_compare n m :=
   match n, m with
@@ -200,15 +198,15 @@ Proof.
    apply -> nat_compare_lt; auto.
 Qed.
 
-Lemma nat_compare_spec : forall x y, CompSpec eq lt x y (nat_compare x y).
+Lemma nat_compare_spec :
+  forall x y, CompareSpec (x=y) (x<y) (y<x) (nat_compare x y).
 Proof.
  intros.
- destruct (nat_compare x y) as [ ]_eqn; constructor.
+ destruct (nat_compare x y) eqn:?; constructor.
  apply nat_compare_eq; auto.
  apply <- nat_compare_lt; auto.
  apply <- nat_compare_gt; auto.
 Qed.
-
 
 (** Some projections of the above equivalences. *)
 
@@ -258,7 +256,7 @@ Lemma leb_correct : forall m n, m <= n -> leb m n = true.
 Proof.
   induction m as [| m IHm]. trivial.
   destruct n. intro H. elim (le_Sn_O _ H).
-  intros. simpl in |- *. apply IHm. apply le_S_n. assumption.
+  intros. simpl. apply IHm. apply le_S_n. assumption.
 Qed.
 
 Lemma leb_complete : forall m n, leb m n = true -> m <= n.

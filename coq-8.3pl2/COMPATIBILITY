@@ -1,52 +1,51 @@
-Potential sources of incompatibilities between Coq V8.2 and V8.3
+Potential sources of incompatibilities between Coq V8.3 and V8.4
 ----------------------------------------------------------------
 
 (see also file CHANGES)
 
-The main incompatibilities between 8.2 and 8.3 are the following
+The main known incompatibilities between 8.3 and 8.4 are consequences
+of the following changes:
 
-- When defining objects using tactics as in "Definition f binders :
-  type.", the binders are automatically introduced in the context. The
-  former behavior can be restored by using "Unset Automatic
-  Introduction" (for local modification) or "Global Unset Automatic
-  Introduction" (for inheritance through Require).
+- The reorganization of the library of numbers:
 
-- For setoid rewriting, Morphism has been renamed into Proper.
+  Several definitions have new names or are defined in modules of
+  different names, but a special care has been taken to have this
+  renaming transparent for the user thanks to compatibility notations.
 
-In general, most sources of incompatibilities can be avoided by
-calling coqtop or coqc with option "-compat 8.2". The sources of
-incompatibilities listed below must however be treated manually.
+  However some definitions have changed, what might require some
+  adaptations. The most noticeable examples are:
+  - The "?=" notation which now bind to Pos.compare rather than former
+    Pcompare (now Pos.compare_cont).
+  - Changes in names may induce different automatically generated
+    names in proof scripts (e.g. when issuing "destruct Z_le_gt_dec").
+  - Z.add has a new definition, hence, applying "simpl" on subterms of
+    its body might give different results than before.
+  - BigN.shiftl and BigN.shiftr have reversed arguments order, the
+    power function in BigN now takes two BigN.
 
-Syntax
+- Other changes in libraries:
 
-- The word "by" is now a keyword and can no longer be used as an identifier.
+  - The definition of functions over "vectors" (list of fixed length)
+    have changed.
+  - TheoryList.v has been removed.
 
-Type inference
+- Slight changes in tactics:
 
-- Many changes in using classes.
+  - Less unfolding of fixpoints when applying destruct or inversion on
+    a fixpoint hiding an inductive type (add an extra call to simpl to
+    preserve compatibility).
+  - Less unexpected local definitions when applying "destruct"
+    (incompatibilities solvable by adapting name hypotheses).
+  - Tactic "apply" might succeed more often, e.g. by now solving
+    pattern-matching of the form ?f x y = g(x,y) (compatibility
+    ensured by using "Unset Tactic Pattern Unification"), but also
+    because it supports (full) betaiota (using "simple apply" might
+    then help).
+  - Tactic autorewrite does no longer instantiate pre-existing
+    existential variables.
+  - Tactic "info" is now available only for auto, eauto and trivial.
 
-Library
+- Miscellaneous changes:
 
-- New identifiers of the library can hide identifiers. This can be
-  solved by changing the order of Require or by qualifying the
-  identifier with the name of its module.
-
-- Reorganisation of library (esp. FSets, Sorting, Numbers) may have
-  changed or removed names around.
-
-- Infix notation "++" has now to be set at level 60. [LinAlg]
-
-- When using the Programs library or any feature that uses it,
-  (lemmas about measure have a different form, ...).
-
-Tactics
-
-- The synchronization of introduction names and quantified hypotheses
-  names may exceptionally lead to different names in "induction"
-  (usually a name with lower index is required).
-
-- More checks in some commands (e.g. in Hint) may lead to forbid some
-  meaningless part of them.
-
-- When rewriting using setoid equality, the default equality found
-  might be different.
+  - The command "Load" is now atomic for backtracking (use "Unset
+    Atomic Load" for compatibility).

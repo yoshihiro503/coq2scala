@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Inverse_Image.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (** Author: Bruno Barras *)
 
@@ -33,7 +31,7 @@ Section Inverse_Image.
 
   Theorem wf_inverse_image : well_founded R -> well_founded Rof.
   Proof.
-    red in |- *; intros; apply Acc_inverse_image; auto.
+    red; intros; apply Acc_inverse_image; auto.
   Qed.
 
   Variable F : A -> B -> Prop.
@@ -51,7 +49,7 @@ Section Inverse_Image.
 
   Theorem wf_inverse_rel : well_founded R -> well_founded RoF.
   Proof.
-    red in |- *; constructor; intros.
+    red; constructor; intros.
     case H0; intros.
     apply (Acc_inverse_rel x); auto.
   Qed.

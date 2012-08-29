@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: nameops.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Pp
 open Util
@@ -111,8 +109,6 @@ let add_suffix id s = id_of_string (string_of_id id ^ s)
 let add_prefix s id = id_of_string (s ^ string_of_id id)
 
 let atompart_of_id id = fst (repr_ident id)
-
-let lift_ident = lift_subscript
 
 (* Names *)
 

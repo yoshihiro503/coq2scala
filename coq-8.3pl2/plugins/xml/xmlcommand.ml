@@ -527,8 +527,10 @@ let print internal glob_ref kind xml_library_root =
         Cic2acic.Variable kn,mk_variable_obj id body typ
     | Ln.ConstRef kn ->
        let id = N.id_of_label (N.con_label kn) in
-       let {D.const_body=val0 ; D.const_type = typ ; D.const_hyps = hyps} =
-        G.lookup_constant kn in
+       let cb = G.lookup_constant kn in
+       let val0 = D.body_of_constant cb in
+       let typ = cb.D.const_type in
+       let hyps = cb.D.const_hyps in
        let typ = Typeops.type_of_constant_type (Global.env()) typ in
         Cic2acic.Constant kn,mk_constant_obj id val0 typ variables hyps
     | Ln.IndRef (kn,_) ->
@@ -557,43 +559,13 @@ let print_ref qid fn =
 (*  where dest is either None (for stdout) or (Some filename) *)
 (* pretty prints via Xml.pp the proof in progress on dest     *)
 let show_pftreestate internal fn (kind,pftst) id =
- let pf = Tacmach.proof_of_pftreestate pftst in
- let typ = (Proof_trees.goal_of_proof pf).Evd.evar_concl in
- let val0,evar_map,proof_tree_to_constr,proof_tree_to_flattened_proof_tree,
-     unshared_pf
- =
-  Proof2aproof.extract_open_pftreestate pftst in
- let env = Global.env () in
- let obj =
-  mk_current_proof_obj (fst kind = Decl_kinds.Local) id val0 typ evar_map env in
- let uri =
-  match kind with
-     Decl_kinds.Local, _ ->
-      let uri =
-       "cic:/" ^ String.concat "/"
-        (Cic2acic.token_list_of_path (Lib.cwd ()) id Cic2acic.TVariable)
-      in
-      let kind_of_var = "VARIABLE","LocalFact" in
-      (match internal with
-       | Declare.KernelSilent -> ()
-       | _ -> print_object_kind uri kind_of_var
-       ); uri
-   | Decl_kinds.Global, _ ->
-      let uri = Cic2acic.uri_of_declaration id Cic2acic.TConstant in
-      (match internal with
-       | Declare.KernelSilent -> ()
-       | _ -> print_object_kind uri (kind_of_global_goal kind)
-      ); uri
- in
-  print_object uri obj evar_map
-   (Some (Tacmach.evc_of_pftreestate pftst,unshared_pf,proof_tree_to_constr,
-    proof_tree_to_flattened_proof_tree)) fn
-;;
+ if true then
+   Util.anomaly "Xmlcommand.show_pftreestate is not supported in this version."
 
 let show fn =
  let pftst = Pfedit.get_pftreestate () in
  let (id,kind,_,_) = Pfedit.current_proof_statement () in
-  show_pftreestate Declare.KernelVerbose fn (kind,pftst) id
+  show_pftreestate false fn (kind,pftst) id
 ;;
 
 
@@ -680,7 +652,7 @@ let _ =
        end ;
        Option.iter
 	(fun fn ->
-	  let coqdoc = Filename.concat (Envars.coqbin ()) ("coqdoc" ^ Coq_config.exec_extension) in
+	  let coqdoc = Filename.concat Envars.coqbin ("coqdoc" ^ Coq_config.exec_extension) in
 	  let options = " --html -s --body-only --no-index --latin1 --raw-comments" in
           let command cmd =
            if Sys.command cmd <> 0 then

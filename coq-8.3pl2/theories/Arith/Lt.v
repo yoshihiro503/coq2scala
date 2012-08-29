@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Lt.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (** Theorems about [lt] in nat. [lt] is defined in library [Init/Peano.v] as:
 <<
@@ -16,7 +14,7 @@ Infix "<" := lt : nat_scope.
 *)
 
 Require Import Le.
-Open Local Scope nat_scope.
+Local Open Scope nat_scope.
 
 Implicit Types m n p : nat.
 
@@ -53,7 +51,7 @@ Qed.
 
 Theorem lt_not_le : forall n m, n < m -> ~ m <= n.
 Proof.
-  red in |- *; intros n m Lt Le; exact (le_not_lt m n Le Lt).
+  red; intros n m Lt Le; exact (le_not_lt m n Le Lt).
 Qed.
 Hint Immediate le_not_lt lt_not_le: arith v62.
 
@@ -96,9 +94,9 @@ Proof.
 Qed.
 Hint Resolve lt_0_Sn: arith v62.
 
-Theorem lt_n_O : forall n, ~ n < 0.
-Proof le_Sn_O.
-Hint Resolve lt_n_O: arith v62.
+Theorem lt_n_0 : forall n, ~ n < 0.
+Proof le_Sn_0.
+Hint Resolve lt_n_0: arith v62.
 
 (** * Predecessor *)
 
@@ -109,12 +107,12 @@ Qed.
 
 Lemma lt_pred : forall n m, S n < m -> n < pred m.
 Proof.
-induction 1; simpl in |- *; auto with arith.
+induction 1; simpl; auto with arith.
 Qed.
 Hint Immediate lt_pred: arith v62.
 
 Lemma lt_pred_n_n : forall n, 0 < n -> pred n < n.
-destruct 1; simpl in |- *; auto with arith.
+destruct 1; simpl; auto with arith.
 Qed.
 Hint Resolve lt_pred_n_n: arith v62.
 
@@ -161,7 +159,7 @@ Hint Immediate lt_le_weak: arith v62.
 
 Theorem le_or_lt : forall n m, n <= m \/ m < n.
 Proof.
-  intros n m; pattern n, m in |- *; apply nat_double_ind; auto with arith.
+  intros n m; pattern n, m; apply nat_double_ind; auto with arith.
   induction 1; auto with arith.
 Qed.
 
@@ -192,4 +190,5 @@ Hint Immediate lt_0_neq: arith v62.
 Notation lt_O_Sn := lt_0_Sn (only parsing).
 Notation neq_O_lt := neq_0_lt (only parsing).
 Notation lt_O_neq := lt_0_neq (only parsing).
+Notation lt_n_O := lt_n_0 (only parsing).
 (* end hide *)

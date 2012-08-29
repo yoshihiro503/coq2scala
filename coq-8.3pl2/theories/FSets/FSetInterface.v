@@ -6,8 +6,6 @@
 (*         *       GNU Lesser General Public License Version 2.1       *)
 (***********************************************************************)
 
-(* $Id: FSetInterface.v 12640 2010-01-07 15:32:49Z letouzey $ *)
-
 (** * Finite set library *)
 
 (** Set interfaces, inspired by the one of Ocaml. When compared with
@@ -253,6 +251,7 @@ Module Type WSfun (E : DecidableType).
 
   End Spec.
 
+  Hint Transparent elt.
   Hint Resolve mem_1 equal_1 subset_1 empty_1
     is_empty_1 choose_1 choose_2 add_1 add_2 remove_1
     remove_2 singleton_2 union_1 union_2 union_3

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -23,8 +23,6 @@
 (* to the Newton Institute for providing an exceptional work environment    *)
 (* in Summer 1995. Several developments by E. Ledinot were an inspiration.  *)
 (****************************************************************************)
-
-(*i $Id: Finite_sets.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Import Ensembles.
 
@@ -63,7 +61,7 @@ Section Ensembles_finis_facts.
             (exists x : _, X = Add U A x /\ ~ In U A x /\ cardinal U A n)
       end.
   Proof.
-    induction 1; simpl in |- *; auto.
+    induction 1; simpl; auto.
     exists A; exists x; auto.
   Qed.
 
@@ -75,7 +73,7 @@ Section Ensembles_finis_facts.
 	| S n => Inhabited U X
       end.
   Proof.
-    intros X p C; elim C; simpl in |- *; trivial with sets.
+    intros X p C; elim C; simpl; trivial with sets.
   Qed.
 
 End Ensembles_finis_facts.

@@ -18,6 +18,9 @@ Definition d2 x := d1 (y:=x).
 
 Print d2.
 
+Set Strict Implicit.
+Unset Implicit Arguments.
+
 (* Check maximal insertion of implicit *)
 
 Require Import List.
@@ -33,6 +36,18 @@ Check map id (1::nil).
 
 Definition id' (A:Type) (x:A) := x.
 
-Implicit Arguments id' [[A]].
+Arguments id' {A} x.
 
 Check map id' (1::nil).
+
+Unset Maximal Implicit Insertion.
+Unset Implicit Arguments.
+
+(* Check explicit insertion of last non-maximal trailing implicit to ensure *)
+(* correct arity of partiol applications *)
+
+Set Implicit Arguments.
+Definition id'' (A:Type) (x:A) := x.
+
+Check map (@id'' nat) (1::nil).
+

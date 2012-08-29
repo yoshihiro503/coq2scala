@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: table.ml 14012 2011-04-15 16:45:27Z letouzey $ i*)
 
 open Names
 open Term
@@ -21,12 +19,11 @@ open Util
 open Pp
 open Miniml
 
-(** Sets and maps for [global_reference] that do _not_ work modulo
-    name equivalence (otherwise use Refset / Refmap ) *)
+(** Sets and maps for [global_reference] that use the "user" [kernel_name]
+    instead of the canonical one *)
 
-module RefOrd = struct type t = global_reference let compare = compare end
-module Refmap' = Map.Make(RefOrd)
-module Refset' = Set.Make(RefOrd)
+module Refmap' = Map.Make(RefOrdered_env)
+module Refset' = Set.Make(RefOrdered_env)
 
 (*S Utilities about [module_path] and [kernel_names] and [global_reference] *)
 
@@ -59,11 +56,6 @@ let is_modfile = function
 let raw_string_of_modfile = function
   | MPfile f -> String.capitalize (string_of_id (List.hd (repr_dirpath f)))
   | _ -> assert false
-
-let rec modfile_of_mp = function
-  | (MPfile _) as mp -> mp
-  | MPdot (mp,_) -> modfile_of_mp mp
-  | _ -> raise Not_found
 
 let current_toplevel () = fst (Lib.current_prefix ())
 
@@ -98,12 +90,6 @@ let common_prefix_from_list mp0 mpl =
     | mp :: l -> if MPset.mem mp prefixes then Some mp else f l
   in f mpl
 
-let rec parse_labels ll = function
-  | MPdot (mp,l) -> parse_labels (l::ll) mp
-  | mp -> mp,ll
-
-let labels_of_mp mp = parse_labels [] mp
-
 let rec parse_labels2 ll mp1 = function
   | mp when mp1=mp -> mp,ll
   | MPdot (mp,l) -> parse_labels2 (l::ll) mp1 mp
@@ -113,10 +99,6 @@ let labels_of_ref r =
   let mp_top = current_toplevel () in
   let mp,_,l = repr_of_r r in
   parse_labels2 [l] mp_top mp
-
-let rec add_labels_mp mp = function
-  | [] -> mp
-  | l :: ll -> add_labels_mp (MPdot (mp,l)) ll
 
 
 (*S The main tables: constants, inductives, records, ... *)
@@ -144,6 +126,39 @@ let init_inductives () = inductives := Mindmap_env.empty
 let add_ind kn mib ml_ind =
   inductives := Mindmap_env.add kn (mib,ml_ind) !inductives
 let lookup_ind kn = Mindmap_env.find kn !inductives
+
+let inductive_kinds =
+  ref (Mindmap_env.empty : inductive_kind Mindmap_env.t)
+let init_inductive_kinds () = inductive_kinds := Mindmap_env.empty
+let add_inductive_kind kn k =
+    inductive_kinds := Mindmap_env.add kn k !inductive_kinds
+let is_coinductive r =
+  let kn = match r with
+    | ConstructRef ((kn,_),_) -> kn
+    | IndRef (kn,_) -> kn
+    | _ -> assert false
+  in
+  try Mindmap_env.find kn !inductive_kinds = Coinductive
+  with Not_found -> false
+
+let is_coinductive_type = function
+  | Tglob (r,_) -> is_coinductive r
+  | _ -> false
+
+let get_record_fields r =
+  let kn = match r with
+    | ConstructRef ((kn,_),_) -> kn
+    | IndRef (kn,_) -> kn
+    | _ -> assert false
+  in
+  try match Mindmap_env.find kn !inductive_kinds with
+    | Record f -> f
+    | _ -> []
+  with Not_found -> []
+
+let record_fields_of_type = function
+  | Tglob (r,_) -> get_record_fields r
+  | _ -> []
 
 (*s Recursors table. *)
 
@@ -192,25 +207,51 @@ let add_info_axiom r = info_axioms := Refset'.add r !info_axioms
 let remove_info_axiom r = info_axioms := Refset'.remove r !info_axioms
 let add_log_axiom r = log_axioms := Refset'.add r !log_axioms
 
-(*s Extraction mode: modular or monolithic *)
+let opaques = ref Refset'.empty
+let init_opaques () = opaques := Refset'.empty
+let add_opaque r = opaques := Refset'.add r !opaques
+let remove_opaque r = opaques := Refset'.remove r !opaques
+
+(*s Extraction modes: modular or monolithic, library or minimal ?
+
+Nota:
+ - Recursive Extraction : monolithic, minimal
+ - Separate Extraction : modular, minimal
+ - Extraction Library : modular, library
+*)
 
 let modular_ref = ref false
+let library_ref = ref false
 
 let set_modular b = modular_ref := b
 let modular () = !modular_ref
 
+let set_library b = library_ref := b
+let library () = !library_ref
+
 (*s Printing. *)
 
 (* The following functions work even on objects not in [Global.env ()].
-   WARNING: for inductive objects, an extract_inductive must have been
-   done before. *)
+   Warning: for inductive objects, this only works if an [extract_inductive]
+   have been done earlier, otherwise we can only ask the Nametab about
+   currently visible objects. *)
 
-let safe_basename_of_global = function
-  | ConstRef kn -> let _,_,l = repr_con kn in id_of_label l
-  | IndRef (kn,i) -> (snd (lookup_ind kn)).ind_packets.(i).ip_typename
-  | ConstructRef ((kn,i),j) ->
-      (snd (lookup_ind kn)).ind_packets.(i).ip_consnames.(j-1)
-  | _ -> assert false
+let safe_basename_of_global r =
+  let last_chance r =
+    try Nametab.basename_of_global r
+    with Not_found ->
+      anomaly "Inductive object unknown to extraction and not globally visible"
+  in
+  match r with
+    | ConstRef kn -> id_of_label (con_label kn)
+    | IndRef (kn,0) -> id_of_label (mind_label kn)
+    | IndRef (kn,i) ->
+      (try (snd (lookup_ind kn)).ind_packets.(i).ip_typename
+       with Not_found -> last_chance r)
+    | ConstructRef ((kn,i),j) ->
+      (try (snd (lookup_ind kn)).ind_packets.(i).ip_consnames.(j-1)
+       with Not_found -> last_chance r)
+    | VarRef _ -> assert false
 
 let string_of_global r =
  try string_of_qualid (Nametab.shortest_qualid_of_global Idset.empty r)
@@ -261,7 +302,28 @@ let warning_axioms () =
        str "Having invalid logical axiom in the environment when extracting" ++
        spc () ++ str "may lead to incorrect or non-terminating ML terms." ++
        fnl ())
-  end
+  end;
+  if !Flags.load_proofs = Flags.Dont && info_axioms@log_axioms <> [] then
+    msg_warning
+      (str "Some of these axioms might be due to option -dont-load-proofs.")
+
+let warning_opaques accessed =
+  let opaques = Refset'.elements !opaques in
+  if opaques = [] then ()
+  else
+    let lst = hov 1 (spc () ++ prlist_with_sep spc safe_pr_global opaques) in
+    if accessed then
+      msg_warning
+	(str "The extraction is currently set to bypass opacity,\n" ++
+	 str "the following opaque constant bodies have been accessed :" ++
+	 lst ++ str "." ++ fnl ())
+    else
+      msg_warning
+	(str "The extraction now honors the opacity constraints by default,\n" ++
+	 str "the following opaque constants have been extracted as axioms :" ++
+	 lst ++ str "." ++ fnl () ++
+	 str "If necessary, use \"Set Extraction AccessOpaque\" to change this."
+	 ++ fnl ())
 
 let warning_both_mod_and_cst q mp r =
  msg_warning
@@ -316,6 +378,15 @@ let error_no_module_expr mp =
        ++ str "some Declare Module outside any Module Type.\n"
        ++ str "This situation is currently unsupported by the extraction.")
 
+let error_singleton_become_prop id =
+  err (str "The informative inductive type " ++ pr_id id ++
+       str " has a Prop instance.\n" ++
+       str "This happens when a sort-polymorphic singleton inductive type\n" ++
+       str "has logical parameters, such as (I,I) : (True * True) : Prop.\n" ++
+       str "The Ocaml extraction cannot handle this situation yet.\n" ++
+       str "Instead, use a sort-monomorphic type such as (True /\\ True)\n" ++
+       str "or extract to Haskell.")
+
 let error_unknown_module m =
   err (str "Module" ++ spc () ++ pr_qualid m ++ spc () ++ str "not found.")
 
@@ -334,10 +405,6 @@ let error_MPfile_as_mod mp b =
 	    ".v as a module is "^s1^".\n"^
 	    "Monolithic Extraction cannot deal with this situation.\n"^
 	    "Please "^s2^"use (Recursive) Extraction Library instead.\n"))
-
-let error_record r =
-  err (str "Record " ++ safe_pr_global r ++ str " has an anonymous field." ++
-       fnl () ++ str "To help extraction, please use an explicit name.")
 
 let msg_non_implicit r n id =
   let name = match id with
@@ -370,31 +437,34 @@ let info_file f =
 (* The objects defined below should survive an arbitrary time,
    so we register them to coq save/undo mechanism. *)
 
+let my_bool_option name initval =
+  let flag = ref initval in
+  let access = fun () -> !flag in
+  let _ = declare_bool_option
+    {optsync = true;
+     optdepr = false;
+     optname = "Extraction "^name;
+     optkey = ["Extraction"; name];
+     optread = access;
+     optwrite = (:=) flag }
+  in
+  access
+
+(*s Extraction AccessOpaque *)
+
+let access_opaque = my_bool_option "AccessOpaque" false
+
 (*s Extraction AutoInline *)
 
-let auto_inline_ref = ref false
-
-let auto_inline () = !auto_inline_ref
-
-let _ = declare_bool_option
-	  {optsync = true;
-	   optname = "Extraction AutoInline";
-	   optkey = ["Extraction"; "AutoInline"];
-	   optread = auto_inline;
-	   optwrite = (:=) auto_inline_ref}
+let auto_inline = my_bool_option "AutoInline" false
 
 (*s Extraction TypeExpand *)
 
-let type_expand_ref = ref true
+let type_expand = my_bool_option "TypeExpand" true
 
-let type_expand () = !type_expand_ref
+(*s Extraction KeepSingleton *)
 
-let _ = declare_bool_option
-	  {optsync = true;
-	   optname = "Extraction TypeExpand";
-	   optkey = ["Extraction"; "TypeExpand"];
-	   optread = type_expand;
-	   optwrite = (:=) type_expand_ref}
+let keep_singleton = my_bool_option "KeepSingleton" false
 
 (*s Extraction Optimize *)
 
@@ -445,6 +515,7 @@ let optims () = !opt_flag_ref
 
 let _ = declare_bool_option
 	  {optsync = true;
+           optdepr = false;
 	   optname = "Extraction Optimize";
 	   optkey = ["Extraction"; "Optimize"];
 	   optread = (fun () -> !int_flag_ref <> 0);
@@ -452,6 +523,7 @@ let _ = declare_bool_option
 
 let _ = declare_int_option
           { optsync = true;
+            optdepr = false;
             optname = "Extraction Flag";
             optkey = ["Extraction";"Flag"];
             optread = (fun _ -> Some !int_flag_ref);
@@ -468,7 +540,7 @@ let lang_ref = ref Ocaml
 
 let lang () = !lang_ref
 
-let (extr_lang,_) =
+let extr_lang : lang -> obj =
   declare_object
     {(default_object "Extraction Lang") with
        cache_function = (fun (_,l) -> lang_ref := l);
@@ -500,12 +572,14 @@ let add_inline_entries b l =
 
 (* Registration of operations for rollback. *)
 
-let (inline_extraction,_) =
+let inline_extraction : bool * global_reference list -> obj =
   declare_object
     {(default_object "Extraction Inline") with
        cache_function = (fun (_,(b,l)) -> add_inline_entries b l);
        load_function = (fun _ (_,(b,l)) -> add_inline_entries b l);
        classify_function = (fun o -> Substitute o);
+       discharge_function =
+	(fun (_,(b,l)) -> Some (b, List.map pop_global_reference l));
        subst_function =
         (fun (s,(b,l)) -> (b,(List.map (fun x -> fst (subst_global s x)) l)))
     }
@@ -518,8 +592,7 @@ let _ = declare_summary "Extraction Inline"
 (* Grammar entries. *)
 
 let extraction_inline b l =
-  check_inside_section ();
-  let refs = List.map Nametab.global l in
+  let refs = List.map Smartlocate.global_with_alias l in
   List.iter
     (fun r -> match r with
        | ConstRef _ -> ()
@@ -543,7 +616,7 @@ let print_extraction_inline () =
 
 (* Reset part *)
 
-let (reset_inline,_) =
+let reset_inline : unit -> obj =
   declare_object
     {(default_object "Reset Extraction Inline") with
        cache_function = (fun (_,_)-> inline_table :=  empty_inline_table);
@@ -582,7 +655,7 @@ let add_implicits r l =
 
 (* Registration of operations for rollback. *)
 
-let (implicit_extraction,_) =
+let implicit_extraction : global_reference * int_or_id list -> obj =
   declare_object
     {(default_object "Extraction Implicit") with
        cache_function = (fun (_,(r,l)) -> add_implicits r l);
@@ -600,7 +673,7 @@ let _ = declare_summary "Extraction Implicit"
 
 let extraction_implicit r l =
   check_inside_section ();
-  Lib.add_anonymous_leaf (implicit_extraction (Nametab.global r,l))
+  Lib.add_anonymous_leaf (implicit_extraction (Smartlocate.global_with_alias r,l))
 
 
 (*s Extraction Blacklist of filenames not to use while extracting *)
@@ -642,12 +715,11 @@ let add_blacklist_entries l =
 
 (* Registration of operations for rollback. *)
 
-let (blacklist_extraction,_) =
+let blacklist_extraction : string list -> obj =
   declare_object
     {(default_object "Extraction Blacklist") with
        cache_function = (fun (_,l) -> add_blacklist_entries l);
        load_function = (fun _ (_,l) -> add_blacklist_entries l);
-       classify_function = (fun o -> Libobject.Keep o);
        subst_function = (fun (_,x) -> x)
     }
 
@@ -670,7 +742,7 @@ let print_extraction_blacklist () =
 
 (* Reset part *)
 
-let (reset_blacklist,_) =
+let reset_blacklist : unit -> obj =
   declare_object
     {(default_object "Reset Extraction Blacklist") with
        cache_function = (fun (_,_)-> blacklist_table := Idset.empty);
@@ -703,8 +775,10 @@ let add_custom_match r s =
 
 let indref_of_match pv =
   if Array.length pv = 0 then raise Not_found;
-  match pv.(0) with
-    | (ConstructRef (ip,_), _, _) -> IndRef ip
+  let (_,pat,_) = pv.(0) in
+  match pat with
+    | Pusual (ConstructRef (ip,_)) -> IndRef ip
+    | Pcons (ConstructRef (ip,_),_) -> IndRef ip
     | _ -> raise Not_found
 
 let is_custom_match pv =
@@ -716,7 +790,7 @@ let find_custom_match pv =
 
 (* Registration of operations for rollback. *)
 
-let (in_customs,_) =
+let in_customs : global_reference * string list * string -> obj =
   declare_object
     {(default_object "ML extractions") with
        cache_function = (fun (_,(r,ids,s)) -> add_custom r ids s);
@@ -731,7 +805,7 @@ let _ = declare_summary "ML extractions"
 	    unfreeze_function = ((:=) customs);
 	    init_function = (fun () -> customs := Refmap'.empty) }
 
-let (in_custom_matchs,_) =
+let in_custom_matchs : global_reference * string -> obj =
   declare_object
     {(default_object "ML extractions custom matchs") with
        cache_function = (fun (_,(r,s)) -> add_custom_match r s);
@@ -749,7 +823,7 @@ let _ = declare_summary "ML extractions custom match"
 
 let extract_constant_inline inline r ids s =
   check_inside_section ();
-  let g = Nametab.global r in
+  let g = Smartlocate.global_with_alias r in
   match g with
     | ConstRef kn ->
 	let env = Global.env () in
@@ -767,7 +841,8 @@ let extract_constant_inline inline r ids s =
 
 let extract_inductive r s l optstr =
   check_inside_section ();
-  let g = Nametab.global r in
+  let g = Smartlocate.global_with_alias r in
+  Dumpglob.add_glob (loc_of_reference r) g;
   match g with
     | IndRef ((kn,i) as ip) ->
 	let mib = Global.lookup_mind kn in
@@ -789,5 +864,6 @@ let extract_inductive r s l optstr =
 (*s Tables synchronization. *)
 
 let reset_tables () =
-  init_terms (); init_types (); init_inductives (); init_recursors ();
-  init_projs (); init_axioms (); reset_modfile ()
+  init_terms (); init_types (); init_inductives ();
+  init_inductive_kinds (); init_recursors ();
+  init_projs (); init_axioms (); init_opaques (); reset_modfile ()

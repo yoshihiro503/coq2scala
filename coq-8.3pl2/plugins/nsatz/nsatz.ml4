@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -16,7 +16,7 @@ open Closure
 open Environ
 open Libnames
 open Tactics
-open Rawterm
+open Glob_term
 open Tacticals
 open Tacexpr
 open Pcoq
@@ -180,21 +180,24 @@ let ttmul = lazy (gen_constant "CC" ["setoid_ring";"Ring_polynom"] "PEmul")
 let ttopp = lazy (gen_constant "CC" ["setoid_ring";"Ring_polynom"] "PEopp")
 let ttpow = lazy (gen_constant "CC" ["setoid_ring";"Ring_polynom"] "PEpow")
 
-let tlist = lazy (gen_constant "CC" ["Lists";"List"] "list")
-let lnil = lazy (gen_constant "CC" ["Lists";"List"] "nil")
-let lcons = lazy (gen_constant "CC" ["Lists";"List"] "cons")
+let datatypes = ["Init";"Datatypes"]
+let binnums = ["Numbers";"BinNums"]
 
-let tz = lazy (gen_constant "CC" ["ZArith";"BinInt"] "Z")
-let z0 = lazy (gen_constant "CC" ["ZArith";"BinInt"] "Z0")
-let zpos = lazy (gen_constant "CC" ["ZArith";"BinInt"] "Zpos")
-let zneg = lazy(gen_constant "CC" ["ZArith";"BinInt"] "Zneg")
+let tlist = lazy (gen_constant "CC" datatypes "list")
+let lnil = lazy (gen_constant "CC" datatypes "nil")
+let lcons = lazy (gen_constant "CC" datatypes "cons")
 
-let pxI = lazy(gen_constant "CC" ["NArith";"BinPos"] "xI")
-let pxO = lazy(gen_constant "CC" ["NArith";"BinPos"] "xO")
-let pxH = lazy(gen_constant "CC" ["NArith";"BinPos"] "xH")
+let tz = lazy (gen_constant "CC" binnums "Z")
+let z0 = lazy (gen_constant "CC" binnums "Z0")
+let zpos = lazy (gen_constant "CC" binnums "Zpos")
+let zneg = lazy(gen_constant "CC" binnums "Zneg")
 
-let nN0 = lazy (gen_constant "CC" ["NArith";"BinNat"] "N0")
-let nNpos = lazy(gen_constant "CC" ["NArith";"BinNat"] "Npos")
+let pxI = lazy(gen_constant "CC" binnums "xI")
+let pxO = lazy(gen_constant "CC" binnums "xO")
+let pxH = lazy(gen_constant "CC" binnums "xH")
+
+let nN0 = lazy (gen_constant "CC" binnums "N0")
+let nNpos = lazy(gen_constant "CC" binnums "Npos")
 
 let mkt_app name l =  mkApp (Lazy.force name, Array.of_list l)
 
@@ -237,14 +240,14 @@ else
 let rec parse_pos p =
   match kind_of_term p with
 | App (a,[|p2|]) ->
-    if a = Lazy.force pxO then num_2 */ (parse_pos p2)
+    if eq_constr a (Lazy.force pxO) then num_2 */ (parse_pos p2)
     else num_1 +/ (num_2 */ (parse_pos p2))
 | _ -> num_1
 
 let parse_z z =
   match kind_of_term z with
 | App (a,[|p2|]) ->
-    if a = Lazy.force zpos then parse_pos p2 else (num_0 -/ (parse_pos p2))
+    if eq_constr a (Lazy.force zpos) then parse_pos p2 else (num_0 -/ (parse_pos p2))
 | _ -> num_0
 
 let parse_n z =
@@ -256,15 +259,15 @@ let parse_n z =
 let rec parse_term p =
   match kind_of_term p with
 | App (a,[|_;p2|]) ->
-    if a = Lazy.force ttvar then Var (string_of_num (parse_pos p2))
-    else if a = Lazy.force ttconst then Const (parse_z p2)
-    else if a = Lazy.force ttopp then Opp (parse_term p2)
+    if eq_constr a (Lazy.force ttvar) then Var (string_of_num (parse_pos p2))
+    else if eq_constr a (Lazy.force ttconst) then Const (parse_z p2)
+    else if eq_constr a (Lazy.force ttopp) then Opp (parse_term p2)
     else Zero
 | App (a,[|_;p2;p3|]) ->
-    if a = Lazy.force ttadd then Add (parse_term p2, parse_term p3)
-    else if a = Lazy.force ttsub then Sub (parse_term p2, parse_term p3)
-    else if a = Lazy.force ttmul then Mul (parse_term p2, parse_term p3)
-    else if a = Lazy.force ttpow then
+    if eq_constr a (Lazy.force ttadd) then Add (parse_term p2, parse_term p3)
+    else if eq_constr a (Lazy.force ttsub) then Sub (parse_term p2, parse_term p3)
+    else if eq_constr a (Lazy.force ttmul) then Mul (parse_term p2, parse_term p3)
+    else if eq_constr a (Lazy.force ttpow) then
       Pow (parse_term p2, int_of_num (parse_n p3))
     else Zero
 | _ -> Zero
@@ -323,6 +326,8 @@ open PIdeal
 let term_pol_sparse np t=
   let d = !nvars in
   let rec aux t =
+(*    info ("conversion de: "^(string_of_term t)^"\n");*)
+    let res =
     match t with
     | Zero -> zeroP
     | Const r ->
@@ -339,9 +344,11 @@ let term_pol_sparse np t=
     | Sub (t1,t2) -> plusP (aux t1) (oppP (aux t2))
     | Mul (t1,t2) -> multP (aux t1) (aux t2)
     | Pow (t1,n) ->  puisP (aux t1) n
-  in (*info ("conversion de: "^(string_of_term t)^"\n");*)
+    in 
+(*       info ("donne: "^(stringP res)^"\n");*)
+       res 
+  in
   let res= aux t in
-  (*info ("donne: "^(stringP res)^"\n");*)
   res
 
 (* sparse polynomial to term *)
@@ -364,7 +371,7 @@ let polrec_to_term p =
 (* approximation of the Horner form used in the tactic ring *)
 
 let pol_sparse_to_term n2 p =
-  info "pol_sparse_to_term ->\n";
+ (* info "pol_sparse_to_term ->\n";*)
   let p = PIdeal.repr p in
   let rec aux p =
     match p with
@@ -408,7 +415,7 @@ let pol_sparse_to_term n2 p =
 	  then Var (string_of_int (i0))
 	  else pow (Var (string_of_int (i0)),e0) in
 	add(mul(vm, aux (List.rev (!p1))), aux (List.rev (!p2))))
-  in   info "-> pol_sparse_to_term\n";
+  in   (*info "-> pol_sparse_to_term\n";*)
   aux p
 
 
@@ -489,35 +496,35 @@ let theoremedeszeros_termes lp =
   match lp with
   | Const (Int sugarparam)::Const (Int nparam)::lp ->
       ((match sugarparam with
-      |0 -> info "calcul sans sugar\n";
+      |0 -> info "computation without sugar\n";
 	  lexico:=false;
 	  sugar_flag := false;
 	  divide_rem_with_critical_pair := false
-      |1 -> info "calcul avec sugar\n";
+      |1 -> info "computation with sugar\n";
 	  lexico:=false;
 	  sugar_flag := true;
 	  divide_rem_with_critical_pair := false
-      |2 -> info "ordre lexico calcul sans sugar\n";
+      |2 -> info "ordre lexico computation without sugar\n";
 	  lexico:=true;
 	  sugar_flag := false;
 	  divide_rem_with_critical_pair := false
-      |3 -> info "ordre lexico calcul avec sugar\n";
+      |3 -> info "ordre lexico computation with sugar\n";
 	  lexico:=true;
 	  sugar_flag := true;
 	  divide_rem_with_critical_pair := false
-      |4 -> info "calcul sans sugar, division par les paires\n";
+      |4 -> info "computation without sugar, division by pairs\n";
 	  lexico:=false;
 	  sugar_flag := false;
 	  divide_rem_with_critical_pair := true
-      |5 -> info "calcul avec sugar, division par les paires\n";
+      |5 -> info "computation with sugar, division by pairs\n";
 	  lexico:=false;
 	  sugar_flag := true;
 	  divide_rem_with_critical_pair := true
-      |6 -> info "ordre lexico calcul sans sugar, division par les paires\n";
+      |6 -> info "ordre lexico computation without sugar, division by pairs\n";
 	  lexico:=true;
 	  sugar_flag := false;
 	  divide_rem_with_critical_pair := true
-      |7 -> info "ordre lexico calcul avec sugar, division par les paires\n";
+      |7 -> info "ordre lexico computation with sugar, division by pairs\n";
 	  lexico:=true;
 	  sugar_flag := true;
 	  divide_rem_with_critical_pair := true
@@ -534,6 +541,7 @@ let theoremedeszeros_termes lp =
       | p::lp1 ->
 	  let lpol = List.rev lp1 in
 	  let (cert,lp0,p,_lct) = theoremedeszeros lpol p in
+          info "cert ok\n";
 	  let lc = cert.last_comb::List.rev cert.gb_comb in
 	  match remove_zeros (fun x -> x=zeroP) lc with
 	  | [] -> assert false
@@ -545,8 +553,8 @@ let theoremedeszeros_termes lp =
 	      let lci = List.rev lci in
 	      let lci = List.map (List.map (pol_sparse_to_term m)) lci in
 	      let lq = List.map (pol_sparse_to_term m) lq in
-	      info ("nombre de parametres: "^string_of_int nparam^"\n");
-	      info "terme calcule\n";
+	      info ("number of parametres: "^string_of_int nparam^"\n");
+	      info "term computed\n";
 	      (c,r,lci,lq)
       )
   |_ -> assert false
@@ -565,7 +573,7 @@ let nsatz lpol =
   let certif = hash_certif certif in
   let certif = certif_term certif in
   let c = mkt_term c in
-  info "constr calcule\n";
+  info "constr computed\n";
   (c, certif)
 *)
 
@@ -586,7 +594,7 @@ let nsatz lpol =
 	 mkt_app lcons [tlp ();ltterm;r])
       res
       (mkt_app lnil [tlp ()]) in
-  info "terme calcule\n";
+  info "term computed\n";
   res
 
 let return_term t =

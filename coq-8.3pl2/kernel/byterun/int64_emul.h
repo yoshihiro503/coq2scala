@@ -11,8 +11,6 @@
 /*                                                                     */
 /***********************************************************************/
 
-/* $Id: int64_emul.h 10739 2008-04-01 14:45:20Z herbelin $ */
-
 /* Software emulation of 64-bit integer arithmetic, for C compilers
    that do not support it.  */
 

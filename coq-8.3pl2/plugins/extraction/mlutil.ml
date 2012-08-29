@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: mlutil.ml 14003 2011-04-14 23:09:41Z letouzey $ i*)
 
 (*i*)
 open Pp
@@ -55,18 +53,6 @@ let reset_meta_count () = meta_count := 0
 let new_meta _ =
   incr meta_count;
   Tmeta {id = !meta_count; contents = None}
-
-(*s Sustitution of [Tvar i] by [t] in a ML type. *)
-
-let type_subst i t0 t =
-  let rec subst t = match t with
-    | Tvar j when i = j -> t0
-    | Tmeta {contents=None} -> t
-    | Tmeta {contents=Some u} -> subst u
-    | Tarr (a,b) -> Tarr (subst a, subst b)
-    | Tglob (r, l) -> Tglob (r, List.map subst l)
-    | a -> a
-  in subst t
 
 (* Simultaneous substitution of [[Tvar 1; ... ; Tvar n]] by [l] in a ML type. *)
 
@@ -119,6 +105,7 @@ let rec mgu = function
       mgu (a, a'); mgu (b, b')
   | Tglob (r,l), Tglob (r',l') when r = r' ->
        List.iter mgu (List.combine l l')
+  | (Tdummy _, _ | _, Tdummy _) when lang() = Haskell -> ()
   | Tdummy _, Tdummy _ -> ()
   | t, u when t = u -> () (* for Tvar, Tvar', Tunknown, Taxiom *)
   | _ -> raise Impossible
@@ -129,6 +116,11 @@ let put_magic_if b a = if b && lang () <> Scheme then MLmagic a else a
 
 let put_magic p a = if needs_magic p && lang () <> Scheme then MLmagic a else a
 
+let generalizable a =
+  lang () <> Ocaml ||
+    match a with
+      | MLapp _ -> false
+      | _ -> true (* TODO, this is just an approximation for the moment *)
 
 (*S ML type env. *)
 
@@ -372,54 +364,61 @@ let ast_iter_rel f =
     | MLlam (_,a) -> iter (n+1) a
     | MLletin (_,a,b) -> iter n a; iter (n+1) b
     | MLcase (_,a,v) ->
-	iter n a; Array.iter (fun (_,l,t) -> iter (n + (List.length l)) t) v
+	iter n a; Array.iter (fun (l,_,t) -> iter (n + (List.length l)) t) v
     | MLfix (_,ids,v) -> let k = Array.length ids in Array.iter (iter (n+k)) v
     | MLapp (a,l) -> iter n a; List.iter (iter n) l
-    | MLcons (_,_,l) ->  List.iter (iter n) l
+    | MLcons (_,_,l) | MLtuple l ->  List.iter (iter n) l
     | MLmagic a -> iter n a
     | MLglob _ | MLexn _ | MLdummy | MLaxiom -> ()
   in iter 0
 
 (*s Map over asts. *)
 
-let ast_map_case f (c,ids,a) = (c,ids,f a)
+let ast_map_branch f (c,ids,a) = (c,ids,f a)
+
+(* Warning: in [ast_map] we assume that [f] does not change the type
+   of [MLcons] and of [MLcase] heads *)
 
 let ast_map f = function
   | MLlam (i,a) -> MLlam (i, f a)
   | MLletin (i,a,b) -> MLletin (i, f a, f b)
-  | MLcase (i,a,v) -> MLcase (i,f a, Array.map (ast_map_case f) v)
+  | MLcase (typ,a,v) -> MLcase (typ,f a, Array.map (ast_map_branch f) v)
   | MLfix (i,ids,v) -> MLfix (i, ids, Array.map f v)
   | MLapp (a,l) -> MLapp (f a, List.map f l)
-  | MLcons (i,c,l) -> MLcons (i,c, List.map f l)
+  | MLcons (typ,c,l) -> MLcons (typ,c, List.map f l)
+  | MLtuple l -> MLtuple (List.map f l)
   | MLmagic a -> MLmagic (f a)
   | MLrel _ | MLglob _ | MLexn _ | MLdummy | MLaxiom as a -> a
 
 (*s Map over asts, with binding depth as parameter. *)
 
-let ast_map_lift_case f n (c,ids,a) = (c,ids, f (n+(List.length ids)) a)
+let ast_map_lift_branch f n (ids,p,a) = (ids,p, f (n+(List.length ids)) a)
+
+(* Same warning as for [ast_map]... *)
 
 let ast_map_lift f n = function
   | MLlam (i,a) -> MLlam (i, f (n+1) a)
   | MLletin (i,a,b) -> MLletin (i, f n a, f (n+1) b)
-  | MLcase (i,a,v) -> MLcase (i,f n a,Array.map (ast_map_lift_case f n) v)
+  | MLcase (typ,a,v) -> MLcase (typ,f n a,Array.map (ast_map_lift_branch f n) v)
   | MLfix (i,ids,v) ->
       let k = Array.length ids in MLfix (i,ids,Array.map (f (k+n)) v)
   | MLapp (a,l) -> MLapp (f n a, List.map (f n) l)
-  | MLcons (i,c,l) -> MLcons (i,c, List.map (f n) l)
+  | MLcons (typ,c,l) -> MLcons (typ,c, List.map (f n) l)
+  | MLtuple l -> MLtuple (List.map (f n) l)
   | MLmagic a -> MLmagic (f n a)
   | MLrel _ | MLglob _ | MLexn _ | MLdummy | MLaxiom as a -> a
 
 (*s Iter over asts. *)
 
-let ast_iter_case f (c,ids,a) = f a
+let ast_iter_branch f (c,ids,a) = f a
 
 let ast_iter f = function
   | MLlam (i,a) -> f a
   | MLletin (i,a,b) -> f a; f b
-  | MLcase (_,a,v) -> f a; Array.iter (ast_iter_case f) v
+  | MLcase (_,a,v) -> f a; Array.iter (ast_iter_branch f) v
   | MLfix (i,ids,v) -> Array.iter f v
   | MLapp (a,l) -> f a; List.iter f l
-  | MLcons (_,c,l) -> List.iter f l
+  | MLcons (_,_,l) | MLtuple l -> List.iter f l
   | MLmagic a -> f a
   | MLrel _ | MLglob _ | MLexn _ | MLdummy | MLaxiom  -> ()
 
@@ -440,15 +439,6 @@ let ast_occurs_itvl k k' t =
     ast_iter_rel (fun i -> if (k <= i) && (i <= k') then raise Found) t; false
   with Found -> true
 
-(*s Number of occurences of [Rel k] (resp. [Rel 1]) in [t]. *)
-
-let nb_occur_k k t =
-  let cpt = ref 0 in
-  ast_iter_rel (fun i -> if i = k then incr cpt) t;
-  !cpt
-
-let nb_occur t = nb_occur_k 1 t
-
 (* Number of occurences of [Rel 1] in [t], with special treatment of match:
    occurences in different branches aren't added, but we rather use max. *)
 
@@ -458,13 +448,13 @@ let nb_occur_match =
     | MLcase(_,a,v) ->
         (nb k a) +
 	Array.fold_left
-	  (fun r (_,ids,a) -> max r (nb (k+(List.length ids)) a)) 0 v
+	  (fun r (ids,_,a) -> max r (nb (k+(List.length ids)) a)) 0 v
     | MLletin (_,a,b) -> (nb k a) + (nb (k+1) b)
     | MLfix (_,ids,v) -> let k = k+(Array.length ids) in
       Array.fold_left (fun r a -> r+(nb k a)) 0 v
     | MLlam (_,a) -> nb (k+1) a
     | MLapp (a,l) -> List.fold_left (fun r a -> r+(nb k a)) (nb k a) l
-    | MLcons (_,_,l) -> List.fold_left (fun r a -> r+(nb k a)) 0 l
+    | MLcons (_,_,l) | MLtuple l -> List.fold_left (fun r a -> r+(nb k a)) 0 l
     | MLmagic a -> nb k a
     | MLglob _ | MLexn _ | MLdummy | MLaxiom -> 0
   in nb 1
@@ -524,6 +514,39 @@ let gen_subst v d t =
     | a -> ast_map_lift subst n a
   in subst 0 t
 
+(*S Operations concerning match patterns *)
+
+let is_basic_pattern = function
+  | Prel _ | Pwild -> true
+  | Pusual _ | Pcons _ | Ptuple _ -> false
+
+let has_deep_pattern br =
+  let deep = function
+    | Pcons (_,l) | Ptuple l -> not (List.for_all is_basic_pattern l)
+    | Pusual _ | Prel _ | Pwild -> false
+  in
+  array_exists (function (_,pat,_) -> deep pat) br
+
+let is_regular_match br =
+  if Array.length br = 0 then false (* empty match becomes MLexn *)
+  else
+    try
+      let get_r (ids,pat,c) =
+	match pat with
+	  | Pusual r -> r
+	  | Pcons (r,l) ->
+	    if not (list_for_all_i (fun i -> (=) (Prel i)) 1 (List.rev l))
+	    then raise Impossible;
+	    r
+	  | _ -> raise Impossible
+      in
+      let ind = match get_r br.(0) with
+	| ConstructRef (ind,_) -> ind
+	| _ -> raise Impossible
+      in
+      array_for_all_i (fun i tr -> get_r tr = ConstructRef (ind,i+1)) 0 br
+    with Impossible -> false
+
 (*S Operations concerning lambdas. *)
 
 (*s [collect_lams MLlam(id1,...MLlam(idn,t)...)] returns
@@ -571,7 +594,6 @@ let rec many_lams id a = function
   | 0 -> a
   | n -> many_lams id (MLlam (id,a)) (pred n)
 
-let anonym_lams a n = many_lams anonymous a n
 let anonym_tmp_lams a n = many_lams (Tmp anonymous_name) a n
 let dummy_lams a n = many_lams Dummy a n
 
@@ -673,26 +695,31 @@ let rec ast_glob_subst s t = match t with
    expansion of type definitions.
 *)
 
-(*s [branch_as_function b typs (r,l,c)] tries to see branch [c]
+(*s [branch_as_function b typ (l,p,c)] tries to see branch [c]
   as a function [f] applied to [MLcons(r,l)]. For that it transforms
   any [MLcons(r,l)] in [MLrel 1] and raises [Impossible]
   if any variable in [l] occurs outside such a [MLcons] *)
 
-let branch_as_fun typs (r,l,c) =
+let branch_as_fun typ (l,p,c) =
   let nargs = List.length l in
+  let cons = match p with
+    | Pusual r -> MLcons (typ, r, eta_args nargs)
+    | Pcons (r,pl) ->
+      let pat2rel = function Prel i -> MLrel i | _ -> raise Impossible in
+      MLcons (typ, r, List.map pat2rel pl)
+    | _ -> raise Impossible
+  in
   let rec genrec n = function
     | MLrel i as c ->
 	let i' = i-n in
 	if i'<1 then c
 	else if i'>nargs then MLrel (i-nargs+1)
 	else raise Impossible
-    | MLcons(i,r',args) when
-	r=r' && (test_eta_args_lift n nargs args) && typs = i.c_typs ->
-	MLrel (n+1)
+    | MLcons _ as cons' when cons' = ast_lift n cons -> MLrel (n+1)
     | a -> ast_map_lift genrec n a
   in genrec 0 c
 
-(*s [branch_as_cst (r,l,c)] tries to see branch [c] as a constant
+(*s [branch_as_cst (l,p,c)] tries to see branch [c] as a constant
    independent from the pattern [MLcons(r,l)]. For that is raises [Impossible]
    if any variable in [l] occurs in [c], and otherwise returns [c] lifted to
    appear like a function with one arg (for uniformity with [branch_as_fun]).
@@ -700,7 +727,7 @@ let branch_as_fun typs (r,l,c) =
    empty, i.e. when [r] is a constant constructor
 *)
 
-let branch_as_cst (_,l,c) =
+let branch_as_cst (l,_,c) =
   let n = List.length l in
   if ast_occurs_itvl 1 n c then raise Impossible;
   ast_lift (1-n) c
@@ -739,20 +766,27 @@ let census_add, census_max, census_clean =
    constant.
 *)
 
-let factor_branches o typs br =
-  census_clean ();
-  for i = 0 to Array.length br - 1 do
-    if o.opt_case_idr then
-      (try census_add (branch_as_fun typs br.(i)) i with Impossible -> ());
-    if o.opt_case_cst then
-      (try census_add (branch_as_cst br.(i)) i with Impossible -> ());
-  done;
-  let br_factor, br_set = census_max MLdummy in
-  census_clean ();
-  let n = Intset.cardinal br_set in
-  if n = 0 then None
-  else if Array.length br >= 2 && n < 2 then None
-  else Some (br_factor, br_set)
+let is_opt_pat (_,p,_) = match p with
+  | Prel _ | Pwild -> true
+  | _ -> false
+
+let factor_branches o typ br =
+  if array_exists is_opt_pat br then None (* already optimized *)
+  else begin
+    census_clean ();
+    for i = 0 to Array.length br - 1 do
+      if o.opt_case_idr then
+	(try census_add (branch_as_fun typ br.(i)) i with Impossible -> ());
+      if o.opt_case_cst then
+	(try census_add (branch_as_cst br.(i)) i with Impossible -> ());
+    done;
+    let br_factor, br_set = census_max MLdummy in
+    census_clean ();
+    let n = Intset.cardinal br_set in
+    if n = 0 then None
+    else if Array.length br >= 2 && n < 2 then None
+    else Some (br_factor, br_set)
+  end
 
 (*s If all branches are functions, try to permut the case and the functions. *)
 
@@ -775,14 +809,14 @@ let rec permut_case_fun br acc =
     let br = Array.copy br in
     let ids = ref [] in
     for i = 0 to Array.length br - 1 do
-      let (r,l,t) = br.(i) in
+      let (l,p,t) = br.(i) in
       let local_nb = nb_lams t in
       if local_nb < !nb then (* t = MLexn ... *)
-	br.(i) <- (r,l,remove_n_lams local_nb t)
+	br.(i) <- (l,p,remove_n_lams local_nb t)
       else begin
 	let local_ids,t = collect_n_lams !nb t in
 	ids := merge_ids !ids local_ids;
-	br.(i) <- (r,l,permut_rels !nb (List.length l) t)
+	br.(i) <- (l,p,permut_rels !nb (List.length l) t)
       end
     done;
     (!ids,br)
@@ -790,32 +824,43 @@ let rec permut_case_fun br acc =
 
 (*S Generalized iota-reduction. *)
 
-(* Definition of a generalized iota-redex: it's a [MLcase(e,_)]
-   with [(is_iota_gen e)=true]. Any generalized iota-redex is
-   transformed into beta-redexes. *)
+(* Definition of a generalized iota-redex: it's a [MLcase(e,br)]
+   where the head [e] is a [MLcons] or made of [MLcase]'s with
+   [MLcons] as leaf branches.
+   A generalized iota-redex is transformed into beta-redexes. *)
 
-let rec is_iota_gen = function
-  | MLcons _ -> true
-  | MLcase(_,_,br)-> array_for_all (fun (_,_,t)->is_iota_gen t) br
-  | _ -> false
+(* In [iota_red], we try to simplify a [MLcase(_,MLcons(typ,r,a),br)].
+   Argument [i] is the branch we consider, we should lift what
+   comes from [br] by [lift] *)
 
-let constructor_index = function
-  | ConstructRef (_,j) -> pred j
-  | _ -> assert false
+let rec iota_red i lift br ((typ,r,a) as cons) =
+  if i >= Array.length br then raise Impossible;
+  let (ids,p,c) = br.(i) in
+  match p with
+    | Pusual r' | Pcons (r',_) when r'<>r -> iota_red (i+1) lift br cons
+    | Pusual r' ->
+      let c = named_lams (List.rev ids) c in
+      let c = ast_lift lift c
+      in MLapp (c,a)
+    | Prel 1 when List.length ids = 1 ->
+      let c = MLlam (List.hd ids, c) in
+      let c = ast_lift lift c
+      in MLapp(c,[MLcons(typ,r,a)])
+    | Pwild when ids = [] -> ast_lift lift c
+    | _ -> raise Impossible (* TODO: handle some more cases *)
 
-let iota_gen br =
+(* [iota_gen] is an extension of [iota_red] where we allow to
+   traverse matches in the head of the first match *)
+
+let iota_gen br hd =
   let rec iota k = function
-    | MLcons (i,r,a) ->
-	let (_,ids,c) = br.(constructor_index r) in
-	let c = List.fold_right (fun id t -> MLlam (id,t)) ids c in
-	let c = ast_lift k c in
-	MLapp (c,a)
-    | MLcase(i,e,br') ->
+    | MLcons (typ,r,a) -> iota_red 0 k br (typ,r,a)
+    | MLcase(typ,e,br') ->
 	let new_br =
-	  Array.map (fun (n,i,c)->(n,i,iota (k+(List.length i)) c)) br'
-	in MLcase(i,e, new_br)
-    | _ -> assert false
-  in iota 0
+	  Array.map (fun (i,p,c)->(i,p,iota (k+(List.length i)) c)) br'
+	in MLcase(typ,e,new_br)
+    | _ -> raise Impossible
+  in iota 0 hd
 
 let is_atomic = function
   | MLrel _ | MLglob _ | MLexn _ | MLdummy -> true
@@ -847,9 +892,9 @@ let expand_linear_let o id e =
 let rec simpl o = function
   | MLapp (f, []) -> simpl o f
   | MLapp (f, a) -> simpl_app o (List.map (simpl o) a) (simpl o f)
-  | MLcase (i,e,br) ->
-      let br = Array.map (fun (n,l,t) -> (n,l,simpl o t)) br in
-      simpl_case o i br (simpl o e)
+  | MLcase (typ,e,br) ->
+      let br = Array.map (fun (l,p,t) -> (l,p,simpl o t)) br in
+      simpl_case o typ br (simpl o e)
   | MLletin(Dummy,_,e) -> simpl o (ast_pop e)
   | MLletin(id,c,e) ->
       let e = simpl o e in
@@ -885,40 +930,50 @@ and simpl_app o a = function
   | MLletin (id,e1,e2) when o.opt_let_app ->
       (* Application of a letin: we push arguments inside *)
       MLletin (id, e1, simpl o (MLapp (e2, List.map (ast_lift 1) a)))
-  | MLcase (i,e,br) when o.opt_case_app ->
+  | MLcase (typ,e,br) when o.opt_case_app ->
       (* Application of a case: we push arguments inside *)
       let br' =
 	Array.map
-      	  (fun (n,l,t) ->
+	  (fun (l,p,t) ->
 	     let k = List.length l in
 	     let a' = List.map (ast_lift k) a in
-      	     (n, l, simpl o (MLapp (t,a')))) br
-      in simpl o (MLcase (i,e,br'))
+	     (l, p, simpl o (MLapp (t,a')))) br
+      in simpl o (MLcase (typ,e,br'))
   | (MLdummy | MLexn _) as e -> e
 	(* We just discard arguments in those cases. *)
   | f -> MLapp (f,a)
 
 (* Invariant : all empty matches should now be [MLexn] *)
 
-and simpl_case o i br e =
-  if o.opt_case_iot && (is_iota_gen e) then (* Generalized iota-redex *)
+and simpl_case o typ br e =
+  try
+    (* Generalized iota-redex *)
+    if not o.opt_case_iot then raise Impossible;
     simpl o (iota_gen br e)
-  else
+  with Impossible ->
     (* Swap the case and the lam if possible *)
     let ids,br = if o.opt_case_fun then permut_case_fun br [] else [],br in
     let n = List.length ids in
     if n <> 0 then
-      simpl o (named_lams ids (MLcase (i,ast_lift n e, br)))
+      simpl o (named_lams ids (MLcase (typ, ast_lift n e, br)))
     else
       (* Can we merge several branches as the same constant or function ? *)
-      match factor_branches o i.m_typs br with
+      if lang() = Scheme || is_custom_match br
+      then MLcase (typ, e, br)
+      else match factor_branches o typ br with
 	| Some (f,ints) when Intset.cardinal ints = Array.length br ->
-	    (* If all branches have been factorized, we remove the match *)
-	    simpl o (MLletin (Tmp anonymous_name, e, f))
+	  (* If all branches have been factorized, we remove the match *)
+	  simpl o (MLletin (Tmp anonymous_name, e, f))
 	| Some (f,ints) ->
-	  let same = if ast_occurs 1 f then BranchFun ints else BranchCst ints
-	  in MLcase ({i with m_same=same}, e, br)
-	| None -> MLcase (i, e, br)
+	  let last_br =
+	    if ast_occurs 1 f then ([Tmp anonymous_name], Prel 1, f)
+	    else ([], Pwild, ast_pop f)
+	  in
+	  let brl = Array.to_list br in
+	  let brl_opt = list_filter_i (fun i _ -> not (Intset.mem i ints)) brl in
+	  let brl_opt = brl_opt @ [last_br] in
+	  MLcase (typ, e, Array.of_list brl_opt)
+	| None -> MLcase (typ, e, br)
 
 (*S Local prop elimination. *)
 (* We try to eliminate as many [prop] as possible inside an [ml_ast]. *)
@@ -961,10 +1016,18 @@ let kill_some_lams bl (ids,c) =
 let kill_dummy_lams c =
   let ids,c = collect_lams c in
   let bl = List.map sign_of_id ids in
-  if (List.mem Keep bl) && (List.exists isKill bl) then
-    let ids',c = kill_some_lams bl (ids,c) in
-    ids, named_lams ids' c
-  else raise Impossible
+  if not (List.mem Keep bl) then raise Impossible;
+  let rec fst_kill n = function
+    | [] -> raise Impossible
+    | Kill _ :: bl -> n
+    | Keep :: bl -> fst_kill (n+1) bl
+  in
+  let skip = max 0 ((fst_kill 0 bl) - 1) in
+  let ids_skip, ids = list_chop skip ids in
+  let _, bl = list_chop skip bl in
+  let c = named_lams ids_skip c in
+  let ids',c = kill_some_lams bl (ids,c) in
+  ids, named_lams ids' c
 
 (*s [eta_expansion_sign] takes a function [fun idn ... id1 -> c]
    and a signature [s] and builds a eta-long version. *)
@@ -1005,21 +1068,26 @@ let term_expunge s (ids,c) =
       MLlam (Dummy, ast_lift 1 c)
     else named_lams ids c
 
-(*s [kill_dummy_args ids t0 t] looks for occurences of [t0] in [t] and
-  purge the args of [t0] corresponding to a [dummy_name].
+(*s [kill_dummy_args ids r t] looks for occurences of [MLrel r] in [t] and
+  purge the args of [MLrel r] corresponding to a [dummy_name].
   It makes eta-expansion if needed. *)
 
-let kill_dummy_args ids t0 t =
+let kill_dummy_args ids r t =
   let m = List.length ids in
   let bl = List.rev_map sign_of_id ids in
+  let rec found n = function
+    | MLrel r' when r' = r + n -> true
+    | MLmagic e -> found n e
+    | _ -> false
+  in
   let rec killrec n = function
-    | MLapp(e, a) when e = ast_lift n t0 ->
+    | MLapp(e, a) when found n e ->
 	let k = max 0 (m - (List.length a)) in
 	let a = List.map (killrec n) a in
 	let a = List.map (ast_lift k) a in
 	let a = select_via_bl bl (a @ (eta_args k)) in
 	named_lams (list_firstn k ids) (MLapp (ast_lift k e, a))
-    | e when e = ast_lift n t0 ->
+    | e when found n e ->
 	let a = select_via_bl bl (eta_args m) in
 	named_lams ids (MLapp (ast_lift m e, a))
     | e -> ast_map_lift killrec n e
@@ -1031,28 +1099,28 @@ let rec kill_dummy = function
   | MLfix(i,fi,c) ->
       (try
 	 let ids,c = kill_dummy_fix i c in
-	 ast_subst (MLfix (i,fi,c)) (kill_dummy_args ids (MLrel 1) (MLrel 1))
+	 ast_subst (MLfix (i,fi,c)) (kill_dummy_args ids 1 (MLrel 1))
        with Impossible -> MLfix (i,fi,Array.map kill_dummy c))
   | MLapp (MLfix (i,fi,c),a) ->
       let a = List.map kill_dummy a in
       (try
 	 let ids,c = kill_dummy_fix i c in
 	 let fake = MLapp (MLrel 1, List.map (ast_lift 1) a) in
-	 let fake' = kill_dummy_args ids (MLrel 1) fake in
+	 let fake' = kill_dummy_args ids 1 fake in
 	 ast_subst (MLfix (i,fi,c)) fake'
        with Impossible -> MLapp(MLfix(i,fi,Array.map kill_dummy c),a))
   | MLletin(id, MLfix (i,fi,c),e) ->
       (try
 	 let ids,c = kill_dummy_fix i c in
-	 let e = kill_dummy (kill_dummy_args ids (MLrel 1) e) in
+	 let e = kill_dummy (kill_dummy_args ids 1 e) in
 	 MLletin(id, MLfix(i,fi,c),e)
       with Impossible ->
 	MLletin(id, MLfix(i,fi,Array.map kill_dummy c),kill_dummy e))
   | MLletin(id,c,e) ->
       (try
 	 let ids,c = kill_dummy_lams (kill_dummy_hd c) in
-	 let e = kill_dummy (kill_dummy_args ids (MLrel 1) e) in
-	 let c = eta_red (kill_dummy c) in
+	 let e = kill_dummy (kill_dummy_args ids 1 e) in
+	 let c = kill_dummy c in
 	 if is_atomic c then ast_subst c e else MLletin (id, c, e)
        with Impossible -> MLletin(id,kill_dummy c,kill_dummy e))
   | a -> ast_map kill_dummy a
@@ -1064,8 +1132,8 @@ and kill_dummy_hd = function
   | MLletin(id,c,e) ->
       (try
 	 let ids,c = kill_dummy_lams (kill_dummy_hd c) in
-	 let e = kill_dummy_hd (kill_dummy_args ids (MLrel 1) e) in
-	 let c = eta_red (kill_dummy c) in
+	 let e = kill_dummy_hd (kill_dummy_args ids 1 e) in
+	 let c = kill_dummy c in
 	 if is_atomic c then ast_subst c e else MLletin (id, c, e)
        with Impossible -> MLletin(id,kill_dummy c,kill_dummy_hd e))
   | a -> a
@@ -1075,7 +1143,7 @@ and kill_dummy_fix i c =
   let ids,ci = kill_dummy_lams (kill_dummy_hd c.(i)) in
   let c = Array.copy c in c.(i) <- ci;
   for j = 0 to (n-1) do
-    c.(j) <- kill_dummy (kill_dummy_args ids (MLrel (n-i)) c.(j))
+    c.(j) <- kill_dummy (kill_dummy_args ids (n-i) c.(j))
   done;
   ids,c
 
@@ -1130,27 +1198,23 @@ let optimize_fix a =
 
 (* Utility functions used in the decision of inlining. *)
 
+let ml_size_branch size pv = Array.fold_left (fun a (_,_,t) -> a + size t) 0 pv
+
 let rec ml_size = function
   | MLapp(t,l) -> List.length l + ml_size t + ml_size_list l
   | MLlam(_,t) -> 1 + ml_size t
-  | MLcons(_,_,l) -> ml_size_list l
-  | MLcase(_,t,pv) ->
-      1 + ml_size t + (Array.fold_right (fun (_,_,t) a -> a + ml_size t) pv 0)
+  | MLcons(_,_,l) | MLtuple l -> ml_size_list l
+  | MLcase(_,t,pv) -> 1 + ml_size t + ml_size_branch ml_size pv
   | MLfix(_,_,f) -> ml_size_array f
   | MLletin (_,_,t) -> ml_size t
   | MLmagic t -> ml_size t
-  | _ -> 0
+  | MLglob _ | MLrel _ | MLexn _ | MLdummy | MLaxiom -> 0
 
 and ml_size_list l = List.fold_left (fun a t -> a + ml_size t) 0 l
 
-and ml_size_array l = Array.fold_left (fun a t -> a + ml_size t) 0 l
+and ml_size_array a = Array.fold_left (fun a t -> a + ml_size t) 0 a
 
 let is_fix = function MLfix _ -> true | _ -> false
-
-let rec is_constr = function
-  | MLcons _   -> true
-  | MLlam(_,t) -> is_constr t
-  | _          -> false
 
 (*s Strictness *)
 
@@ -1200,7 +1264,7 @@ let rec non_stricts add cand = function
       (* so we make an union (in fact a merge). *)
       let cand = non_stricts false cand t in
       Array.fold_left
-	(fun c (_,i,t)->
+	(fun c (i,_,t)->
 	   let n = List.length i in
 	   let cand = lift n cand in
 	   let cand = pop n (non_stricts add cand t) in
@@ -1246,12 +1310,14 @@ let inline_test r t =
   if not (auto_inline ()) then false
   else
     let c = match r with ConstRef c -> c | _ -> assert false in
-    let body = try (Global.lookup_constant c).const_body with _ -> None in
-    if body = None then false
-    else
-      let t1 = eta_red t in
-      let t2 = snd (collect_lams t1) in
-      not (is_fix t2) && ml_size t < 12 && is_not_strict t
+    let has_body =
+      try constant_has_body (Global.lookup_constant c)
+      with _ -> false
+    in
+    has_body &&
+      (let t1 = eta_red t in
+       let t2 = snd (collect_lams t1) in
+       not (is_fix t2) && ml_size t < 12 && is_not_strict t)
 
 let con_of_string s =
   let null = empty_dirpath in

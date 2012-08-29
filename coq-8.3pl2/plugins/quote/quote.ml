@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: quote.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 (* The `Quote' tactic *)
 
@@ -111,7 +109,6 @@ open Pattern
 open Matching
 open Tacmach
 open Tactics
-open Proof_trees
 open Tacexpr
 (*i*)
 
@@ -169,7 +166,7 @@ exchange ?1 and ?2 in the example above)
 module ConstrSet = Set.Make(
   struct
     type t = constr
-    let compare = (Pervasives.compare : t->t->int)
+    let compare = constr_ord
   end)
 
 type inversion_scheme = {
@@ -211,7 +208,7 @@ let compute_lhs typ i nargsi =
 let compute_rhs bodyi index_of_f =
   let rec aux c =
     match kind_of_term c with
-      | App (j, args) when j = mkRel (index_of_f) (* recursive call *) ->
+      | App (j, args) when isRel j && destRel j = index_of_f (* recursive call *) ->
           let i = destRel (array_last args) in
 	  PMeta (Some (coerce_meta_in i))
       | App (f,args) ->
@@ -243,7 +240,7 @@ let compute_ivs gl f cs =
            (* REL nargsi+1 to REL nargsi + nargs3 are arguments of f *)
            (* REL 1 to REL nargsi are argsi (reverse order) *)
            (* First we test if the RHS is the RHS for constants *)
-                   if bodyi = mkRel 1 then
+                   if isRel bodyi && destRel bodyi = 1 then
                      c_lhs := Some (compute_lhs (snd (List.hd args3))
                                       i nargsi)
            (* Then we test if the RHS is the RHS for variables *)
@@ -373,12 +370,18 @@ let rec subterm gl (t : constr) (t' : constr) =
 let rec sort_subterm gl l =
   let rec insert c = function
     | [] -> [c]
-    | (h::t as l) when c = h -> l (* Avoid doing the same work twice *)
+    | (h::t as l) when eq_constr c h -> l (* Avoid doing the same work twice *)
     | h::t -> if subterm gl c h then c::h::t else h::(insert c t)
   in
   match l with
     | [] -> []
     | h::t -> insert h (sort_subterm gl t)
+
+module Constrhash = Hashtbl.Make
+  (struct type t = constr
+	  let equal = eq_constr
+	  let hash = hash_constr
+   end)
 
 (*s Now we are able to do the inversion itself.
   We destructurate the term and use an imperative hashtable
@@ -387,10 +390,9 @@ let rec sort_subterm gl l =
   [ivs : inversion_scheme]\\
   [lc: constr list]\\
   [gl: goal sigma]\\ *)
-
 let quote_terms ivs lc gl =
   Coqlib.check_required_library ["Coq";"quote";"Quote"];
-  let varhash  = (Hashtbl.create 17 : (constr, constr) Hashtbl.t) in
+  let varhash  = (Constrhash.create 17 : constr Constrhash.t) in
   let varlist = ref ([] : constr list) in (* list of variables *)
   let counter = ref 1 in (* number of variables created + 1 *)
   let rec aux c =
@@ -417,7 +419,7 @@ let quote_terms ivs lc gl =
 			 Termops.subst_meta [1, c] c_lhs
                      | _ ->
 			 begin
-                           try Hashtbl.find varhash c
+                           try Constrhash.find varhash c
                            with Not_found ->
                              let newvar =
                                Termops.subst_meta [1, (path_of_int !counter)]
@@ -425,7 +427,7 @@ let quote_terms ivs lc gl =
                              begin
                                incr counter;
                                varlist := c :: !varlist;
-                               Hashtbl.add varhash c newvar;
+                               Constrhash.add varhash c newvar;
                                newvar
                              end
 			 end
@@ -473,7 +475,7 @@ Just testing ...
 #use "include.ml";;
 open Quote;;
 
-let r = raw_constr_of_string;;
+let r = glob_constr_of_string;;
 
 let ivs = {
   normal_lhs_rhs =

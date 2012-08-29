@@ -1,12 +1,14 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: Classical_Prop.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
+(* File created for Coq V5.10.14b, Oct 1995 *)
+(* Classical tactics for proving disjunctions by Julien Narboux, Jul 2005 *)
+(* Inferred proof-irrelevance and eq_rect_eq added by Hugo Herbelin, Mar 2006 *)
 
 (** Classical Propositional Logic *)
 
@@ -18,7 +20,7 @@ Axiom classic : forall P:Prop, P \/ ~ P.
 
 Lemma NNPP : forall p:Prop, ~ ~ p -> p.
 Proof.
-unfold not in |- *; intros; elim (classic p); auto.
+unfold not; intros; elim (classic p); auto.
 intro NP; elim (H NP).
 Qed.
 
@@ -33,7 +35,7 @@ Qed.
 
 Lemma not_imply_elim : forall P Q:Prop, ~ (P -> Q) -> P.
 Proof.
-intros; apply NNPP; red in |- *.
+intros; apply NNPP; red.
 intro; apply H; intro; absurd P; trivial.
 Qed.
 
@@ -66,7 +68,7 @@ Qed.
 
 Lemma or_not_and : forall P Q:Prop, ~ P \/ ~ Q -> ~ (P /\ Q).
 Proof.
-simple induction 1; red in |- *; simple induction 2; auto.
+simple induction 1; red; simple induction 2; auto.
 Qed.
 
 Lemma not_or_and : forall P Q:Prop, ~ (P \/ Q) -> ~ P /\ ~ Q.
@@ -110,7 +112,7 @@ Module Eq_rect_eq.
 Lemma eq_rect_eq :
   forall (U:Type) (p:U) (Q:U -> Type) (x:Q p) (h:p = p), x = eq_rect p Q x p h.
 Proof.
-intros; rewrite proof_irrelevance with (p1:=h) (p2:=refl_equal p); reflexivity.
+intros; rewrite proof_irrelevance with (p1:=h) (p2:=eq_refl p); reflexivity.
 Qed.
 
 End Eq_rect_eq.

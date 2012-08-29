@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: states.ml 13431 2010-09-18 08:15:29Z herbelin $ *)
 
 open System
 
@@ -22,7 +20,10 @@ let unfreeze (fl,fs) =
 let (extern_state,intern_state) =
   let (raw_extern, raw_intern) =
     extern_intern Coq_config.state_magic_number ".coq" in
-  (fun s -> raw_extern s (freeze())),
+  (fun s ->
+    if !Flags.load_proofs <> Flags.Force then
+      Util.error "Write State only works with option -force-load-proofs";
+    raw_extern s (freeze())),
   (fun s ->
     unfreeze
       (with_magic_number_check (raw_intern (Library.get_load_paths ())) s);

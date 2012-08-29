@@ -1,18 +1,15 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: refl_tauto.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 module Search = Explore.Make(Proof_search)
 
 open Util
 open Term
-open Termops
 open Names
 open Evd
 open Tacmach
@@ -35,11 +32,11 @@ let data_constant =
   Coqlib.gen_constant "refl_tauto" ["Init";"Datatypes"]
 
 let l_true_equals_true =
-  lazy (mkApp(logic_constant "refl_equal",
+  lazy (mkApp(logic_constant "eq_refl",
         [|data_constant "bool";data_constant "true"|]))
 
 let pos_constant =
-  Coqlib.gen_constant "refl_tauto" ["NArith";"BinPos"]
+  Coqlib.gen_constant "refl_tauto" ["Numbers";"BinNums"]
 
 let l_xI = lazy (pos_constant "xI")
 let l_xO = lazy (pos_constant "xO")
@@ -104,7 +101,7 @@ let rec make_form atom_env gls term =
   let cciterm=special_whd gls term  in
     match kind_of_term cciterm with
 	Prod(_,a,b) ->
-	  if not (dependent (mkRel 1) b) &&
+	  if not (Termops.dependent (mkRel 1) b) &&
 	    Retyping.get_sort_family_of
 	    (pf_env gls) (Tacmach.project gls) a = InProp
 	  then
@@ -144,7 +141,7 @@ let rec make_hyps atom_env gls lenv = function
   | (id,None,typ)::rest ->
       let hrec=
 	make_hyps atom_env gls (typ::lenv) rest in
-	if List.exists (dependent (mkVar id)) lenv ||
+	if List.exists (Termops.dependent (mkVar id)) lenv ||
 	  (Retyping.get_sort_family_of
 	     (pf_env gls) (Tacmach.project gls) typ <> InProp)
 	then
@@ -244,6 +241,7 @@ let verbose = ref false
 
 let opt_verbose=
   {optsync=true;
+   optdepr=false;
    optname="Rtauto Verbose";
    optkey=["Rtauto";"Verbose"];
    optread=(fun () -> !verbose);
@@ -255,6 +253,7 @@ let check = ref false
 
 let opt_check=
   {optsync=true;
+   optdepr=false;
    optname="Rtauto Check";
    optkey=["Rtauto";"Check"];
    optread=(fun () -> !check);
@@ -267,14 +266,13 @@ open Pp
 let rtauto_tac gls=
   Coqlib.check_required_library ["Coq";"rtauto";"Rtauto"];
   let gamma={next=1;env=[]} in
-  let gl=gls.it.evar_concl in
+  let gl=pf_concl gls in
   let _=
     if Retyping.get_sort_family_of
       (pf_env gls) (Tacmach.project gls) gl <> InProp
     then errorlabstrm "rtauto" (Pp.str "goal should be in Prop") in
   let glf=make_form gamma gls gl in
-  let hyps=make_hyps gamma gls [gl]
-      (Environ.named_context_of_val gls.it.evar_hyps) in
+  let hyps=make_hyps gamma gls [gl] (pf_hyps gls) in
   let formula=
     List.fold_left (fun gl (_,f)-> Arrow (f,gl)) glf hyps in
   let search_fun =

@@ -74,8 +74,14 @@ let _ = if w32 then begin
   Options.ocamlmklib := A w32ocamlmklib;
 end
 
+let use_camlp5 = (Coq_config.camlp4 = "camlp5")
+
+let camlp4args =
+  if use_camlp5 then [A "pa_extend.cmo";A "q_MLast.cmo";A "pa_macro.cmo"]
+  else []
+
 let ocaml = A Coq_config.ocaml
-let camlp4o = A Coq_config.camlp4o
+let camlp4o = S ((A Coq_config.camlp4o) :: camlp4args)
 let camlp4incl = S[A"-I"; A Coq_config.camlp4lib]
 let camlp4compat = Sh Coq_config.camlp4compat
 let opt = (Coq_config.best = "opt")
@@ -86,7 +92,6 @@ let flag_dynlink = if hasdynlink then A"-DHasDynlink" else N
 let dep_dynlink = if hasdynlink then N else Sh"-natdynlink no"
 let lablgtkincl = Sh Coq_config.coqideincl
 let local = Coq_config.local
-let coqsrc = Coq_config.coqsrc
 let cflags = S[A"-ccopt";A Coq_config.cflags]
 
 (** Do we want to inspect .ml generated from .ml4 ? *)
@@ -107,10 +112,6 @@ let core_cma = List.map (fun s -> s^".cma") core_libs
 let core_cmxa = List.map (fun s -> s^".cmxa") core_libs
 let core_mllib = List.map (fun s -> s^".mllib") core_libs
 
-let ide_cma = "ide/ide.cma"
-let ide_cmxa = "ide/ide.cmxa"
-let ide_mllib = "ide/ide.mllib"
-
 let tolink = "scripts/tolink.ml"
 
 let c_headers_base =
@@ -124,10 +125,6 @@ let coqjumps = "kernel/byterun/coq_jumptbl.h"
 let copcodes = "kernel/copcodes.ml"
 
 let libcoqrun = "kernel/byterun/libcoqrun.a"
-
-let grammar = "parsing/grammar.cma"
-let qconstr = "parsing/q_constr.cmo"
-let refutpat = "lib/refutpat.cmo"
 
 let initialcoq = "states/initial.coq"
 let init_vo = ["theories/Init/Prelude.vo";"theories/Init/Logic_Type.vo"]
@@ -171,7 +168,7 @@ type links = Both | Best | BestInPlace | Ide
 let all_binaries =
  (if w32 then [ "mkwinapp", "tools/mkwinapp", Best ] else []) @
  [ "coqtop", coqtop, Both;
-   "coqide", coqide, Ide;
+   "coqide", "ide/coqide_main", Ide;
    "coqmktop", coqmktop, Both;
    "coqc", "scripts/coqc", Both;
    "coqchk", "checker/main", Both;
@@ -183,6 +180,7 @@ let all_binaries =
    "coq-tex", "tools/coq_tex", Best;
    "gallina", "tools/gallina", Best;
    "csdpcert", "plugins/micromega/csdpcert", BestInPlace;
+   "fake_ide", "tools/fake_ide", Best;
  ]
 
 
@@ -191,22 +189,28 @@ let best_ext = if opt then ".opt" else ".byte"
 let best_iext = if ide = "opt" then ".opt" else ".byte"
 
 let coqtopbest = coqtop^best_oext
-let coqdepbest = coqdepboot^(if w32 then ".byte" else best_oext)
-let coqmktopbest = coqmktop^(if w32 then ".byte" else best_oext)
-
-let binaries_deps =
-  let rec deps = function
-    | [] -> []
-    | (_,bin,Ide)::l ->
-	(if ide = "opt" then [bin^".native"] else []) @
-	(if ide <> "no" then [bin^".byte"] else []) @ deps l
-    | (_,bin,Both)::l when opt ->
-	(bin^".native") :: (bin^".byte") :: deps l
-    | (_,bin,_)::l -> (bin^best_oext) :: deps l
-  in deps all_binaries
+(* For inner needs, we rather use the bytecode versions of coqdep
+   and coqmktop: slightly slower but compile quickly, and ok with
+   w32 cross-compilation *)
+let coqdep_boot = coqdepboot^".byte"
+let coqmktop_boot = coqmktop^".byte"
 
 let binariesopt_deps =
-  List.filter (fun s -> Filename.check_suffix s ".native") binaries_deps
+  let addext b = b ^ ".native" in
+  let rec deps = function
+    | [] -> []
+    | (_,b,Ide)::l -> if ide="opt" then addext b :: deps l else deps l
+    | (_,b,_)::l -> if opt then addext b :: deps l else deps l
+  in deps all_binaries
+
+let binariesbyte_deps =
+  let addext b = b ^ ".byte" in
+  let rec deps = function
+    | [] -> []
+    | (_,b,Ide)::l -> if ide<>"no" then addext b :: deps l else deps l
+    | (_,b,Both)::l -> addext b :: deps l
+    | (_,b,_)::l -> if not opt then addext b :: deps l else deps l
+  in deps all_binaries
 
 let ln_sf toward f =
   Command.execute ~quiet:true (Cmd (S [A"ln";A"-sf";P toward;P f]))
@@ -245,8 +249,9 @@ let extra_rules () = begin
 
 (** Virtual target for building all binaries *)
 
-  rule "binaries" ~stamp:"binaries" ~deps:binaries_deps (fun _ _ -> Nop);
   rule "binariesopt" ~stamp:"binariesopt" ~deps:binariesopt_deps (fun _ _ -> Nop);
+  rule "binariesbyte" ~stamp:"binariesbyte" ~deps:binariesbyte_deps (fun _ _ -> Nop);
+  rule "binaries" ~stamp:"binaries" ~deps:["binariesbyte";"binariesopt"] (fun _ _ -> Nop);
 
 (** We create a special coq_config which mentions _build *)
 
@@ -255,17 +260,13 @@ let extra_rules () = begin
        if w32 then cp "config/coq_config.ml" "coq_config.ml" else
        let lines = read_file "config/coq_config.ml" in
        let lines = List.map (fun s -> s^"\n") lines in
-       let srcbuild = Filename.concat coqsrc !_build in
        let line0 = "\n(* Adapted variables for ocamlbuild *)\n" in
-       let line1 = "let coqsrc = \""^srcbuild^"\"\n" in
-       let line2 = "let coqlib = \""^srcbuild^"\"\n" in
-       (* TODO : line3 isn't completely accurate with respect to ./configure:
+       (* TODO : line2 isn't completely accurate with respect to ./configure:
 	  the case of -local -coqrunbyteflags foo isn't supported *)
-       let line3 =
-	 "let coqrunbyteflags = \"-dllib -lcoqrun -dllpath '"
-	 ^srcbuild^"/kernel/byterun'\"\n"
+       let line1 =
+	 "let coqrunbyteflags = \"-dllib -lcoqrun\"\n"
        in
-       Echo (lines @ [line0;line1] @ (if local then [line2;line3] else []),
+       Echo (lines @ (if local then [line0;line1] else []),
 	     "coq_config.ml"));
 
 (** Camlp4 extensions *)
@@ -277,13 +278,31 @@ let extra_rules () = begin
 	      T(tags_of_pathname ml4 ++ "p4option"); camlp4compat;
 	      A"-o"; Px ml; A"-impl"; P ml4]));
 
-  flag ["is_ml4"; "p4mod"; "use_macro"] (A"pa_macro.cmo");
-  flag ["is_ml4"; "p4mod"; "use_extend"] (A"pa_extend.cmo");
-  flag ["is_ml4"; "p4mod"; "use_MLast"] (A"q_MLast.cmo");
+  flag_and_dep ["p4mod"; "use_grammar"] (P "parsing/grammar.cma");
+  flag_and_dep ["p4mod"; "use_constr"] (P "parsing/q_constr.cmo");
 
-  flag_and_dep ["is_ml4"; "p4mod"; "use_grammar"] (P grammar);
-  flag_and_dep ["is_ml4"; "p4mod"; "use_constr"] (P qconstr);
-  flag_and_dep ["is_ml4"; "p4mod"; "use_refutpat"] (P refutpat);
+  flag_and_dep ["p4mod"; "use_compat5"] (P "tools/compat5.cmo");
+  flag_and_dep ["p4mod"; "use_compat5b"] (P "tools/compat5b.cmo");
+
+  if w32 then begin
+    flag ["p4mod"] (A "-DWIN32");
+    dep ["ocaml"; "link"; "ide"] ["ide/ide_win32_stubs.o"];
+  end;
+
+  if not use_camlp5 then begin
+  let mlp_cmo s =
+    let src=s^".mlp" and dst=s^".cmo" in
+    rule (src^".cmo") ~dep:src ~prod:dst ~insert:`top
+      (fun env _ ->
+	 Cmd (S [!Options.ocamlc; A"-c"; A"-pp";
+		 Quote (S [camlp4o;A"-impl"]); camlp4incl; A"-impl"; P src]))
+  in
+  mlp_cmo "tools/compat5";
+  mlp_cmo "tools/compat5b";
+  end;
+
+  ocaml_lib ~extern:true ~dir:Coq_config.camlp4lib ~tag_name:"use_camlpX"
+    ~byte:true ~native:true (if use_camlp5 then "gramlib" else "camlp4lib");
 
 (** Special case of toplevel/mltop.ml4:
     - mltop.ml will be the old mltop.optml and be used to obtain mltop.cmx
@@ -310,18 +329,18 @@ let extra_rules () = begin
 
   flag ["compile"; "ocaml"] (S [A"-rectypes"; camlp4incl]);
   flag ["link"; "ocaml"] (S [A"-rectypes"; camlp4incl]);
-  flag ["compile"; "ocaml"; "ide"] lablgtkincl;
-  flag ["link"; "ocaml"; "ide"] lablgtkincl;
-
-(** Extra libraries *)
-
-  ocaml_lib ~extern:true "gramlib";
+  flag ["ocaml"; "ide"; "compile"] lablgtkincl;
+  flag ["ocaml"; "ide"; "link"] lablgtkincl;
+  flag ["ocaml"; "ide"; "link"; "byte"] (S [A"lablgtk.cma"; A"gtkThread.cmo"]);
+  flag ["ocaml"; "ide"; "link"; "native"] (S [A"lablgtk.cmxa"; A"gtkThread.cmx"]);
 
 (** C code for the VM *)
 
   dep ["compile"; "c"] c_headers;
   flag ["compile"; "c"] cflags;
-  dep ["link"; "ocaml"; "use_libcoqrun"] [libcoqrun];
+  dep ["ocaml"; "use_libcoqrun"; "compile"] [libcoqrun];
+  dep ["ocaml"; "use_libcoqrun"; "link"; "native"] [libcoqrun];
+  flag ["ocaml"; "use_libcoqrun"; "link"; "byte"] (Sh Coq_config.coqrunbyteflags);
 
   (* we need to use a different ocamlc. For now we copy the rule *)
   if w32 then
@@ -356,16 +375,14 @@ let extra_rules () = begin
 
 (** Generation of tolink.ml *)
 
-  rule tolink ~deps:(ide_mllib::core_mllib) ~prod:tolink
+  rule tolink ~deps:core_mllib ~prod:tolink
     (fun _ _ ->
        let cat s = String.concat " " (string_list_of_file s) in
        let core_mods = String.concat " " (List.map cat core_mllib) in
-       let ide_mods = cat ide_mllib in
        let core_cmas = String.concat " " core_cma in
        Echo (["let copts = \"-cclib -lcoqrun\"\n";
 	      "let core_libs = \"coq_config.cmo "^core_cmas^"\"\n";
-	      "let core_objs = \"Coq_config "^core_mods^"\"\n";
-	      "let ide = \""^ide_mods^"\"\n"],
+	      "let core_objs = \"Coq_config "^core_mods^"\"\n"],
 	     tolink));
 
 (** For windows, building coff object file from a .rc (for the icon) *)
@@ -376,55 +393,66 @@ let extra_rules () = begin
        Cmd (S [P w32res;A "--input-format";A "rc";A "--input";P rc;
 	       A "--output-format";A "coff";A "--output"; Px o]));
 
-(** Coqtop and coqide *)
+(** The windows version of Coqide is now a console-free win32 app,
+    which moreover contains the Coq icon. If necessary, the mkwinapp
+    tool can be used later to restore or suppress the console of Coqide. *)
 
-  let mktop_rule f is_ide =
-    let fo = f^".native" and fb = f^".byte" in
-    let ideflag = if is_ide then A"-ide" else N in
-    let depsall = [coqmktopbest;libcoqrun] in
-    let depsall = if w32 then w32ico::depsall else depsall in
+  if w32 then dep ["link"; "ocaml"; "program"; "ide"] [w32ico];
+
+  if w32 then flag ["link"; "ocaml"; "program"; "ide"]
+    (S [A "-ccopt"; A "-link -Wl,-subsystem,windows"; P w32ico]);
+
+(** The mingw32-ocaml cross-compiler currently uses Filename.dir_sep="/".
+    Let's tweak that... *)
+
+  if w32 then begin
+    ocaml_lib "tools/win32hack";
+    List.iter (fun (_,s,_) -> tag_file (s^".native") ["use_win32hack"])
+      all_binaries
+  end;
+
+(** Coqtop *)
+
+  let () =
+    let fo = coqtop^".native" and fb = coqtop^".byte" in
+    let depsall = (if w32 then [w32ico] else [])@[coqmktop_boot;libcoqrun] in
     let depso = "coq_config.cmx" :: core_cmxa in
     let depsb = "coq_config.cmo" :: core_cma in
-    let depideo = if is_ide then [ide_cmxa] else [] in
-    let depideb = if is_ide then [ide_cma] else [] in
-    let w32ideflag =
-      (* Uncomment the following line to make coqide a console-free win32 app.
-         For the moment we don't, some issue remain to be investigated.
-         In the meantime, coqide can be made console-free a posteriori via
-         the mkwinapp tool. *)
-      (*if is_ide then [A"-ccopt";A"\"-link -Wl,-subsystem,windows\""] else*) [] in
     let w32flag =
-      if not w32 then N
-      else S ([A"-camlbin";A w32bin;A "-ccopt";P w32ico]@w32ideflag)
+      if not w32 then N else S ([A"-camlbin";A w32bin;A "-ccopt";P w32ico])
     in
-    if opt then rule fo ~prod:fo ~deps:(depsall@depso@depideo) ~insert:`top
-      (cmd [P coqmktopbest;w32flag;A"-boot";A"-opt";ideflag;incl fo;A"-o";Px fo]);
-    rule fb ~prod:fb ~deps:(depsall@depsb@depideb) ~insert:`top
-      (cmd [P coqmktopbest;w32flag;A"-boot";A"-top";ideflag;incl fb;A"-o";Px fb]);
+    if opt then rule fo ~prod:fo ~deps:(depsall@depso) ~insert:`top
+      (cmd [P coqmktop_boot;w32flag;A"-boot";A"-opt";incl fo;A"-o";Px fo]);
+    rule fb ~prod:fb ~deps:(depsall@depsb) ~insert:`top
+      (cmd [P coqmktop_boot;w32flag;A"-boot";A"-top";incl fb;A"-o";Px fb]);
   in
-  mktop_rule coqtop false;
-  mktop_rule coqide true;
 
 (** Coq files dependencies *)
 
   rule "coqdepready" ~stamp:"coqdepready" ~deps:coqdepdeps (fun _ _ -> Nop);
 
-  rule ".v.d" ~prod:"%.v.depends" ~deps:["%.v";coqdepbest;"coqdepready"]
+  rule ".v.d" ~prod:"%.v.depends" ~deps:["%.v";coqdep_boot;"coqdepready"]
     (fun env _ ->
        let v = env "%.v" and vd = env "%.v.depends" in
        (** NB: this relies on all .v files being already in _build. *)
-       Cmd (S [P coqdepbest;dep_dynlink;A"-slash";P v;Sh">";Px vd]));
+       Cmd (S [P coqdep_boot;dep_dynlink;A"-slash";P v;Sh">";Px vd]));
 
 (** Coq files compilation *)
 
   let coq_build_dep f build =
     (** NB: this relies on coqdep producing a single Makefile line
-	for one .v file, with some specific shape : *)
-    match string_list_of_file (f^".v.depends") with
-      | vo::vg::v::deps when vo=f^".vo" && vg=f^".glob:" && v=f^".v" ->
-	  let d = List.map (fun x -> [x]) deps in
-	  List.iter Outcome.ignore_good (build d)
-      | _ -> failwith ("Something wrong with dependencies of "^f^".v")
+	for one .v file, with some specific shape "f.vo ...: f.v deps.vo ..." *)
+    let src = f^".v" in
+    let depends = f^".v.depends" in
+    let rec get_deps keep = function
+      | [] -> []
+      | d::deps when d = src -> get_deps keep deps
+      | d::deps when keep -> [d] :: get_deps keep deps
+      | d::deps -> get_deps (String.contains d ':') deps
+    in
+    let d = get_deps false (string_list_of_file depends) in
+    List.iter Outcome.ignore_good (build d)
+
   in
 
   let coq_v_rule d init =

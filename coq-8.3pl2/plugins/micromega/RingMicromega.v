@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -142,7 +142,7 @@ Qed.
 Definition PolC := Pol C. (* polynomials in generalized Horner form, defined in Ring_polynom or EnvRing *)
 Definition PolEnv := Env R. (* For interpreting PolC *)
 Definition eval_pol (env : PolEnv) (p:PolC) : R :=
-   Pphi 0 rplus rtimes phi env p.
+   Pphi rplus rtimes phi env p.
 
 Inductive Op1 : Set := (* relations with 0 *)
 | Equal (* == 0 *)
@@ -308,7 +308,7 @@ Definition map_option (A B:Type) (f : A -> option B) (o : option A) : option B :
     | Some x => f x
   end.
 
-Implicit Arguments map_option [A B].
+Arguments map_option [A B] f o.
 
 Definition map_option2 (A B C : Type) (f : A -> B -> option C)
   (o: option A) (o': option B) : option C :=
@@ -318,9 +318,9 @@ Definition map_option2 (A B C : Type) (f : A -> B -> option C)
     | Some x , Some x' => f x x'
   end.
 
-Implicit Arguments map_option2 [A B C].
+Arguments map_option2 [A B C] f o o'.
 
-Definition Rops_wd := mk_reqe rplus rtimes ropp req
+Definition Rops_wd := mk_reqe (*rplus rtimes ropp req*)
                        sor.(SORplus_wd)
                        sor.(SORtimes_wd)
                        sor.(SORopp_wd).
@@ -354,6 +354,7 @@ Fixpoint eval_Psatz (l : list NFormula) (e : Psatz) {struct e} : option NFormula
 (* This could be 0, or <> 0 -- but these cases are useless *)
     | PsatzZ     => Some (Pc cO, Equal) (* Just to make life easier *)
   end.
+
 
 Lemma pexpr_times_nformula_correct : forall (env: PolEnv) (e: PolC) (f f' : NFormula),
   eval_nformula env f -> pexpr_times_nformula e f = Some f' ->
@@ -468,17 +469,11 @@ Fixpoint ge_bool (n m  : nat) : bool :=
              end
    end.
 
-Lemma ge_bool_cases : forall n m, (if ge_bool n m then n >= m else n < m)%nat.
+Lemma ge_bool_cases : forall n m,
+ (if ge_bool n m then n >= m else n < m)%nat.
 Proof.
-  induction n ; simpl.
-  destruct m ; simpl.
-  constructor.
-  omega.
-  destruct m.
-  constructor.
-  omega.
-  generalize (IHn m).
-  destruct (ge_bool n m) ; omega.
+  induction n; destruct m ; simpl; auto with arith.
+  specialize (IHn m). destruct (ge_bool); auto with arith.
 Qed.
 
 
@@ -490,6 +485,99 @@ Fixpoint xhyps_of_psatz (base:nat) (acc : list nat) (prf : Psatz)  : list nat :=
     | PsatzIn n => if ge_bool n base then (n::acc) else acc
   end.
 
+Fixpoint nhyps_of_psatz (prf : Psatz) : list nat :=
+  match prf with
+    | PsatzC _ | PsatzZ | PsatzSquare _ => nil
+    | PsatzMulC _ prf => nhyps_of_psatz prf
+    | PsatzAdd e1 e2 | PsatzMulE e1 e2 => nhyps_of_psatz e1 ++ nhyps_of_psatz e2
+    | PsatzIn n => n :: nil
+  end.
+
+
+Fixpoint extract_hyps (l: list NFormula) (ln : list nat) : list NFormula  :=
+  match ln with
+    | nil => nil
+    | n::ln => nth n l (Pc cO, Equal) :: extract_hyps l ln
+  end.
+      
+Lemma extract_hyps_app : forall l ln1 ln2,
+  extract_hyps l (ln1 ++ ln2) = (extract_hyps l ln1) ++ (extract_hyps l ln2).
+Proof.
+  induction ln1.
+  reflexivity.
+  simpl.
+  intros.
+  rewrite IHln1. reflexivity.
+Qed.
+  
+Ltac inv H := inversion H ; try subst ; clear H.
+
+Lemma nhyps_of_psatz_correct :  forall (env : PolEnv) (e:Psatz)  (l : list NFormula)  (f: NFormula),
+  eval_Psatz l e = Some f -> 
+  ((forall f', In f' (extract_hyps l (nhyps_of_psatz e)) -> eval_nformula env f') ->  eval_nformula env f).
+Proof.
+  induction e ; intros.
+  (*PsatzIn*)
+  simpl in *. 
+  apply H0. intuition congruence.
+  (* PsatzSquare *)
+  simpl in *.
+  inv H.
+  simpl.
+  unfold eval_pol.
+  rewrite (Psquare_ok sor.(SORsetoid) Rops_wd
+    (Rth_ARth (SORsetoid sor) Rops_wd sor.(SORrt))  addon.(SORrm));
+  now apply (Rtimes_square_nonneg sor).
+  (* PsatzMulC *)
+  simpl in *.
+  case_eq (eval_Psatz l e).
+  intros. rewrite H1 in H. simpl in H.
+  apply pexpr_times_nformula_correct with (2:= H).
+  apply IHe with (1:= H1); auto.
+  intros. rewrite H1 in H. simpl in H ; discriminate.
+  (* PsatzMulE *)
+  simpl in *.
+  revert H.
+  case_eq (eval_Psatz l e1).
+  case_eq (eval_Psatz l e2) ; simpl ; intros.
+  apply nformula_times_nformula_correct with (3:= H2).
+  apply IHe1 with (1:= H1) ; auto.
+  intros. apply H0. rewrite extract_hyps_app.
+  apply in_or_app. tauto.
+  apply IHe2 with (1:= H) ; auto.
+  intros. apply H0. rewrite extract_hyps_app.
+  apply in_or_app. tauto.
+  discriminate. simpl. discriminate.
+  (* PsatzAdd *)
+  simpl in *.
+  revert H.
+  case_eq (eval_Psatz l e1).
+  case_eq (eval_Psatz l e2) ; simpl ; intros.
+  apply nformula_plus_nformula_correct with (3:= H2).
+  apply IHe1 with (1:= H1) ; auto.
+  intros. apply H0. rewrite extract_hyps_app.
+  apply in_or_app. tauto.
+  apply IHe2 with (1:= H) ; auto.
+  intros. apply H0. rewrite extract_hyps_app.
+  apply in_or_app. tauto.
+  discriminate. simpl. discriminate.
+  (* PsatzC *)
+  simpl in H.
+  case_eq (cO [<] c).
+  intros.  rewrite H1 in H. inv H.
+  unfold eval_nformula. simpl.
+  rewrite <- addon.(SORrm).(morph0). now apply cltb_sound.
+  intros. rewrite H1 in H. discriminate.
+  (* PsatzZ *)
+  simpl in *. inv H. 
+  unfold eval_nformula. simpl.
+  apply  addon.(SORrm).(morph0).
+Qed.
+  
+
+
+
+
 
 (* roughly speaking, normalise_pexpr_correct is a proof of
   forall env p, eval_pexpr env p == eval_pol env (normalise_pexpr p) *)
@@ -499,7 +587,7 @@ Definition paddC := PaddC cplus.
 Definition psubC := PsubC cminus.
 
 Definition PsubC_ok : forall c P env, eval_pol env (psubC  P c) == eval_pol env P - [c] :=
-  let Rops_wd := mk_reqe rplus rtimes ropp req
+  let Rops_wd := mk_reqe (*rplus rtimes ropp req*)
                        sor.(SORplus_wd)
                        sor.(SORtimes_wd)
                        sor.(SORopp_wd) in
@@ -507,7 +595,7 @@ Definition PsubC_ok : forall c P env, eval_pol env (psubC  P c) == eval_pol env 
                 addon.(SORrm).
 
 Definition PaddC_ok : forall c P env, eval_pol env (paddC  P c) == eval_pol env P + [c] :=
-  let Rops_wd := mk_reqe rplus rtimes ropp req
+  let Rops_wd := mk_reqe (*rplus rtimes ropp req*)
                        sor.(SORplus_wd)
                        sor.(SORtimes_wd)
                        sor.(SORopp_wd) in
@@ -545,6 +633,7 @@ apply addon.(SORrm).(morph_eq) in H1. congruence.
 apply cleb_sound in H1. now apply -> (Rle_ngt sor).
 apply cltb_sound in H1. now apply -> (Rlt_nge sor).
 Qed.
+
 
 Definition check_normalised_formulas : list NFormula -> Psatz -> bool :=
   fun l cm =>
@@ -592,15 +681,16 @@ end.
 
 Definition  eval_pexpr (l : PolEnv) (pe : PExpr C) : R := PEeval rplus rtimes rminus ropp phi pow_phi rpow l pe.
 
-Record Formula : Type := {
-  Flhs : PExpr C;
+Record Formula (T:Type) : Type := {
+  Flhs : PExpr T;
   Fop : Op2;
-  Frhs : PExpr C
+  Frhs : PExpr T
 }.
 
-Definition eval_formula (env : PolEnv) (f : Formula) : Prop :=
+Definition eval_formula (env : PolEnv) (f : Formula C) : Prop :=
   let (lhs, op, rhs) := f in
     (eval_op2 op) (eval_pexpr env lhs) (eval_pexpr env rhs).
+
 
 (* We normalize Formulas by moving terms to one side *)
 
@@ -610,7 +700,7 @@ Definition psub := Psub cO  cplus cminus copp ceqb.
 
 Definition padd  := Padd cO  cplus ceqb.
 
-Definition normalise (f : Formula) : NFormula :=
+Definition normalise (f : Formula C) : NFormula :=
 let (lhs, op, rhs) := f in
   let lhs := norm lhs in
     let rhs := norm rhs in
@@ -623,7 +713,7 @@ let (lhs, op, rhs) := f in
   | OpLt => (psub  rhs lhs, Strict)
   end.
 
-Definition negate (f : Formula) : NFormula :=
+Definition negate (f : Formula C) : NFormula :=
 let (lhs, op, rhs) := f in
   let lhs := norm lhs in
     let rhs := norm rhs in
@@ -659,7 +749,7 @@ Qed.
 
 
 Theorem normalise_sound :
-  forall (env : PolEnv) (f : Formula),
+  forall (env : PolEnv) (f : Formula C),
     eval_formula env f -> eval_nformula env (normalise f).
 Proof.
 intros env f H; destruct f as [lhs op rhs]; simpl in *.
@@ -673,7 +763,7 @@ now apply -> (Rlt_lt_minus sor).
 Qed.
 
 Theorem negate_correct :
-  forall (env : PolEnv) (f : Formula),
+  forall (env : PolEnv) (f : Formula C),
     eval_formula env f <-> ~ (eval_nformula env (negate f)).
 Proof.
 intros env f; destruct f as [lhs op rhs]; simpl.
@@ -687,9 +777,9 @@ rewrite <- (Rle_le_minus sor). now rewrite <- (Rlt_nge sor).
 rewrite <- (Rle_le_minus sor). now rewrite <- (Rlt_nge sor).
 Qed.
 
-(** Another normalistion - this is used for cnf conversion **)
+(** Another normalisation - this is used for cnf conversion **)
 
-Definition xnormalise (t:Formula) : list (NFormula)  :=
+Definition xnormalise (t:Formula C) : list (NFormula)  :=
   let (lhs,o,rhs) := t in
   let lhs := norm lhs in
     let rhs := norm rhs in
@@ -705,16 +795,16 @@ Definition xnormalise (t:Formula) : list (NFormula)  :=
 
 Require Import Tauto.
 
-Definition cnf_normalise (t:Formula) : cnf (NFormula) :=
+Definition cnf_normalise (t:Formula C) : cnf (NFormula) :=
   List.map  (fun x => x::nil) (xnormalise t).
 
 
 Add Ring SORRing : sor.(SORrt).
 
-Lemma cnf_normalise_correct : forall env t, eval_cnf (eval_nformula env) (cnf_normalise t) -> eval_formula env t.
+Lemma cnf_normalise_correct : forall env t, eval_cnf eval_nformula env (cnf_normalise t) -> eval_formula env t.
 Proof.
   unfold cnf_normalise, xnormalise ; simpl ; intros env t.
-  unfold eval_cnf.
+  unfold eval_cnf, eval_clause.
   destruct t as [lhs o rhs]; case_eq o ; simpl;
     repeat rewrite eval_pol_sub ; repeat rewrite <- eval_pol_norm in * ;
     generalize (eval_pexpr  env lhs);
@@ -730,7 +820,7 @@ Proof.
   rewrite (Rlt_nge sor).  rewrite (Rle_le_minus sor). auto.
 Qed.
 
-Definition xnegate (t:Formula) : list (NFormula)  :=
+Definition xnegate (t:Formula C) : list (NFormula)  :=
   let (lhs,o,rhs) := t in
     let lhs := norm lhs in
       let rhs := norm rhs in
@@ -743,13 +833,13 @@ Definition xnegate (t:Formula) : list (NFormula)  :=
       | OpLe  => (psub rhs lhs,NonStrict) :: nil
     end.
 
-Definition cnf_negate (t:Formula) : cnf (NFormula) :=
+Definition cnf_negate (t:Formula C) : cnf (NFormula) :=
   List.map  (fun x => x::nil) (xnegate t).
 
-Lemma cnf_negate_correct : forall env t, eval_cnf (eval_nformula env) (cnf_negate t) -> ~ eval_formula env t.
+Lemma cnf_negate_correct : forall env t, eval_cnf eval_nformula env (cnf_negate t) -> ~ eval_formula env t.
 Proof.
   unfold cnf_negate, xnegate ; simpl ; intros env t.
-  unfold eval_cnf.
+  unfold eval_cnf, eval_clause.
   destruct t as [lhs o rhs]; case_eq o ; simpl;
     repeat rewrite eval_pol_sub ; repeat rewrite <- eval_pol_norm in * ;
     generalize (eval_pexpr  env lhs);
@@ -786,13 +876,14 @@ Qed.
 Fixpoint xdenorm (jmp : positive) (p: Pol C) : PExpr C :=
   match p with
     | Pc c => PEc c
-    | Pinj j p => xdenorm  (Pplus j jmp ) p
+    | Pinj j p => xdenorm  (Pos.add j jmp ) p
     | PX p j q   => PEadd
       (PEmul (xdenorm jmp p) (PEpow (PEX _  jmp) (Npos j)))
-      (xdenorm (Psucc jmp) q)
+      (xdenorm (Pos.succ jmp) q)
   end.
 
-Lemma xdenorm_correct : forall p i  env, eval_pol (jump i env)  p == eval_pexpr env (xdenorm (Psucc i) p).
+Lemma xdenorm_correct : forall p i env,
+  eval_pol (jump i env) p == eval_pexpr env (xdenorm (Pos.succ i) p).
 Proof.
   unfold eval_pol.
   induction p.
@@ -800,22 +891,21 @@ Proof.
   (* Pinj *)
   simpl.
   intros.
-  rewrite Pplus_succ_permute_r.
+  rewrite Pos.add_succ_r.
   rewrite <- IHp.
   symmetry.
-  rewrite Pplus_comm.
-  rewrite Pjump_Pplus. reflexivity.
+  rewrite Pos.add_comm.
+  rewrite Pjump_add. reflexivity.
   (* PX *)
   simpl.
   intros.
-  rewrite <- IHp1.
-  rewrite <- IHp2.
+  rewrite <- IHp1, <- IHp2.
   unfold Env.tail , Env.hd.
-  rewrite <- Pjump_Pplus.
-  rewrite <- Pplus_one_succ_r.
+  rewrite <- Pjump_add.
+  rewrite Pos.add_1_r.
   unfold Env.nth.
   unfold jump at 2.
-  rewrite Pplus_one_succ_l.
+  rewrite <- Pos.add_1_l.
   rewrite addon.(SORpower).(rpow_pow_N).
   unfold pow_N. ring.
 Qed.
@@ -828,17 +918,74 @@ Proof.
   induction p.
   reflexivity.
   simpl.
-  rewrite <- Pplus_one_succ_r.
+  rewrite Pos.add_1_r.
   apply xdenorm_correct.
   simpl.
   intros.
   rewrite IHp1.
   unfold Env.tail.
   rewrite xdenorm_correct.
-  change (Psucc xH) with 2%positive.
+  change (Pos.succ xH) with 2%positive.
   rewrite addon.(SORpower).(rpow_pow_N).
   simpl. reflexivity.
 Qed.
+
+
+(** Sometimes it is convenient to make a distinction between "syntactic" coefficients and "real"
+coefficients that are used to actually compute *)
+
+
+
+Variable S : Type.
+
+Variable C_of_S : S -> C.
+
+Variable phiS : S -> R.
+
+Variable phi_C_of_S :   forall c,  phiS c =  phi (C_of_S c).
+
+Fixpoint map_PExpr (e : PExpr S) : PExpr C :=
+  match e with
+    | PEc c => PEc (C_of_S c)
+    | PEX p => PEX _ p
+    | PEadd e1 e2 => PEadd (map_PExpr e1) (map_PExpr e2)
+    | PEsub e1 e2 => PEsub (map_PExpr e1) (map_PExpr e2)
+    | PEmul e1 e2 => PEmul (map_PExpr e1) (map_PExpr e2)
+    | PEopp e     => PEopp (map_PExpr e)
+    | PEpow e n   => PEpow (map_PExpr e) n
+  end.
+
+Definition map_Formula (f : Formula S)  : Formula C :=
+  let (l,o,r) := f in
+    Build_Formula (map_PExpr l) o (map_PExpr r).
+
+
+Definition eval_sexpr (env : PolEnv) (e : PExpr S) : R :=
+  PEeval rplus rtimes rminus ropp phiS pow_phi rpow env e.
+
+Definition eval_sformula (env : PolEnv) (f : Formula S) : Prop :=
+  let (lhs, op, rhs) := f in
+    (eval_op2 op) (eval_sexpr env lhs) (eval_sexpr env rhs).
+
+Lemma eval_pexprSC : forall env s, eval_sexpr env s = eval_pexpr env (map_PExpr s).
+Proof.
+  unfold eval_pexpr, eval_sexpr.
+  induction s ; simpl ; try (rewrite IHs1 ; rewrite IHs2) ; try reflexivity.
+  apply phi_C_of_S.
+  rewrite IHs. reflexivity.
+  rewrite IHs. reflexivity.
+Qed.
+
+(** equality migth be (too) strong *)
+Lemma eval_formulaSC : forall env f, eval_sformula env f = eval_formula env (map_Formula f).
+Proof.
+  destruct f.
+  simpl.
+  repeat rewrite eval_pexprSC.
+  reflexivity.
+Qed.
+
+
 
 
 (** Some syntactic simplifications of expressions  *)

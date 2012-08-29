@@ -1,32 +1,28 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: pcoq.mli 13690 2010-12-06 16:15:54Z glondu $ i*)
-
 open Util
 open Names
-open Rawterm
+open Glob_term
 open Extend
 open Vernacexpr
 open Genarg
 open Topconstr
 open Tacexpr
 open Libnames
+open Compat
 
-(**********************************************************************)
-(* The parser of Coq                                                  *)
+(** The parser of Coq *)
 
-module Gram : Grammar.S with type te = Compat.token
+module Gram : GrammarSig
 
-val entry_print : 'a Gram.Entry.e -> unit
+(** The parser of Coq is built from three kinds of rule declarations:
 
-(**********************************************************************)
-(* The parser of Coq is built from three kinds of rule declarations:
    - dynamic rules declared at the evaluation of Coq files (using
      e.g. Notation, Infix, or Tactic Notation)
    - static rules explicitly defined in files g_*.ml4
@@ -34,7 +30,7 @@ val entry_print : 'a Gram.Entry.e -> unit
      VERNAC EXTEND (see e.g. file extratactics.ml4)
 *)
 
-(* Dynamic extension of rules
+(** Dynamic extension of rules
 
     For constr notations, dynamic addition of new rules is done in
     several steps:
@@ -100,54 +96,49 @@ val entry_print : 'a Gram.Entry.e -> unit
 
 *)
 
-(* The superclass of all grammar entries *)
+val gram_token_of_token : Tok.t -> Gram.symbol
+val gram_token_of_string : string -> Gram.symbol
+
+(** The superclass of all grammar entries *)
 type grammar_object
 
-type camlp4_rule =
-    Compat.token Gramext.g_symbol list * Gramext.g_action
-
-type camlp4_entry_rules =
-    (* first two parameters are name and assoc iff a level is created *)
-    string option * Gramext.g_assoc option * camlp4_rule list
-
-(* Add one extension at some camlp4 position of some camlp4 entry *)
+(** Add one extension at some camlp4 position of some camlp4 entry *)
 val grammar_extend :
-  grammar_object Gram.Entry.e -> Gramext.position option ->
-   (* for reinitialization if ever needed: *) Gramext.g_assoc option ->
-     camlp4_entry_rules list -> unit
+  grammar_object Gram.entry ->
+  gram_assoc option (** for reinitialization if ever needed *) ->
+  Gram.extend_statment -> unit
 
-(* Remove the last n extensions *)
+(** Remove the last n extensions *)
 val remove_grammars : int -> unit
 
 
 
 
-(* The type of typed grammar objects *)
+(** The type of typed grammar objects *)
 type typed_entry
 
-(* The possible types for extensible grammars *)
+(** The possible types for extensible grammars *)
 type entry_type = argument_type
 
 val type_of_typed_entry : typed_entry -> entry_type
-val object_of_typed_entry : typed_entry -> grammar_object Gram.Entry.e
-val weaken_entry : 'a Gram.Entry.e -> grammar_object Gram.Entry.e
+val object_of_typed_entry : typed_entry -> grammar_object Gram.entry
+val weaken_entry : 'a Gram.entry -> grammar_object Gram.entry
 
-(* Temporary activate camlp4 verbosity *)
+(** Temporary activate camlp4 verbosity *)
 
 val camlp4_verbosity : bool -> ('a -> unit) -> 'a -> unit
 
-(* Parse a string *)
+(** Parse a string *)
 
-val parse_string : 'a Gram.Entry.e -> string -> 'a
-val eoi_entry : 'a Gram.Entry.e -> 'a Gram.Entry.e
-val map_entry : ('a -> 'b) -> 'a Gram.Entry.e -> 'b Gram.Entry.e
+val parse_string : 'a Gram.entry -> string -> 'a
+val eoi_entry : 'a Gram.entry -> 'a Gram.entry
+val map_entry : ('a -> 'b) -> 'a Gram.entry -> 'b Gram.entry
 
-(**********************************************************************)
-(* Table of Coq statically defined grammar entries                    *)
+(** Table of Coq statically defined grammar entries *)
 
 type gram_universe
 
-(* There are four predefined universes: "prim", "constr", "tactic", "vernac" *)
+(** There are four predefined universes: "prim", "constr", "tactic", "vernac" *)
 
 val get_univ : string -> gram_universe
 
@@ -156,142 +147,156 @@ val uconstr : gram_universe
 val utactic : gram_universe
 val uvernac : gram_universe
 
-(*
-val get_entry : gram_universe -> string -> typed_entry
-val get_entry_type : gram_universe -> string -> entry_type
-*)
-
 val create_entry : gram_universe -> string -> entry_type -> typed_entry
 val create_generic_entry : string -> ('a, rlevel) abstract_argument_type ->
-  'a Gram.Entry.e
+  'a Gram.entry
 
 module Prim :
   sig
     open Util
     open Names
     open Libnames
-    val preident : string Gram.Entry.e
-    val ident : identifier Gram.Entry.e
-    val name : name located Gram.Entry.e
-    val identref : identifier located Gram.Entry.e
-    val pattern_ident : identifier Gram.Entry.e
-    val pattern_identref : identifier located Gram.Entry.e
-    val base_ident : identifier Gram.Entry.e
-    val natural : int Gram.Entry.e
-    val bigint : Bigint.bigint Gram.Entry.e
-    val integer : int Gram.Entry.e
-    val string : string Gram.Entry.e
-    val qualid : qualid located Gram.Entry.e
-    val fullyqualid : identifier list located Gram.Entry.e
-    val reference : reference Gram.Entry.e
-    val by_notation : (loc * string * string option) Gram.Entry.e
-    val smart_global : reference or_by_notation Gram.Entry.e
-    val dirpath : dir_path Gram.Entry.e
-    val ne_string : string Gram.Entry.e
-    val ne_lstring : string located Gram.Entry.e
-    val var : identifier located Gram.Entry.e
+    val preident : string Gram.entry
+    val ident : identifier Gram.entry
+    val name : name located Gram.entry
+    val identref : identifier located Gram.entry
+    val pattern_ident : identifier Gram.entry
+    val pattern_identref : identifier located Gram.entry
+    val base_ident : identifier Gram.entry
+    val natural : int Gram.entry
+    val bigint : Bigint.bigint Gram.entry
+    val integer : int Gram.entry
+    val string : string Gram.entry
+    val qualid : qualid located Gram.entry
+    val fullyqualid : identifier list located Gram.entry
+    val reference : reference Gram.entry
+    val by_notation : (loc * string * string option) Gram.entry
+    val smart_global : reference or_by_notation Gram.entry
+    val dirpath : dir_path Gram.entry
+    val ne_string : string Gram.entry
+    val ne_lstring : string located Gram.entry
+    val var : identifier located Gram.entry
   end
 
 module Constr :
   sig
-    val constr : constr_expr Gram.Entry.e
-    val constr_eoi : constr_expr Gram.Entry.e
-    val lconstr : constr_expr Gram.Entry.e
-    val binder_constr : constr_expr Gram.Entry.e
-    val operconstr : constr_expr Gram.Entry.e
-    val ident : identifier Gram.Entry.e
-    val global : reference Gram.Entry.e
-    val sort : rawsort Gram.Entry.e
-    val pattern : cases_pattern_expr Gram.Entry.e
-    val constr_pattern : constr_expr Gram.Entry.e
-    val lconstr_pattern : constr_expr Gram.Entry.e
-    val closed_binder : local_binder list Gram.Entry.e
-    val binder : local_binder list Gram.Entry.e (* closed_binder or variable *)
-    val binders : local_binder list Gram.Entry.e
-    val open_binders : local_binder list Gram.Entry.e
-    val binders_fixannot : (local_binder list * (identifier located option * recursion_order_expr)) Gram.Entry.e
-    val typeclass_constraint : (name located * bool * constr_expr) Gram.Entry.e
-    val record_declaration : constr_expr Gram.Entry.e
-    val appl_arg : (constr_expr * explicitation located option) Gram.Entry.e
+    val constr : constr_expr Gram.entry
+    val constr_eoi : constr_expr Gram.entry
+    val lconstr : constr_expr Gram.entry
+    val binder_constr : constr_expr Gram.entry
+    val operconstr : constr_expr Gram.entry
+    val ident : identifier Gram.entry
+    val global : reference Gram.entry
+    val sort : glob_sort Gram.entry
+    val pattern : cases_pattern_expr Gram.entry
+    val constr_pattern : constr_expr Gram.entry
+    val lconstr_pattern : constr_expr Gram.entry
+    val closed_binder : local_binder list Gram.entry
+    val binder : local_binder list Gram.entry (* closed_binder or variable *)
+    val binders : local_binder list Gram.entry (* list of binder *)
+    val open_binders : local_binder list Gram.entry
+    val binders_fixannot : (local_binder list * (identifier located option * recursion_order_expr)) Gram.entry
+    val typeclass_constraint : (name located * bool * constr_expr) Gram.entry
+    val record_declaration : constr_expr Gram.entry
+    val appl_arg : (constr_expr * explicitation located option) Gram.entry
   end
 
 module Module :
   sig
-    val module_expr : module_ast Gram.Entry.e
-    val module_type : module_ast Gram.Entry.e
+    val module_expr : module_ast Gram.entry
+    val module_type : module_ast Gram.entry
   end
 
 module Tactic :
   sig
-    open Rawterm
-    val open_constr : open_constr_expr Gram.Entry.e
-    val casted_open_constr : open_constr_expr Gram.Entry.e
-    val constr_with_bindings : constr_expr with_bindings Gram.Entry.e
-    val bindings : constr_expr bindings Gram.Entry.e
-    val constr_may_eval : (constr_expr,reference or_by_notation,constr_expr) may_eval Gram.Entry.e
-    val quantified_hypothesis : quantified_hypothesis Gram.Entry.e
-    val int_or_var : int or_var Gram.Entry.e
-    val red_expr : raw_red_expr Gram.Entry.e
-    val simple_tactic : raw_atomic_tactic_expr Gram.Entry.e
-    val simple_intropattern : Genarg.intro_pattern_expr located Gram.Entry.e
-    val tactic_arg : raw_tactic_arg Gram.Entry.e
-    val tactic_expr : raw_tactic_expr Gram.Entry.e
-    val binder_tactic : raw_tactic_expr Gram.Entry.e
-    val tactic : raw_tactic_expr Gram.Entry.e
-    val tactic_eoi : raw_tactic_expr Gram.Entry.e
+    open Glob_term
+    val open_constr : open_constr_expr Gram.entry
+    val casted_open_constr : open_constr_expr Gram.entry
+    val constr_with_bindings : constr_expr with_bindings Gram.entry
+    val bindings : constr_expr bindings Gram.entry
+    val constr_may_eval : (constr_expr,reference or_by_notation,constr_expr) may_eval Gram.entry
+    val quantified_hypothesis : quantified_hypothesis Gram.entry
+    val int_or_var : int or_var Gram.entry
+    val red_expr : raw_red_expr Gram.entry
+    val simple_tactic : raw_atomic_tactic_expr Gram.entry
+    val simple_intropattern : Genarg.intro_pattern_expr located Gram.entry
+    val tactic_arg : raw_tactic_arg Gram.entry
+    val tactic_expr : raw_tactic_expr Gram.entry
+    val binder_tactic : raw_tactic_expr Gram.entry
+    val tactic : raw_tactic_expr Gram.entry
+    val tactic_eoi : raw_tactic_expr Gram.entry
   end
 
 module Vernac_ :
   sig
     open Decl_kinds
-    val gallina : vernac_expr Gram.Entry.e
-    val gallina_ext : vernac_expr Gram.Entry.e
-    val command : vernac_expr Gram.Entry.e
-    val syntax : vernac_expr Gram.Entry.e
-    val vernac : vernac_expr Gram.Entry.e
-    val vernac_eoi : vernac_expr Gram.Entry.e
-    val proof_instr : Decl_expr.raw_proof_instr Gram.Entry.e
+    val gallina : vernac_expr Gram.entry
+    val gallina_ext : vernac_expr Gram.entry
+    val command : vernac_expr Gram.entry
+    val syntax : vernac_expr Gram.entry
+    val vernac : vernac_expr Gram.entry
+    val rec_definition : (fixpoint_expr * decl_notation list) Gram.entry
+    val vernac_eoi : vernac_expr Gram.entry
   end
 
-(* The main entry: reads an optional vernac command *)
-val main_entry : (loc * vernac_expr) option Gram.Entry.e
+(** The main entry: reads an optional vernac command *)
+val main_entry : (loc * vernac_expr) option Gram.entry
 
-(**********************************************************************)
-(* Mapping formal entries into concrete ones                          *)
+(** Mapping formal entries into concrete ones *)
 
-(* Binding constr entry keys to entries and symbols *)
+(** Binding constr entry keys to entries and symbols *)
 
-val interp_constr_entry_key : bool (* true for cases_pattern *) ->
-  constr_entry_key -> grammar_object Gram.Entry.e * int option
+val interp_constr_entry_key : bool (** true for cases_pattern *) ->
+  constr_entry_key -> grammar_object Gram.entry * int option
 
-val symbol_of_constr_prod_entry_key : Gramext.g_assoc option ->
+val symbol_of_constr_prod_entry_key : gram_assoc option ->
   constr_entry_key -> bool -> constr_prod_entry_key ->
-    Compat.token Gramext.g_symbol
+    Gram.symbol
 
-(* Binding general entry keys to symbols *)
+(** General entry keys *)
+
+(** This intermediate abstract representation of entries can
+   both be reified into mlexpr for the ML extensions and
+   dynamically interpreted as entries for the Coq level extensions
+*)
+
+type prod_entry_key =
+  | Alist1 of prod_entry_key
+  | Alist1sep of prod_entry_key * string
+  | Alist0 of prod_entry_key
+  | Alist0sep of prod_entry_key * string
+  | Aopt of prod_entry_key
+  | Amodifiers of prod_entry_key
+  | Aself
+  | Anext
+  | Atactic of int
+  | Agram of Gram.internal_entry
+  | Aentry of string * string
+
+(** Binding general entry keys to symbols *)
 
 val symbol_of_prod_entry_key :
-  Gram.te prod_entry_key -> Gram.te Gramext.g_symbol
+  prod_entry_key -> Gram.symbol
 
-(**********************************************************************)
-(* Interpret entry names of the form "ne_constr_list" as entry keys   *)
+(** Interpret entry names of the form "ne_constr_list" as entry keys   *)
 
-val interp_entry_name : bool (* true to fail on unknown entry *) ->
-  int option -> string -> string -> entry_type * Gram.te prod_entry_key
+val interp_entry_name : bool (** true to fail on unknown entry *) ->
+  int option -> string -> string -> entry_type * prod_entry_key
 
-(**********************************************************************)
-(* Registering/resetting the level of a constr entry                  *)
+(** Registering/resetting the level of a constr entry *)
 
 val find_position :
-  bool (* true if for creation in pattern entry; false if in constr entry *) ->
-  Gramext.g_assoc option -> int option ->
-    Gramext.position option * Gramext.g_assoc option * string option *
-    (* for reinitialization: *) Gramext.g_assoc option
+  bool (** true if for creation in pattern entry; false if in constr entry *) ->
+  gram_assoc option -> int option ->
+    gram_position option * gram_assoc option * string option *
+    (** for reinitialization: *) gram_assoc option
 
 val synchronize_level_positions : unit -> unit
 
 val register_empty_levels : bool -> int list ->
-    (Gramext.position option * Gramext.g_assoc option *
-     string option * Gramext.g_assoc option) list
+    (gram_position option * gram_assoc option *
+     string option * gram_assoc option) list
 
 val remove_levels : int -> unit
+
+val level_of_snterml : Gram.symbol -> int

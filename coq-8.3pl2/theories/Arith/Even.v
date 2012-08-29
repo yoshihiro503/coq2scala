@@ -1,18 +1,16 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: Even.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 (** Here we define the predicates [even] and [odd] by mutual induction
     and we prove the decidability and the exclusion of those predicates.
     The main results about parity are proved in the module Div2. *)
 
-Open Local Scope nat_scope.
+Local Open Scope nat_scope.
 
 Implicit Types m n : nat.
 
@@ -147,7 +145,7 @@ Lemma even_mult_aux :
   forall n m,
     (odd (n * m) <-> odd n /\ odd m) /\ (even (n * m) <-> even n \/ even m).
 Proof.
-  intros n; elim n; simpl in |- *; auto with arith.
+  intros n; elim n; simpl; auto with arith.
   intros m; split; split; auto with arith.
   intros H'; inversion H'.
   intros H'; elim H'; auto.

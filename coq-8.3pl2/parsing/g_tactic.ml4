@@ -1,122 +1,104 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i camlp4use: "pa_extend.cmo" i*)
-
-(* $Id: g_tactic.ml4 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 open Pp
 open Pcoq
 open Util
 open Tacexpr
-open Rawterm
+open Glob_term
 open Genarg
 open Topconstr
 open Libnames
 open Termops
+open Tok
+open Compat
 
 let all_with delta = make_red_flag [FBeta;FIota;FZeta;delta]
 
 let tactic_kw = [ "->"; "<-" ; "by" ]
-let _ = List.iter (fun s -> Lexer.add_token("",s)) tactic_kw
+let _ = List.iter Lexer.add_keyword tactic_kw
+
+let err () = raise Stream.Failure
 
 (* Hack to parse "(x:=t)" as an explicit argument without conflicts with the *)
 (* admissible notation "(x t)" *)
 let test_lpar_id_coloneq =
   Gram.Entry.of_parser "lpar_id_coloneq"
     (fun strm ->
-      match Stream.npeek 1 strm with
-        | [("","(")] ->
-            (match Stream.npeek 2 strm with
-              | [_; ("IDENT",s)] ->
-                  (match Stream.npeek 3 strm with
-	            | [_; _; ("", ":=")] -> ()
-	            | _ -> raise Stream.Failure)
-	      | _ -> raise Stream.Failure)
-	| _ -> raise Stream.Failure)
+      match get_tok (stream_nth 0 strm) with
+        | KEYWORD "(" ->
+            (match get_tok (stream_nth 1 strm) with
+              | IDENT _ ->
+                  (match get_tok (stream_nth 2 strm) with
+	            | KEYWORD ":=" -> ()
+	            | _ -> err ())
+	      | _ -> err ())
+	| _ -> err ())
 
 (* idem for (x:=t) and (1:=t) *)
 let test_lpar_idnum_coloneq =
   Gram.Entry.of_parser "test_lpar_idnum_coloneq"
     (fun strm ->
-      match Stream.npeek 1 strm with
-        | [("","(")] ->
-            (match Stream.npeek 2 strm with
-              | [_; (("IDENT"|"INT"),_)] ->
-                  (match Stream.npeek 3 strm with
-                    | [_; _; ("", ":=")] -> ()
-                    | _ -> raise Stream.Failure)
-              | _ -> raise Stream.Failure)
-        | _ -> raise Stream.Failure)
+      match get_tok (stream_nth 0 strm) with
+        | KEYWORD "(" ->
+            (match get_tok (stream_nth 1 strm) with
+              | IDENT _ | INT _ ->
+                  (match get_tok (stream_nth 2 strm) with
+                    | KEYWORD ":=" -> ()
+                    | _ -> err ())
+              | _ -> err ())
+        | _ -> err ())
 
 (* idem for (x:t) *)
 let test_lpar_id_colon =
   Gram.Entry.of_parser "lpar_id_colon"
     (fun strm ->
-      match Stream.npeek 1 strm with
-        | [("","(")] ->
-            (match Stream.npeek 2 strm with
-              | [_; ("IDENT",id)] ->
-                  (match Stream.npeek 3 strm with
-                    | [_; _; ("", ":")] -> ()
-                    | _ -> raise Stream.Failure)
-              | _ -> raise Stream.Failure)
-        | _ -> raise Stream.Failure)
+      match get_tok (stream_nth 0 strm) with
+        | KEYWORD "(" ->
+            (match get_tok (stream_nth 1 strm) with
+              | IDENT _ ->
+                  (match get_tok (stream_nth 2 strm) with
+                    | KEYWORD ":" -> ()
+                    | _ -> err ())
+              | _ -> err ())
+        | _ -> err ())
 
 (* idem for (x1..xn:t) [n^2 complexity but exceptional use] *)
 let check_for_coloneq =
   Gram.Entry.of_parser "lpar_id_colon"
     (fun strm ->
       let rec skip_to_rpar p n =
-	match list_last (Stream.npeek n strm) with
-        | ("","(") -> skip_to_rpar (p+1) (n+1)
-        | ("",")") -> if p=0 then n+1 else skip_to_rpar (p-1) (n+1)
-	| ("",".") -> raise Stream.Failure
+	match get_tok (list_last (Stream.npeek n strm)) with
+        | KEYWORD "(" -> skip_to_rpar (p+1) (n+1)
+        | KEYWORD ")" -> if p=0 then n+1 else skip_to_rpar (p-1) (n+1)
+	| KEYWORD "." -> err ()
 	| _ -> skip_to_rpar p (n+1) in
       let rec skip_names n =
-	match list_last (Stream.npeek n strm) with
-        | ("IDENT",_) | ("","_") -> skip_names (n+1)
-	| ("",":") -> skip_to_rpar 0 (n+1) (* skip a constr *)
-	| _ -> raise Stream.Failure in
+	match get_tok (list_last (Stream.npeek n strm)) with
+        | IDENT _ | KEYWORD "_" -> skip_names (n+1)
+	| KEYWORD ":" -> skip_to_rpar 0 (n+1) (* skip a constr *)
+	| _ -> err () in
       let rec skip_binders n =
-	match list_last (Stream.npeek n strm) with
-        | ("","(") -> skip_binders (skip_names (n+1))
-        | ("IDENT",_) | ("","_") -> skip_binders (n+1)
-	| ("",":=") -> ()
-	| _ -> raise Stream.Failure in
-      match Stream.npeek 1 strm with
-      | [("","(")] -> skip_binders 2
-      | _ -> raise Stream.Failure)
-
-let guess_lpar_ipat s strm =
-  match Stream.npeek 1 strm with
-    | [("","(")] ->
-        (match Stream.npeek 2 strm with
-          | [_; ("",("("|"["))] -> ()
-          | [_; ("IDENT",_)] ->
-              (match Stream.npeek 3 strm with
-                | [_; _; ("", s')] when s = s' -> ()
-                | _ -> raise Stream.Failure)
-          | _ -> raise Stream.Failure)
-    | _ -> raise Stream.Failure
-
-let guess_lpar_coloneq =
-  Gram.Entry.of_parser "guess_lpar_coloneq" (guess_lpar_ipat ":=")
-
-let guess_lpar_colon =
-  Gram.Entry.of_parser "guess_lpar_colon" (guess_lpar_ipat ":")
+	match get_tok (list_last (Stream.npeek n strm)) with
+        | KEYWORD "(" -> skip_binders (skip_names (n+1))
+        | IDENT _ | KEYWORD "_" -> skip_binders (n+1)
+	| KEYWORD ":=" -> ()
+	| _ -> err () in
+      match get_tok (stream_nth 0 strm) with
+      | KEYWORD "(" -> skip_binders 2
+      | _ -> err ())
 
 let lookup_at_as_coma =
   Gram.Entry.of_parser "lookup_at_as_coma"
     (fun strm ->
-      match Stream.npeek 1 strm with
-	| [("",(","|"at"|"as"))] -> ()
-	| _ -> raise Stream.Failure)
+      match get_tok (stream_nth 0 strm) with
+	| KEYWORD (","|"at"|"as") -> ()
+	| _ -> err ())
 
 open Constr
 open Prim
@@ -148,21 +130,19 @@ let induction_arg_of_constr (c,lbind as clbind) =
   else ElimOnConstr clbind
 
 let mkTacCase with_evar = function
-  | [([ElimOnConstr cl],None,(None,None))],None ->
+  | [ElimOnConstr cl,(None,None)],None,None ->
       TacCase (with_evar,cl)
   (* Reinterpret numbers as a notation for terms *)
-  | [([(ElimOnAnonHyp n)],None,(None,None))],None ->
+  | [ElimOnAnonHyp n,(None,None)],None,None ->
       TacCase (with_evar,
-        (CPrim (dummy_loc, Numeral (Bigint.of_string (string_of_int n))),
+        (CPrim (dummy_loc, Numeral (Bigint.of_int n)),
 	 NoBindings))
   (* Reinterpret ident as notations for variables in the context *)
   (* because we don't know if they are quantified or not *)
-  | [([ElimOnIdent id],None,(None,None))],None ->
+  | [ElimOnIdent id,(None,None)],None,None ->
       TacCase (with_evar,(CRef (Ident id),NoBindings))
   | ic ->
-      if List.exists (fun (cl,a,b) ->
-           List.exists (function ElimOnAnonHyp _ -> true | _ -> false) cl)
-           (fst ic)
+      if List.exists (function (ElimOnAnonHyp _,_) -> true | _ -> false) (pi1 ic)
       then
 	error "Use of numbers as direct arguments of 'case' is not supported.";
       TacInductionDestruct (false,with_evar,ic)
@@ -183,8 +163,8 @@ let mkCLambdaN_simple bl c =
 let loc_of_ne_list l = join_loc (fst (List.hd l)) (fst (list_last l))
 
 let map_int_or_var f = function
-  | Rawterm.ArgArg x -> Rawterm.ArgArg (f x)
-  | Rawterm.ArgVar _ as y -> y
+  | Glob_term.ArgArg x -> Glob_term.ArgArg (f x)
+  | Glob_term.ArgVar _ as y -> y
 
 let all_concl_occs_clause = { onhyps=Some[]; concl_occs=all_occurrences_expr }
 
@@ -222,12 +202,12 @@ GEXTEND Gram
   simple_intropattern;
 
   int_or_var:
-    [ [ n = integer  -> Rawterm.ArgArg n
-      | id = identref -> Rawterm.ArgVar id ] ]
+    [ [ n = integer  -> Glob_term.ArgArg n
+      | id = identref -> Glob_term.ArgVar id ] ]
   ;
   nat_or_var:
-    [ [ n = natural  -> Rawterm.ArgArg n
-      | id = identref -> Rawterm.ArgVar id ] ]
+    [ [ n = natural  -> Glob_term.ArgArg n
+      | id = identref -> Glob_term.ArgVar id ] ]
   ;
   (* An identifier or a quotation meta-variable *)
   id_or_meta:
@@ -235,12 +215,6 @@ GEXTEND Gram
 
       (* This is used in quotations *)
       | id = METAIDENT -> MetaId (loc,id) ] ]
-  ;
-  (* A number or a quotation meta-variable *)
-  num_or_meta:
-    [ [ n = integer -> AI n
-      |	id = METAIDENT -> MetaId (loc,id)
-      ] ]
   ;
   open_constr:
     [ [ c = constr -> ((),c) ] ]
@@ -302,11 +276,6 @@ GEXTEND Gram
       | id = ident -> loc, IntroIdentifier id
       | "*" -> loc, IntroForthcoming true
       | "**" -> loc, IntroForthcoming false ] ]
-  ;
-  intropattern_modifier:
-    [ [ IDENT "_eqn";
-        id = [ ":"; id = naming_intropattern -> id | -> loc, IntroAnonymous ]
-        -> id ] ]
   ;
   simple_intropattern:
     [ [ pat = disjunctive_intropattern -> pat
@@ -372,7 +341,7 @@ GEXTEND Gram
       | IDENT "lazy"; s = strategy_flag -> Lazy s
       | IDENT "compute"; delta = delta_flag -> Cbv (all_with delta)
       | IDENT "vm_compute" -> CbvVm
-      | IDENT "unfold"; ul = LIST1 unfold_occ -> Unfold ul
+      | IDENT "unfold"; ul = LIST1 unfold_occ SEP "," -> Unfold ul
       | IDENT "fold"; cl = LIST1 constr -> Fold cl
       | IDENT "pattern"; pl = LIST1 pattern_occ SEP"," -> Pattern pl
       | s = IDENT -> ExtraRedExpr s ] ]
@@ -451,7 +420,7 @@ GEXTEND Gram
   ;
   hintbases:
     [ [ "with"; "*" -> None
-      | "with"; l = LIST1 IDENT -> Some l
+      | "with"; l = LIST1 [ x = IDENT -> x] -> Some l
       | -> Some [] ] ]
   ;
   auto_using:
@@ -469,10 +438,15 @@ GEXTEND Gram
     [ [ "as"; ipat = simple_intropattern -> Some ipat
       | -> None ] ]
   ;
-  with_induction_names:
-    [ [ "as"; ipat = simple_intropattern; eq = OPT intropattern_modifier
-        -> (eq,Some ipat)
-      | -> (None,None) ] ]
+  eqn_ipat:
+    [ [ IDENT "eqn"; ":"; id = naming_intropattern -> Some id
+      | IDENT "_eqn"; ":"; id = naming_intropattern ->
+        let msg = "Obsolete syntax \"_eqn:H\" could be replaced by \"eqn:H\"" in
+        msg_warning (strbrk msg); Some id
+      | IDENT "_eqn" ->
+        let msg = "Obsolete syntax \"_eqn\" could be replaced by \"eqn:?\"" in
+        msg_warning (strbrk msg); Some (loc, IntroAnonymous)
+      | -> None ] ]
   ;
   as_name:
     [ [ "as"; id = ident -> Names.Name id | -> Names.Anonymous ] ]
@@ -501,14 +475,11 @@ GEXTEND Gram
     [ [ b = orient; p = rewriter -> let (m,c) = p in (b,m,c) ] ]
   ;
   induction_clause:
-    [ [ lc = LIST1 induction_arg; ipats = with_induction_names;
-        el = OPT eliminator -> (lc,el,ipats) ] ]
-  ;
-  one_induction_clause:
-    [ [ ic = induction_clause; cl = opt_clause -> ([ic],cl) ] ]
+    [ [ c = induction_arg; pat = as_ipat; eq = eqn_ipat -> (c,(eq,pat)) ] ]
   ;
   induction_clause_list:
-    [ [ ic = LIST1 induction_clause SEP ","; cl = opt_clause -> (ic,cl) ] ]
+    [ [ ic = LIST1 induction_clause SEP ",";
+	el = OPT eliminator; cl = opt_clause -> (ic,el,cl) ] ]
   ;
   move_location:
     [ [ IDENT "after"; id = id_or_meta -> MoveAfter id
@@ -559,15 +530,16 @@ GEXTEND Gram
 	  TacMutualCofix (false,id,List.map mk_cofix_tac fd)
 
       | IDENT "pose"; (id,b) = bindings_with_parameters ->
-	  TacLetTac (Names.Name id,b,nowhere,true)
+	  TacLetTac (Names.Name id,b,nowhere,true,None)
       | IDENT "pose"; b = constr; na = as_name ->
-	  TacLetTac (na,b,nowhere,true)
+	  TacLetTac (na,b,nowhere,true,None)
       | IDENT "set"; (id,c) = bindings_with_parameters; p = clause_dft_concl ->
-	  TacLetTac (Names.Name id,c,p,true)
+	  TacLetTac (Names.Name id,c,p,true,None)
       | IDENT "set"; c = constr; na = as_name; p = clause_dft_concl ->
-          TacLetTac (na,c,p,true)
-      | IDENT "remember"; c = constr; na = as_name; p = clause_dft_all ->
-          TacLetTac (na,c,p,false)
+          TacLetTac (na,c,p,true,None)
+      | IDENT "remember"; c = constr; na = as_name; e = eqn_ipat;
+          p = clause_dft_all ->
+          TacLetTac (na,c,p,false,e)
 
       (* Begin compatibility *)
       | IDENT "assert"; test_lpar_id_coloneq; "("; (loc,id) = identref; ":=";
@@ -602,9 +574,9 @@ GEXTEND Gram
       (* Derived basic tactics *)
       | IDENT "simple"; IDENT"induction"; h = quantified_hypothesis ->
           TacSimpleInductionDestruct (true,h)
-      | IDENT "induction"; ic = one_induction_clause ->
+      | IDENT "induction"; ic = induction_clause_list ->
 	  TacInductionDestruct (true,false,ic)
-      | IDENT "einduction"; ic = one_induction_clause ->
+      | IDENT "einduction"; ic = induction_clause_list ->
 	  TacInductionDestruct(true,true,ic)
       | IDENT "double"; IDENT "induction"; h1 = quantified_hypothesis;
 	  h2 = quantified_hypothesis -> TacDoubleInduction (h1,h2)
@@ -621,21 +593,18 @@ GEXTEND Gram
 
       (* Automation tactic *)
       | IDENT "trivial"; lems = auto_using; db = hintbases ->
-	  TacTrivial (lems,db)
-      | IDENT "auto"; n = OPT int_or_var; lems = auto_using; db = hintbases ->
-	  TacAuto (n,lems,db)
+          TacTrivial (Off,lems,db)
+      | IDENT "info_trivial"; lems = auto_using; db = hintbases ->
+          TacTrivial (Info,lems,db)
+      | IDENT "debug"; IDENT "trivial"; lems = auto_using; db = hintbases ->
+          TacTrivial (Debug,lems,db)
 
-(* Obsolete since V8.0
-      | IDENT "autotdb"; n = OPT natural -> TacAutoTDB n
-      | IDENT "cdhyp"; id = identref -> TacDestructHyp (true,id)
-      | IDENT "dhyp";  id = identref -> TacDestructHyp (false,id)
-      | IDENT "dconcl"  -> TacDestructConcl
-      | IDENT "superauto"; l = autoargs -> TacSuperAuto l
-*)
-      | IDENT "auto"; IDENT "decomp"; p = OPT natural;
-          lems = auto_using -> TacDAuto (None,p,lems)
-      | IDENT "auto"; n = OPT int_or_var; IDENT "decomp"; p = OPT natural;
-          lems = auto_using -> TacDAuto (n,p,lems)
+      | IDENT "auto"; n = OPT int_or_var; lems = auto_using; db = hintbases ->
+          TacAuto (Off,n,lems,db)
+      | IDENT "info_auto"; n = OPT int_or_var; lems = auto_using;
+          db = hintbases -> TacAuto (Info,n,lems,db)
+      | IDENT "debug"; IDENT "auto"; n = OPT int_or_var; lems = auto_using;
+          db = hintbases -> TacAuto (Debug,n,lems,db)
 
       (* Context management *)
       | IDENT "clear"; "-"; l = LIST1 id_or_meta -> TacClear (true, l)
@@ -656,9 +625,9 @@ GEXTEND Gram
       | "exists"; bll = LIST1 opt_bindings SEP "," -> TacSplit (false,true,bll)
       | IDENT "eexists"; bll = LIST1 opt_bindings SEP "," ->
 	  TacSplit (true,true,bll)
-      | IDENT "constructor"; n = num_or_meta; l = with_bindings ->
+      | IDENT "constructor"; n = nat_or_var; l = with_bindings ->
 	  TacConstructor (false,n,l)
-      | IDENT "econstructor"; n = num_or_meta; l = with_bindings ->
+      | IDENT "econstructor"; n = nat_or_var; l = with_bindings ->
 	  TacConstructor (true,n,l)
       | IDENT "constructor"; t = OPT tactic -> TacAnyConstructor (false,t)
       | IDENT "econstructor"; t = OPT tactic -> TacAnyConstructor (true,t)

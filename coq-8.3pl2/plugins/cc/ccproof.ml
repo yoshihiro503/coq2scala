@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: ccproof.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 (* This file uses the (non-compressed) union-find structure to generate *)
 (* proof-trees that will be transformed into proof-terms in cctac.ml4   *)
@@ -45,7 +43,7 @@ let rec ptrans p1 p3=
     | Congr(p1,p2), Trans({p_rule=Congr(p3,p4)},p5) ->
 	ptrans (pcongr (ptrans p1 p3) (ptrans p2 p4)) p5
   | _, _ ->
-      if p1.p_rhs = p3.p_lhs then
+      if term_equal p1.p_rhs p3.p_lhs then
 	{p_lhs=p1.p_lhs;
 	 p_rhs=p3.p_rhs;
 	 p_rule=Trans (p1,p3)}
@@ -70,13 +68,13 @@ let rec psym p =
   | Congr (p1,p2)-> pcongr (psym p1) (psym p2)
 
 let pax axioms s =
-  let l,r = Hashtbl.find axioms s in
+  let l,r = Constrhash.find axioms s in
     {p_lhs=l;
      p_rhs=r;
      p_rule=Ax s}
 
 let psymax axioms s =
-  let l,r = Hashtbl.find axioms s in
+  let l,r = Constrhash.find axioms s in
     {p_lhs=r;
      p_rhs=l;
      p_rule=SymAx s}

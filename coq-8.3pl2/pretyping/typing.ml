@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: typing.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Util
 open Names
@@ -19,6 +17,7 @@ open Inductive
 open Inductiveops
 open Typeops
 open Evd
+open Arguments_renaming
 
 let meta_type evd mv =
   let ty =
@@ -35,6 +34,14 @@ let inductive_type_knowing_parameters env ind jl =
   let paramstyp = Array.map (fun j -> j.uj_type) jl in
   Inductive.type_of_inductive_knowing_parameters env mip paramstyp
 
+let e_type_judgment env evdref j =
+  match kind_of_term (whd_betadeltaiota env !evdref j.uj_type) with
+    | Sort s -> {utj_val = j.uj_val; utj_type = s }
+    | Evar ev ->
+        let (evd,s) = Evarutil.define_evar_as_sort !evdref ev in
+        evdref := evd; { utj_val = j.uj_val; utj_type = s }
+    | _ -> error_not_type env j
+
 let e_judge_of_apply env evdref funj argjv =
   let rec apply_rec n typ = function
   | [] ->
@@ -47,28 +54,81 @@ let e_judge_of_apply env evdref funj argjv =
 	   apply_rec (n+1) (subst1 hj.uj_val c2) restjl
 	 else
 	   error_cant_apply_bad_type env (n,c1, hj.uj_type) funj argjv
+      | Evar ev ->
+	  let (evd',t) = Evarutil.define_evar_as_product !evdref ev in
+          evdref := evd';
+          let (_,_,c2) = destProd t in
+	  apply_rec (n+1) (subst1 hj.uj_val c2) restjl
       | _ ->
 	  error_cant_apply_not_functional env funj argjv
   in
   apply_rec 1 funj.uj_type (Array.to_list argjv)
 
-let check_branch_types env evdref cj (lfj,explft) =
+let e_check_branch_types env evdref ind cj (lfj,explft) =
   if Array.length lfj <> Array.length explft then
     error_number_branches env cj (Array.length explft);
   for i = 0 to Array.length explft - 1 do
     if not (Evarconv.e_cumul env evdref lfj.(i).uj_type explft.(i)) then
-      error_ill_formed_branch env cj.uj_val i lfj.(i).uj_type explft.(i)
+      error_ill_formed_branch env cj.uj_val (ind,i+1) lfj.(i).uj_type explft.(i)
   done
+
+let rec max_sort l =
+  if List.mem InType l then InType else
+  if List.mem InSet l then InSet else InProp
+
+let e_is_correct_arity env evdref c pj ind specif params =
+  let arsign = make_arity_signature env true (make_ind_family (ind,params)) in
+  let allowed_sorts = elim_sorts specif in
+  let error () = error_elim_arity env ind allowed_sorts c pj None in
+  let rec srec env pt ar =
+    let pt' = whd_betadeltaiota env !evdref pt in
+    match kind_of_term pt', ar with
+    | Prod (na1,a1,t), (_,None,a1')::ar' ->
+        if not (Evarconv.e_cumul env evdref a1 a1') then error ();
+        srec (push_rel (na1,None,a1) env) t ar'
+    | Sort s, [] ->
+        if not (List.mem (family_of_sort s) allowed_sorts) then error ()
+    | Evar (ev,_), [] ->
+        let s = Termops.new_sort_in_family (max_sort allowed_sorts) in
+        evdref := Evd.define ev (mkSort s) !evdref
+    | _, (_,Some _,_ as d)::ar' ->
+        srec (push_rel d env) (lift 1 pt') ar'
+    | _ ->
+        error ()
+  in
+  srec env pj.uj_type (List.rev arsign)
+
+let e_type_case_branches env evdref (ind,largs) pj c =
+  let specif = lookup_mind_specif env ind in
+  let nparams = inductive_params specif in
+  let (params,realargs) = list_chop nparams largs in
+  let p = pj.uj_val in
+  let univ = e_is_correct_arity env evdref c pj ind specif params in
+  let lc = build_branches_type ind specif params p in
+  let n = (snd specif).Declarations.mind_nrealargs_ctxt in
+  let ty =
+    whd_betaiota !evdref (Reduction.betazeta_appvect (n+1) p (Array.of_list (realargs@[c]))) in
+  (lc, ty, univ)
 
 let e_judge_of_case env evdref ci pj cj lfj =
   let indspec =
     try find_mrectype env !evdref cj.uj_type
     with Not_found -> error_case_not_inductive env cj in
   let _ = check_case_info env (fst indspec) ci in
-  let (bty,rslty,univ) = type_case_branches env indspec pj cj.uj_val in
-  check_branch_types env evdref cj (lfj,bty);
+  let (bty,rslty,univ) = e_type_case_branches env evdref indspec pj cj.uj_val in
+  e_check_branch_types env evdref (fst indspec) cj (lfj,bty);
   { uj_val  = mkCase (ci, pj.uj_val, cj.uj_val, Array.map j_val lfj);
     uj_type = rslty }
+
+let check_allowed_sort env sigma ind c p =
+  let pj = Retyping.get_judgment_of env sigma p in
+  let ksort = family_of_sort (sort_of_arity env sigma pj.uj_type) in
+  let specif = Global.lookup_inductive ind in
+  let sorts = elim_sorts specif in
+  if not (List.exists ((=) ksort) sorts) then
+    let s = inductive_sort_family (snd specif) in
+    error_elim_arity env ind sorts c pj
+      (Some(ksort,s,error_elim_explain ksort s))
 
 let e_judge_of_cast env evdref cj k tj =
   let expected_type = tj.utj_val in
@@ -100,13 +160,13 @@ let rec execute env evdref cstr =
         judge_of_variable env id
 
     | Const c ->
-        make_judge cstr (type_of_constant env c)
+        make_judge cstr (rename_type_of_constant env c)
 
     | Ind ind ->
-	make_judge cstr (type_of_inductive env ind)
+	make_judge cstr (rename_type_of_inductive env ind)
 
     | Construct cstruct ->
-	make_judge cstr (type_of_constructor env cstruct)
+	make_judge cstr (rename_type_of_constructor env cstruct)
 
     | Case (ci,p,c,lf) ->
         let cj = execute env evdref c in
@@ -153,23 +213,23 @@ let rec execute env evdref cstr =
 
     | Lambda (name,c1,c2) ->
         let j = execute env evdref c1 in
-	let var = type_judgment env j in
+	let var = e_type_judgment env evdref j in
 	let env1 = push_rel (name,None,var.utj_val) env in
         let j' = execute env1 evdref c2 in
         judge_of_abstraction env1 name var j'
 
     | Prod (name,c1,c2) ->
         let j = execute env evdref c1 in
-        let varj = type_judgment env j in
+        let varj = e_type_judgment env evdref j in
 	let env1 = push_rel (name,None,varj.utj_val) env in
         let j' = execute env1 evdref c2 in
-        let varj' = type_judgment env1 j' in
+        let varj' = e_type_judgment env1 evdref j' in
 	judge_of_product env name varj varj'
 
      | LetIn (name,c1,c2,c3) ->
         let j1 = execute env evdref c1 in
         let j2 = execute env evdref c2 in
-        let j2 = type_judgment env j2 in
+        let j2 = e_type_judgment env evdref j2 in
         let _ =  judge_of_cast env j1 DEFAULTcast j2 in
         let env1 = push_rel (name,Some j1.uj_val,j2.utj_val) env in
         let j3 = execute env1 evdref c3 in
@@ -178,7 +238,7 @@ let rec execute env evdref cstr =
     | Cast (c,k,t) ->
         let cj = execute env evdref c in
         let tj = execute env evdref t in
-	let tj = type_judgment env tj in
+	let tj = e_type_judgment env evdref tj in
         e_judge_of_cast env evdref cj k tj
 
 and execute_recdef env evdref (names,lar,vdef) =
@@ -191,8 +251,6 @@ and execute_recdef env evdref (names,lar,vdef) =
   (names,lara,vdefv)
 
 and execute_array env evdref = Array.map (execute env evdref)
-
-and execute_list env evdref = List.map (execute env evdref)
 
 let check env evd c t =
   let evdref = ref evd in
@@ -211,15 +269,23 @@ let type_of env evd c =
 (* Sort of a type *)
 
 let sort_of env evd c =
-  let j = execute env (ref evd) c in
-  let a = type_judgment env j in
+  let evdref = ref evd in
+  let j = execute env evdref c in
+  let a = e_type_judgment env evdref j in
   a.utj_type
 
 (* Try to solve the existential variables by typing *)
+
+let e_type_of env evd c =
+  let evdref = ref evd in
+  let j = execute env evdref c in
+  (* side-effect on evdref *)
+  !evdref, Termops.refresh_universes j.uj_type
 
 let solve_evars env evd c =
   let evdref = ref evd in
   let c = (execute env evdref c).uj_val in
   (* side-effect on evdref *)
-  nf_evar !evdref c
-  
+  !evdref, nf_evar !evdref c
+
+let _ = Evarconv.set_solve_evars solve_evars

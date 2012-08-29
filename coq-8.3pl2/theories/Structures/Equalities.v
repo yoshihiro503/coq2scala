@@ -6,23 +6,28 @@
 (*         *       GNU Lesser General Public License Version 2.1       *)
 (***********************************************************************)
 
-(* $Id: Equalities.v 13475 2010-09-29 14:33:13Z letouzey $ *)
-
 Require Export RelationClasses.
+Require Import Bool Morphisms Setoid.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
 
+(** Structure with nothing inside.
+    Used to force a module type T into a module via Nop <+ T. (HACK!) *)
+
+Module Type Nop.
+End Nop.
+
 (** * Structure with just a base type [t] *)
 
 Module Type Typ.
-  Parameter Inline t : Type.
+  Parameter Inline(10) t : Type.
 End Typ.
 
 (** * Structure with an equality relation [eq] *)
 
 Module Type HasEq (Import T:Typ).
-  Parameter Inline eq : t -> t -> Prop.
+  Parameter Inline(30) eq : t -> t -> Prop.
 End HasEq.
 
 Module Type Eq := Typ <+ HasEq.
@@ -61,10 +66,19 @@ End HasEqDec.
 (** Having [eq_dec] is the same as having a boolean equality plus
     a correctness proof. *)
 
-Module Type HasEqBool (Import E:Eq').
+Module Type HasEqb (Import T:Typ).
   Parameter Inline eqb : t -> t -> bool.
-  Parameter eqb_eq : forall x y, eqb x y = true <-> x==y.
-End HasEqBool.
+End HasEqb.
+
+Module Type EqbSpec (T:Typ)(X:HasEq T)(Y:HasEqb T).
+  Parameter eqb_eq : forall x y, Y.eqb x y = true <-> X.eq x y.
+End EqbSpec.
+
+Module Type EqbNotation (T:Typ)(E:HasEqb T).
+  Infix "=?" := E.eqb (at level 70, no associativity).
+End EqbNotation.
+
+Module Type HasEqBool (E:Eq) := HasEqb E <+ EqbSpec E E.
 
 (** From these basic blocks, we can build many combinations
     of static standalone module types. *)
@@ -102,8 +116,10 @@ Module Type EqualityTypeBoth' := EqualityTypeBoth <+ EqNotation.
 Module Type DecidableType' := DecidableType <+ EqNotation.
 Module Type DecidableTypeOrig' := DecidableTypeOrig <+ EqNotation.
 Module Type DecidableTypeBoth' := DecidableTypeBoth <+ EqNotation.
-Module Type BooleanEqualityType' := BooleanEqualityType <+ EqNotation.
-Module Type BooleanDecidableType' := BooleanDecidableType <+ EqNotation.
+Module Type BooleanEqualityType' :=
+ BooleanEqualityType <+ EqNotation <+ EqbNotation.
+Module Type BooleanDecidableType' :=
+ BooleanDecidableType <+ EqNotation <+ EqbNotation.
 Module Type DecidableTypeFull' := DecidableTypeFull <+ EqNotation.
 
 (** * Compatibility wrapper from/to the old version of
@@ -161,6 +177,49 @@ Module Dec2Bool (E:DecidableType) <: BooleanDecidableType
 Module Bool2Dec (E:BooleanEqualityType) <: BooleanDecidableType
  := E <+ HasEqBool2Dec.
 
+
+(** Some properties of boolean equality *)
+
+Module BoolEqualityFacts (Import E : BooleanEqualityType').
+
+(** [eqb] is compatible with [eq] *)
+
+Instance eqb_compat : Proper (E.eq ==> E.eq ==> Logic.eq) eqb.
+Proof.
+intros x x' Exx' y y' Eyy'.
+apply eq_true_iff_eq.
+now rewrite 2 eqb_eq, Exx', Eyy'.
+Qed.
+
+(** Alternative specification of [eqb] based on [reflect]. *)
+
+Lemma eqb_spec x y : reflect (x==y) (x =? y).
+Proof.
+apply iff_reflect. symmetry. apply eqb_eq.
+Defined.
+
+(** Negated form of [eqb_eq] *)
+
+Lemma eqb_neq x y : (x =? y) = false <-> x ~= y.
+Proof.
+now rewrite <- not_true_iff_false, eqb_eq.
+Qed.
+
+(** Basic equality laws for [eqb] *)
+
+Lemma eqb_refl x : (x =? x) = true.
+Proof.
+now apply eqb_eq.
+Qed.
+
+Lemma eqb_sym x y : (x =? y) = (y =? x).
+Proof.
+apply eq_true_iff_eq. now rewrite 2 eqb_eq.
+Qed.
+
+(** Transitivity is a particular case of [eqb_compat] *)
+
+End BoolEqualityFacts.
 
 
 (** * UsualDecidableType

@@ -1,14 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 (*            Benjamin Gregoire, Laurent Thery, INRIA, 2007             *)
 (************************************************************************)
-
-(*i $Id: BigZ.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Export BigN.
 Require Import ZProperties ZDivFloor ZSig ZSigZAxioms ZMake.
@@ -21,82 +19,64 @@ Require Import ZProperties ZDivFloor ZSig ZSigZAxioms ZMake.
     - [ZMake.Make BigN] provides the operations and basic specs w.r.t. ZArith
     - [ZTypeIsZAxioms] shows (mainly) that these operations implement
       the interface [ZAxioms]
-    - [ZPropSig] adds all generic properties derived from [ZAxioms]
-    - [ZDivPropFunct] provides generic properties of [div] and [mod]
-      ("Floor" variant)
+    - [ZProp] adds all generic properties derived from [ZAxioms]
     - [MinMax*Properties] provides properties of [min] and [max]
 
 *)
 
+Delimit Scope bigZ_scope with bigZ.
 
-Module BigZ <: ZType <: OrderedTypeFull <: TotalOrder :=
- ZMake.Make BigN <+ ZTypeIsZAxioms
- <+ !ZPropSig <+ !ZDivPropFunct <+ HasEqBool2Dec
- <+ !MinMaxLogicalProperties <+ !MinMaxDecProperties.
+Module BigZ <: ZType <: OrderedTypeFull <: TotalOrder.
+ Include ZMake.Make BigN [scope abstract_scope to bigZ_scope].
+ Bind Scope bigZ_scope with t t_.
+ Include ZTypeIsZAxioms
+ <+ ZProp [no inline]
+ <+ HasEqBool2Dec [no inline]
+ <+ MinMaxLogicalProperties [no inline]
+ <+ MinMaxDecProperties [no inline].
+End BigZ.
+
+(** For precision concerning the above scope handling, see comment in BigN *)
 
 (** Notations about [BigZ] *)
 
+Local Open Scope bigZ_scope.
+
 Notation bigZ := BigZ.t.
-
-Delimit Scope bigZ_scope with bigZ.
-Bind Scope bigZ_scope with bigZ.
-Bind Scope bigZ_scope with BigZ.t.
-Bind Scope bigZ_scope with BigZ.t_.
-(* Bind Scope has no retroactive effect, let's declare scopes by hand. *)
-Arguments Scope BigZ.Pos [bigN_scope].
-Arguments Scope BigZ.Neg [bigN_scope].
-Arguments Scope BigZ.to_Z [bigZ_scope].
-Arguments Scope BigZ.succ [bigZ_scope].
-Arguments Scope BigZ.pred [bigZ_scope].
-Arguments Scope BigZ.opp [bigZ_scope].
-Arguments Scope BigZ.square [bigZ_scope].
-Arguments Scope BigZ.add [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.sub [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.mul [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.div [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.eq [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.lt [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.le [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.eq [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.compare [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.min [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.max [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.eq_bool [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.power_pos [bigZ_scope positive_scope].
-Arguments Scope BigZ.power [bigZ_scope N_scope].
-Arguments Scope BigZ.sqrt [bigZ_scope].
-Arguments Scope BigZ.div_eucl [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.modulo [bigZ_scope bigZ_scope].
-Arguments Scope BigZ.gcd [bigZ_scope bigZ_scope].
-
+Bind Scope bigZ_scope with bigZ BigZ.t BigZ.t_.
+Arguments BigZ.Pos _%bigN.
+Arguments BigZ.Neg _%bigN.
 Local Notation "0" := BigZ.zero : bigZ_scope.
 Local Notation "1" := BigZ.one : bigZ_scope.
+Local Notation "2" := BigZ.two : bigZ_scope.
 Infix "+" := BigZ.add : bigZ_scope.
 Infix "-" := BigZ.sub : bigZ_scope.
 Notation "- x" := (BigZ.opp x) : bigZ_scope.
 Infix "*" := BigZ.mul : bigZ_scope.
 Infix "/" := BigZ.div : bigZ_scope.
-Infix "^" := BigZ.power : bigZ_scope.
+Infix "^" := BigZ.pow : bigZ_scope.
 Infix "?=" := BigZ.compare : bigZ_scope.
+Infix "=?" := BigZ.eqb (at level 70, no associativity) : bigZ_scope.
+Infix "<=?" := BigZ.leb (at level 70, no associativity) : bigZ_scope.
+Infix "<?" := BigZ.ltb (at level 70, no associativity) : bigZ_scope.
 Infix "==" := BigZ.eq (at level 70, no associativity) : bigZ_scope.
-Notation "x != y" := (~x==y)%bigZ (at level 70, no associativity) : bigZ_scope.
+Notation "x != y" := (~x==y) (at level 70, no associativity) : bigZ_scope.
 Infix "<" := BigZ.lt : bigZ_scope.
 Infix "<=" := BigZ.le : bigZ_scope.
-Notation "x > y" := (BigZ.lt y x)(only parsing) : bigZ_scope.
-Notation "x >= y" := (BigZ.le y x)(only parsing) : bigZ_scope.
-Notation "x < y < z" := (x<y /\ y<z)%bigZ : bigZ_scope.
-Notation "x < y <= z" := (x<y /\ y<=z)%bigZ : bigZ_scope.
-Notation "x <= y < z" := (x<=y /\ y<z)%bigZ : bigZ_scope.
-Notation "x <= y <= z" := (x<=y /\ y<=z)%bigZ : bigZ_scope.
+Notation "x > y" := (y < x) (only parsing) : bigZ_scope.
+Notation "x >= y" := (y <= x) (only parsing) : bigZ_scope.
+Notation "x < y < z" := (x<y /\ y<z) : bigZ_scope.
+Notation "x < y <= z" := (x<y /\ y<=z) : bigZ_scope.
+Notation "x <= y < z" := (x<=y /\ y<z) : bigZ_scope.
+Notation "x <= y <= z" := (x<=y /\ y<=z) : bigZ_scope.
 Notation "[ i ]" := (BigZ.to_Z i) : bigZ_scope.
-Infix "mod" := BigZ.modulo (at level 40, no associativity) : bigN_scope.
-
-Local Open Scope bigZ_scope.
+Infix "mod" := BigZ.modulo (at level 40, no associativity) : bigZ_scope.
+Infix "÷" := BigZ.quot (at level 40, left associativity) : bigZ_scope.
 
 (** Some additional results about [BigZ] *)
 
 Theorem spec_to_Z: forall n : bigZ,
-  BigN.to_Z (BigZ.to_N n) = ((Zsgn [n]) * [n])%Z.
+  BigN.to_Z (BigZ.to_N n) = ((Z.sgn [n]) * [n])%Z.
 Proof.
 intros n; case n; simpl; intros p;
   generalize (BigN.spec_pos p); case (BigN.to_Z p); auto.
@@ -105,7 +85,7 @@ intros p1 H1; case H1; auto.
 Qed.
 
 Theorem spec_to_N n:
- ([n] = Zsgn [n] * (BigN.to_Z (BigZ.to_N n)))%Z.
+ ([n] = Z.sgn [n] * (BigN.to_Z (BigZ.to_N n)))%Z.
 Proof.
 case n; simpl; intros p;
   generalize (BigN.spec_pos p); case (BigN.to_Z p); auto.
@@ -135,29 +115,31 @@ symmetry. apply BigZ.add_opp_r.
 exact BigZ.add_opp_diag_r.
 Qed.
 
-Lemma BigZeqb_correct : forall x y, BigZ.eq_bool x y = true -> x==y.
+Lemma BigZeqb_correct : forall x y, (x =? y) = true -> x==y.
 Proof. now apply BigZ.eqb_eq. Qed.
 
-Lemma BigZpower : power_theory 1 BigZ.mul BigZ.eq (@id N) BigZ.power.
+Definition BigZ_of_N n := BigZ.of_Z (Z.of_N n).
+
+Lemma BigZpower : power_theory 1 BigZ.mul BigZ.eq BigZ_of_N BigZ.pow.
 Proof.
 constructor.
-intros. red. rewrite BigZ.spec_power. unfold id.
-destruct Zpower_theory as [EQ]. rewrite EQ.
+intros. unfold BigZ.eq, BigZ_of_N. rewrite BigZ.spec_pow, BigZ.spec_of_Z.
+rewrite Zpower_theory.(rpow_pow_N).
 destruct n; simpl. reflexivity.
 induction p; simpl; intros; BigZ.zify; rewrite ?IHp; auto.
 Qed.
 
 Lemma BigZdiv : div_theory BigZ.eq BigZ.add BigZ.mul (@id _)
- (fun a b => if BigZ.eq_bool b 0 then (0,a) else BigZ.div_eucl a b).
+ (fun a b => if b =? 0 then (0,a) else BigZ.div_eucl a b).
 Proof.
 constructor. unfold id. intros a b.
 BigZ.zify.
-generalize (Zeq_bool_if [b] 0); destruct (Zeq_bool [b] 0).
+case Z.eqb_spec.
 BigZ.zify. auto with zarith.
 intros NEQ.
 generalize (BigZ.spec_div_eucl a b).
 generalize (Z_div_mod_full [a] [b] NEQ).
-destruct BigZ.div_eucl as (q,r), Zdiv_eucl as (q',r').
+destruct BigZ.div_eucl as (q,r), Z.div_eucl as (q',r').
 intros (EQ,_). injection 1. intros EQr EQq.
 BigZ.zify. rewrite EQr, EQq; auto.
 Qed.
@@ -170,6 +152,7 @@ Ltac isBigZcst t :=
  | BigZ.Neg ?t => isBigNcst t
  | BigZ.zero => constr:true
  | BigZ.one => constr:true
+ | BigZ.two => constr:true
  | BigZ.minus_one => constr:true
  | _ => constr:false
  end.
@@ -180,16 +163,25 @@ Ltac BigZcst t :=
  | false => constr:NotConstant
  end.
 
+Ltac BigZ_to_N t :=
+ match t with
+ | BigZ.Pos ?t => BigN_to_N t
+ | BigZ.zero => constr:0%N
+ | BigZ.one => constr:1%N
+ | BigZ.two => constr:2%N
+ | _ => constr:NotConstant
+ end.
+
 (** Registration for the "ring" tactic *)
 
 Add Ring BigZr : BigZring
  (decidable BigZeqb_correct,
   constants [BigZcst],
-  power_tac BigZpower [Ncst],
+  power_tac BigZpower [BigZ_to_N],
   div BigZdiv).
 
 Section TestRing.
-Let test : forall x y, 1 + x*y + x^2 + 1 == 1*1 + 1 + y*x + 1*x*x.
+Let test : forall x y, 1 + x*y + x^2 + 1 == 1*1 + 1 + (y + 1*x)*x.
 Proof.
 intros. ring_simplify. reflexivity.
 Qed.

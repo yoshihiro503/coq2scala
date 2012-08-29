@@ -6,8 +6,6 @@
 (*         *       GNU Lesser General Public License Version 2.1       *)
 (***********************************************************************)
 
-(* $Id: FMapInterface.v 12640 2010-01-07 15:32:49Z letouzey $ *)
-
 (** * Finite map library *)
 
 (** This file proposes interfaces for finite maps *)
@@ -58,6 +56,7 @@ Definition Cmp (elt:Type)(cmp:elt->elt->bool) e1 e2 := cmp e1 e2 = true.
 Module Type WSfun (E : DecidableType).
 
   Definition key := E.t.
+  Hint Transparent key.
 
   Parameter t : Type -> Type.
   (** the abstract type of maps *)

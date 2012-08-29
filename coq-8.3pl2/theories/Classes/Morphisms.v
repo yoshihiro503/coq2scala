@@ -1,7 +1,7 @@
 (* -*- coding: utf-8 -*- *)
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -13,8 +13,6 @@
    Institution: LRI, CNRS UMR 8623 - University Paris Sud
 *)
 
-(* $Id: Morphisms.v 13359 2010-07-30 08:46:55Z herbelin $ *)
-
 Require Import Coq.Program.Basics.
 Require Import Coq.Program.Tactics.
 Require Import Coq.Relations.Relation_Definitions.
@@ -22,12 +20,6 @@ Require Export Coq.Classes.RelationClasses.
 
 Generalizable All Variables.
 Local Obligation Tactic := simpl_relation.
-
-Local Notation "'λ'  x .. y , t" := (fun x => .. (fun y => t) ..)
-  (at level 200, x binder, y binder, right associativity).
-
-Local Notation "'Π'  x .. y , P" := (forall x, .. (forall y, P) ..)
-  (at level 200, x binder, y binder, right associativity) : type_scope.
 
 (** * Morphisms.
 
@@ -63,8 +55,8 @@ Definition respectful {A B : Type}
 
 Delimit Scope signature_scope with signature.
 
-Arguments Scope Proper [type_scope signature_scope].
-Arguments Scope respectful [type_scope type_scope signature_scope signature_scope].
+Arguments Proper {A}%type R%signature m.
+Arguments respectful {A B}%type (R R')%signature _ _.
 
 Module ProperNotations.
 
@@ -81,19 +73,60 @@ End ProperNotations.
 
 Export ProperNotations.
 
-Open Local Scope signature_scope.
+Local Open Scope signature_scope.
+
+(** [solve_proper] try to solve the goal [Proper (?==> ... ==>?) f]
+    by repeated introductions and setoid rewrites. It should work
+    fine when [f] is a combination of already known morphisms and
+    quantifiers. *)
+
+Ltac solve_respectful t :=
+ match goal with
+   | |- respectful _ _ _ _ =>
+     let H := fresh "H" in
+     intros ? ? H; solve_respectful ltac:(setoid_rewrite H; t)
+   | _ => t; reflexivity
+ end.
+
+Ltac solve_proper := unfold Proper; solve_respectful ltac:(idtac).
+
+(** [f_equiv] is a clone of [f_equal] that handles setoid equivalences.
+    For example, if we know that [f] is a morphism for [E1==>E2==>E],
+    then the goal [E (f x y) (f x' y')] will be transformed by [f_equiv]
+    into the subgoals [E1 x x'] and [E2 y y'].
+*)
+
+Ltac f_equiv :=
+ match goal with
+  | |- ?R (?f ?x) (?f' _) =>
+    let T := type of x in
+    let Rx := fresh "R" in
+    evar (Rx : relation T);
+    let H := fresh in
+    assert (H : (Rx==>R)%signature f f');
+    unfold Rx in *; clear Rx; [ f_equiv | apply H; clear H; try reflexivity ]
+  | |- ?R ?f ?f' =>
+    try reflexivity;
+    change (Proper R f); eauto with typeclass_instances; fail
+  | _ => idtac
+ end.
+
+(** [forall_def] reifies the dependent product as a definition. *)
+
+Definition forall_def {A : Type} (B : A -> Type) : Type := forall x : A, B x.
 
 (** Dependent pointwise lifting of a relation on the range. *)
 
-Definition forall_relation {A : Type} {B : A -> Type} (sig : Π a : A, relation (B a)) : relation (Π x : A, B x) :=
-  λ f g, Π a : A, sig a (f a) (g a).
+Definition forall_relation {A : Type} {B : A -> Type}
+ (sig : forall a, relation (B a)) : relation (forall x, B x) :=
+ fun f g => forall a, sig a (f a) (g a).
 
-Arguments Scope forall_relation [type_scope type_scope signature_scope].
+Arguments forall_relation {A B}%type sig%signature _ _.
 
 (** Non-dependent pointwise lifting *)
 
 Definition pointwise_relation (A : Type) {B : Type} (R : relation B) : relation (A -> B) :=
-  Eval compute in forall_relation (B:=λ _, B) (λ _, R).
+  Eval compute in forall_relation (B:=fun _ => B) (fun _ => R).
 
 Lemma pointwise_pointwise A B (R : relation B) :
   relation_equivalence (pointwise_relation A R) (@eq A ==> R).
@@ -192,27 +225,33 @@ Hint Extern 4 (subrelation (inverse _) _) =>
 
 (** The complement of a relation conserves its proper elements. *)
 
-Program Instance complement_proper
+Program Definition complement_proper
   `(mR : Proper (A -> A -> Prop) (RA ==> RA ==> iff) R) :
-  Proper (RA ==> RA ==> iff) (complement R).
+  Proper (RA ==> RA ==> iff) (complement R) := _.
 
-  Next Obligation.
+ Next Obligation.
   Proof.
     unfold complement.
     pose (mR x y H x0 y0 H0).
     intuition.
   Qed.
+ 
+Hint Extern 1 (Proper _ (complement _)) => 
+  apply @complement_proper : typeclass_instances.
 
 (** The [inverse] too, actually the [flip] instance is a bit more general. *)
 
-Program Instance flip_proper
+Program Definition flip_proper
   `(mor : Proper (A -> B -> C) (RA ==> RB ==> RC) f) :
-  Proper (RB ==> RA ==> RC) (flip f).
+  Proper (RB ==> RA ==> RC) (flip f) := _.
 
   Next Obligation.
   Proof.
     apply mor ; auto.
   Qed.
+
+Hint Extern 1 (Proper _ (flip _)) => 
+  apply @flip_proper : typeclass_instances.
 
 (** Every Transitive relation gives rise to a binary morphism on [impl],
    contravariant in the first argument, covariant in the second. *)
@@ -369,41 +408,45 @@ Class PartialApplication.
 CoInductive normalization_done : Prop := did_normalization.
 
 Ltac partial_application_tactic :=
-  let rec do_partial_apps H m :=
+  let rec do_partial_apps H m cont := 
     match m with
-      | ?m' ?x => class_apply @Reflexive_partial_app_morphism ; [do_partial_apps H m'|clear H]
-      | _ => idtac
+      | ?m' ?x => class_apply @Reflexive_partial_app_morphism ; 
+        [(do_partial_apps H m' ltac:idtac)|clear H]
+      | _ => cont
     end
   in
-  let rec do_partial H ar m :=
+  let rec do_partial H ar m := 
     match ar with
-      | 0 => do_partial_apps H m
+      | 0%nat => do_partial_apps H m ltac:(fail 1)
       | S ?n' =>
         match m with
           ?m' ?x => do_partial H n' m'
         end
     end
   in
-  let on_morphism m :=
-    let m' := fresh in head_of_constr m' m ;
-    let n := fresh in evar (n:nat) ;
-    let v := eval compute in n in clear n ;
-    let H := fresh in
-      assert(H:Params m' v) by typeclasses eauto ;
-      let v' := eval compute in v in subst m';
-      do_partial H v' m
- in
+  let params m sk fk :=
+    (let m' := fresh in head_of_constr m' m ;
+     let n := fresh in evar (n:nat) ;
+     let v := eval compute in n in clear n ;
+      let H := fresh in
+        assert(H:Params m' v) by typeclasses eauto ;
+          let v' := eval compute in v in subst m';
+            (sk H v' || fail 1))
+    || fk
+  in
+  let on_morphism m cont :=
+    params m ltac:(fun H n => do_partial H n m)
+      ltac:(cont)
+  in
   match goal with
     | [ _ : normalization_done |- _ ] => fail 1
     | [ _ : @Params _ _ _ |- _ ] => fail 1
     | [ |- @Proper ?T _ (?m ?x) ] =>
       match goal with
-        | [ _ : PartialApplication |- _ ] =>
-          class_apply @Reflexive_partial_app_morphism
-        | _ =>
-          on_morphism (m x) ||
-            (class_apply @Reflexive_partial_app_morphism ;
-              [ pose Build_PartialApplication | idtac ])
+        | [ H : PartialApplication |- _ ] =>
+          class_apply @Reflexive_partial_app_morphism; [|clear H]
+        | _ => on_morphism (m x)
+          ltac:(class_apply @Reflexive_partial_app_morphism)
       end
   end.
 
@@ -432,7 +475,7 @@ Qed.
 
 Lemma inverse_arrow `(NA : Normalizes A R (inverse R'''), NB : Normalizes B R' (inverse R'')) :
   Normalizes (A -> B) (R ==> R') (inverse (R''' ==> R'')%signature).
-Proof. unfold Normalizes in *. intros.
+Proof. unfold Normalizes in *. intros. 
   rewrite NA, NB. firstorder.
 Qed.
 

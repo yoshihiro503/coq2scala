@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: coq_commands.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 let commands = [
   [(* "Abort"; *)
@@ -16,8 +14,10 @@ let commands = [
    "Add LoadPath";
    "Add ML Path";
    "Add Morphism";
+   "Add Printing Constructor";
    "Add Printing If";
    "Add Printing Let";
+   "Add Printing Record";
    "Add Rec LoadPath";
    "Add Rec ML Path";
    "Add Ring A Aplus Amult Aone Azero Ainv Aeq T [ c1 ... cn ]. ";
@@ -94,8 +94,10 @@ let commands = [
    "Record";
    "Remark";
    "Remove LoadPath";
+   "Remove Printing Constructor";
    "Remove Printing If";
    "Remove Printing Let";
+   "Remove Printing Record";
    "Require";
    "Require Export";
    "Require Import";
@@ -125,7 +127,6 @@ let commands = [
      "Show Script";
      "Show Tree";*)
      "Structure";
-     (* "Suspend"; *)
      "Syntactic Definition";
      "Syntax";];
   [

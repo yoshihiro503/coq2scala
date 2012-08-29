@@ -1,14 +1,13 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: nametab.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 open Util
+open Compat
 open Pp
 open Names
 open Libnames
@@ -20,10 +19,10 @@ exception GlobalizationError of qualid
 exception GlobalizationConstantError of qualid
 
 let error_global_not_found_loc loc q =
-  Stdpp.raise_with_loc loc (GlobalizationError q)
+  Loc.raise loc (GlobalizationError q)
 
 let error_global_constant_not_found_loc loc q =
-  Stdpp.raise_with_loc loc (GlobalizationConstantError q)
+  Loc.raise loc (GlobalizationConstantError q)
 
 let error_global_not_found q = raise (GlobalizationError q)
 
@@ -109,9 +108,9 @@ struct
 	      | Absolute (n,_) ->
 		  (* This is an absolute name, we must keep it
 		     otherwise it may become unaccessible forever *)
-		  Flags.if_verbose
-		    warning ("Trying to mask the absolute name \""
-			     ^ U.to_string n ^ "\"!");
+		  Flags.if_warn
+		    msg_warning (str ("Trying to mask the absolute name \""
+			     ^ U.to_string n ^ "\"!"));
 		  current
 	      | Nothing
 	      | Relative _ -> Relative (uname,o)
@@ -132,7 +131,7 @@ struct
 		   become unaccessible forever *)
 		(* But ours is also absolute! This is an error! *)
 		error ("Cannot mask the absolute name \""
-  		       ^ U.to_string uname' ^ "\"!")
+		       ^ U.to_string uname' ^ "\"!")
 	  | Nothing
 	  | Relative _ -> Absolute (uname,o), dirmap
 
@@ -149,9 +148,9 @@ let rec push_exactly uname o level (current,dirmap) = function
 	      | Absolute (n,_) ->
 		  (* This is an absolute name, we must keep it
 		     otherwise it may become unaccessible forever *)
-		  Flags.if_verbose
-		    warning ("Trying to mask the absolute name \""
-  			     ^ U.to_string n ^ "\"!");
+		  Flags.if_warn
+		    msg_warning (str ("Trying to mask the absolute name \""
+			     ^ U.to_string n ^ "\"!"));
 		  current
 	      | Nothing
 	      | Relative _ -> Relative (uname,o)
@@ -288,10 +287,7 @@ let the_dirtab = ref (DirTab.empty : dirtab)
 (* Reversed name tables ***************************************************)
 
 (* This table translates extended_global_references back to section paths *)
-module Globrevtab = Map.Make(struct
-			       type t=extended_global_reference
-			       let compare = compare
-			     end)
+module Globrevtab = Map.Make(ExtRefOrdered)
 
 type globrevtab = full_path Globrevtab.t
 let the_globrevtab = ref (Globrevtab.empty : globrevtab)
@@ -379,7 +375,6 @@ let locate_modtype qid = SpTab.locate qid !the_modtypetab
 let full_name_modtype qid = SpTab.user_name qid !the_modtypetab
 
 let locate_tactic qid = SpTab.locate qid !the_tactictab
-let full_name_tactic qid = SpTab.user_name qid !the_tactictab
 
 let locate_dir qid = DirTab.locate qid !the_dirtab
 
@@ -412,20 +407,12 @@ let locate_constant qid =
     | TrueGlobal (ConstRef kn) -> kn
     | _ -> raise Not_found
 
-let locate_mind qid =
-  match locate_extended qid with
-    | TrueGlobal (IndRef (kn,0)) -> kn
-    | _ -> raise Not_found
-
 let global_of_path sp =
   match SpTab.find sp !the_ccitab with
     | TrueGlobal ref -> ref
     | _ -> raise Not_found
 
 let extended_global_of_path sp = SpTab.find sp !the_ccitab
-
-let locate_in_absolute_module dir id =
-  global_of_path (make_path dir id)
 
 let global r =
   let (loc,qid) = qualid_of_reference r in
@@ -449,8 +436,6 @@ let exists_section = exists_dir
 let exists_module = exists_dir
 
 let exists_modtype sp = SpTab.exists sp !the_modtypetab
-
-let exists_tactic sp = SpTab.exists sp !the_tactictab
 
 (* Reverse locate functions ***********************************************)
 

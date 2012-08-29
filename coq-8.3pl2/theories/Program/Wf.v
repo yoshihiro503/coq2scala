@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-(* $Id: Wf.v 13492 2010-10-04 21:20:01Z herbelin $ *)
-
 (** Reformulation of the Wf module using subsets where possible, providing
    the support for [Program]'s treatment of well-founded definitions. *)
 
@@ -14,7 +12,7 @@ Require Import Coq.Init.Wf.
 Require Import Coq.Program.Utils.
 Require Import ProofIrrelevance.
 
-Open Local Scope program_scope.
+Local Open Scope program_scope.
 
 Section Well_founded.
   Variable A : Type.
@@ -54,7 +52,7 @@ Section Well_founded.
 
   Lemma Fix_eq : forall x:A, Fix_sub x = F_sub x (fun (y:A|R y x) => Fix_sub (proj1_sig y)).
   Proof.
-    intro x; unfold Fix_sub in |- *.
+    intro x; unfold Fix_sub.
     rewrite <- (Fix_F_eq ).
     apply F_ext; intros.
     apply Fix_F_inv.

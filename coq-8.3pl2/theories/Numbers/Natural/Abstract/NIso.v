@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,11 +8,9 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: NIso.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Import NBase.
 
-Module Homomorphism (N1 N2 : NAxiomsSig).
+Module Homomorphism (N1 N2 : NAxiomsRecSig).
 
 Local Notation "n == m" := (N2.eq n m) (at level 70, no associativity).
 
@@ -25,11 +23,8 @@ Definition natural_isomorphism : N1.t -> N2.t :=
 Instance natural_isomorphism_wd : Proper (N1.eq ==> N2.eq) natural_isomorphism.
 Proof.
 unfold natural_isomorphism.
-intros n m Eqxy.
-apply N1.recursion_wd.
-reflexivity.
-intros _ _ _ y' y'' H. now apply N2.succ_wd.
-assumption.
+repeat red; intros. f_equiv; trivial.
+repeat red; intros. now f_equiv.
 Qed.
 
 Theorem natural_isomorphism_0 : natural_isomorphism N1.zero == N2.zero.
@@ -42,7 +37,7 @@ Theorem natural_isomorphism_succ :
 Proof.
 unfold natural_isomorphism.
 intro n. rewrite N1.recursion_succ; auto with *.
-repeat red; intros. apply N2.succ_wd; auto.
+repeat red; intros. now f_equiv.
 Qed.
 
 Theorem hom_nat_iso : homomorphism natural_isomorphism.
@@ -53,9 +48,9 @@ Qed.
 
 End Homomorphism.
 
-Module Inverse (N1 N2 : NAxiomsSig).
+Module Inverse (N1 N2 : NAxiomsRecSig).
 
-Module Import NBasePropMod1 := NBasePropFunct N1.
+Module Import NBasePropMod1 := NBaseProp N1.
 (* This makes the tactic induct available. Since it is taken from
 (NBasePropFunct NAxiomsMod1), it refers to induction on N1. *)
 
@@ -76,7 +71,7 @@ Qed.
 
 End Inverse.
 
-Module Isomorphism (N1 N2 : NAxiomsSig).
+Module Isomorphism (N1 N2 : NAxiomsRecSig).
 
 Module Hom12 := Homomorphism N1 N2.
 Module Hom21 := Homomorphism N2 N1.

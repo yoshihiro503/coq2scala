@@ -21,6 +21,12 @@ Proof.
 intros; apply H.
 Qed.
 
+  (* Feature introduced June 2011 *)
+
+Lemma l7 : forall x (P:nat->Prop), (forall f, P (f x)) -> P (x+x).
+Proof.
+intros x P H; apply H.
+Qed.
 
 (* Example submitted for Zenon *)
 
@@ -90,12 +96,14 @@ intros.
 apply H.
 Qed.
 
+(* Feature deactivated in commit 14189 (see commit log)
 (* Test instanciation of evars by unification *)
 
 Goal (forall x, 0 + x = 0 -> True) -> True.
 intros; eapply H.
 rewrite <- plus_n_Sm. (* should refine ?x with S ?x' *)
 Abort.
+*)
 
 (* Check handling of identity equation between evars *)
 (* The example failed to pass until revision 10623 *)
@@ -135,4 +143,44 @@ Goal (forall (A B : Set) (f : A -> B), (fun x => f x) = f) ->
  forall (A B C : Set) (g : (A -> B) -> C) (f : A -> B), g (fun x => f x) = g f.
 Proof.
   intros.
-  rewrite H.
+  rewrite H with (f:=f0).
+Abort.
+
+(* Three tests provided by Dan Grayson as part of a custom patch he
+   made for a more powerful "destruct" for handling Voevodsky's
+   Univalent Foundations. The test checks if second-order matching in
+   tactic unification is able to guess by itself on which dependent
+   terms to abstract so that the elimination predicate is well-typed *)
+
+Definition test1 (X : Type) (x : X) (fxe : forall x1 : X, identity x1 x1) :
+  identity (fxe x) (fxe x).
+Proof. destruct (fxe x). apply identity_refl. Defined.
+
+(* a harder example *)
+
+Definition UU := Type .
+Inductive paths {T:Type}(t:T): T -> UU := idpath: paths t t.
+Inductive foo (X0:UU) (x0:X0) : forall (X:UU)(x:X), UU := newfoo : foo x0 x0.
+Definition idonfoo {X0:UU} {x0:X0} {X1:UU} {x1:X1} : foo x0 x1 -> foo x0 x1.
+Proof. intros t. exact t. Defined.
+
+Lemma test2 (T:UU) (t:T) (k : foo t t) : paths k (idonfoo k).
+Proof.
+  destruct k.
+  apply idpath.
+Defined.
+
+(* an example with two constructors *)
+
+Inductive foo' (X0:UU) (x0:X0) : forall (X:UU)(x:X), UU :=
+| newfoo1 : foo' x0 x0
+| newfoo2 : foo' x0 x0 .
+Definition idonfoo' {X0:UU} {x0:X0} {X1:UU} {x1:X1} :
+  foo' x0 x1 -> foo' x0 x1.
+Proof. intros t. exact t. Defined.
+Lemma test3 (T:UU) (t:T) (k : foo' t t) : paths k (idonfoo' k).
+Proof.
+  destruct k.
+  apply idpath.
+  apply idpath.
+Defined.

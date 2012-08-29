@@ -1,30 +1,26 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: type_errors.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
-(*i*)
 open Names
 open Term
 open Environ
-(*i*)
 
-(* Type errors. \label{typeerrors} *)
+(** Type errors. {% \label{%}typeerrors{% }%} *)
 
 (*i Rem: NotEnoughAbstractionInFixBody should only occur with "/i" Fix
     notation i*)
 type guard_error =
-  (* Fixpoints *)
+  (** Fixpoints *)
   | NotEnoughAbstractionInFixBody
   | RecursionNotOnInductiveType of constr
-  | RecursionOnIllegalTerm of int * constr * int list * int list
+  | RecursionOnIllegalTerm of int * (env * constr) * int list * int list
   | NotEnoughArgumentsForFixCall of int
-  (* CoFixpoints *)
+  (** CoFixpoints *)
   | CodomainNotInductiveType of constr
   | NestedRecursiveOccurrences
   | UnguardedRecursiveCall of constr
@@ -52,7 +48,7 @@ type type_error =
   | CaseNotInductive of unsafe_judgment
   | WrongCaseInfo of inductive * case_info
   | NumberBranches of unsafe_judgment * int
-  | IllFormedBranch of constr * int * constr * constr
+  | IllFormedBranch of constr * constructor * constr * constr
   | Generalization of (name * types) * unsafe_judgment
   | ActualType of unsafe_judgment * types
   | CantApplyBadType of
@@ -82,7 +78,7 @@ val error_case_not_inductive : env -> unsafe_judgment -> 'a
 
 val error_number_branches : env -> unsafe_judgment -> int -> 'a
 
-val error_ill_formed_branch : env -> constr -> int -> constr -> constr -> 'a
+val error_ill_formed_branch : env -> constr -> constructor -> constr -> constr -> 'a
 
 val error_generalization : env -> name * types -> unsafe_judgment -> 'a
 
@@ -101,3 +97,4 @@ val error_ill_formed_rec_body :
 val error_ill_typed_rec_body  :
   env -> int -> name array -> unsafe_judgment array -> types array -> 'a
 
+val error_elim_explain : sorts_family -> sorts_family -> arity_error

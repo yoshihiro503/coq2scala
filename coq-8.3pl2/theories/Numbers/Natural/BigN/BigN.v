@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -12,7 +12,7 @@
 
 Require Export Int31.
 Require Import CyclicAxioms Cyclic31 Ring31 NSig NSigNAxioms NMake
-  NProperties NDiv GenericMinMax.
+  NProperties GenericMinMax.
 
 (** The following [BigN] module regroups both the operations and
     all the abstract properties:
@@ -21,72 +21,62 @@ Require Import CyclicAxioms Cyclic31 Ring31 NSig NSigNAxioms NMake
        w.r.t. ZArith
     - [NTypeIsNAxioms] shows (mainly) that these operations implement
       the interface [NAxioms]
-    - [NPropSig] adds all generic properties derived from [NAxioms]
-    - [NDivPropFunct] provides generic properties of [div] and [mod].
+    - [NProp] adds all generic properties derived from [NAxioms]
     - [MinMax*Properties] provides properties of [min] and [max].
 
 *)
 
-Module BigN <: NType <: OrderedTypeFull <: TotalOrder :=
- NMake.Make Int31Cyclic <+ NTypeIsNAxioms
- <+ !NPropSig <+ !NDivPropFunct <+ HasEqBool2Dec
- <+ !MinMaxLogicalProperties <+ !MinMaxDecProperties.
+Delimit Scope bigN_scope with bigN.
 
+Module BigN <: NType <: OrderedTypeFull <: TotalOrder.
+ Include NMake.Make Int31Cyclic [scope abstract_scope to bigN_scope].
+ Bind Scope bigN_scope with t t'.
+ Include NTypeIsNAxioms
+  <+ NProp [no inline]
+  <+ HasEqBool2Dec [no inline]
+  <+ MinMaxLogicalProperties [no inline]
+  <+ MinMaxDecProperties [no inline].
+End BigN.
+
+(** Nota concerning scopes : for the first Include, we cannot bind
+    the scope bigN_scope to a type that doesn't exists yet.
+    We hence need to explicitely declare the scope substitution.
+    For the next Include, the abstract type t (in scope abstract_scope)
+    gets substituted to concrete BigN.t (in scope bigN_scope),
+    and the corresponding argument scope are fixed automatically.
+*)
 
 (** Notations about [BigN] *)
 
+Local Open Scope bigN_scope.
+
 Notation bigN := BigN.t.
-
-Delimit Scope bigN_scope with bigN.
-Bind Scope bigN_scope with bigN.
-Bind Scope bigN_scope with BigN.t.
-Bind Scope bigN_scope with BigN.t_.
-(* Bind Scope has no retroactive effect, let's declare scopes by hand. *)
-Arguments Scope BigN.to_Z [bigN_scope].
-Arguments Scope BigN.succ [bigN_scope].
-Arguments Scope BigN.pred [bigN_scope].
-Arguments Scope BigN.square [bigN_scope].
-Arguments Scope BigN.add [bigN_scope bigN_scope].
-Arguments Scope BigN.sub [bigN_scope bigN_scope].
-Arguments Scope BigN.mul [bigN_scope bigN_scope].
-Arguments Scope BigN.div [bigN_scope bigN_scope].
-Arguments Scope BigN.eq [bigN_scope bigN_scope].
-Arguments Scope BigN.lt [bigN_scope bigN_scope].
-Arguments Scope BigN.le [bigN_scope bigN_scope].
-Arguments Scope BigN.eq [bigN_scope bigN_scope].
-Arguments Scope BigN.compare [bigN_scope bigN_scope].
-Arguments Scope BigN.min [bigN_scope bigN_scope].
-Arguments Scope BigN.max [bigN_scope bigN_scope].
-Arguments Scope BigN.eq_bool [bigN_scope bigN_scope].
-Arguments Scope BigN.power_pos [bigN_scope positive_scope].
-Arguments Scope BigN.power [bigN_scope N_scope].
-Arguments Scope BigN.sqrt [bigN_scope].
-Arguments Scope BigN.div_eucl [bigN_scope bigN_scope].
-Arguments Scope BigN.modulo [bigN_scope bigN_scope].
-Arguments Scope BigN.gcd [bigN_scope bigN_scope].
-
+Bind Scope bigN_scope with bigN BigN.t BigN.t'.
+Arguments BigN.N0 _%int31.
 Local Notation "0" := BigN.zero : bigN_scope. (* temporary notation *)
 Local Notation "1" := BigN.one : bigN_scope. (* temporary notation *)
+Local Notation "2" := BigN.two : bigN_scope. (* temporary notation *)
 Infix "+" := BigN.add : bigN_scope.
 Infix "-" := BigN.sub : bigN_scope.
 Infix "*" := BigN.mul : bigN_scope.
 Infix "/" := BigN.div : bigN_scope.
-Infix "^" := BigN.power : bigN_scope.
+Infix "^" := BigN.pow : bigN_scope.
 Infix "?=" := BigN.compare : bigN_scope.
+Infix "=?" := BigN.eqb (at level 70, no associativity) : bigN_scope.
+Infix "<=?" := BigN.leb (at level 70, no associativity) : bigN_scope.
+Infix "<?" := BigN.ltb (at level 70, no associativity) : bigN_scope.
 Infix "==" := BigN.eq (at level 70, no associativity) : bigN_scope.
-Notation "x != y" := (~x==y)%bigN (at level 70, no associativity) : bigN_scope.
+Notation "x != y" := (~x==y) (at level 70, no associativity) : bigN_scope.
 Infix "<" := BigN.lt : bigN_scope.
 Infix "<=" := BigN.le : bigN_scope.
-Notation "x > y" := (BigN.lt y x)(only parsing) : bigN_scope.
-Notation "x >= y" := (BigN.le y x)(only parsing) : bigN_scope.
-Notation "x < y < z" := (x<y /\ y<z)%bigN : bigN_scope.
-Notation "x < y <= z" := (x<y /\ y<=z)%bigN : bigN_scope.
-Notation "x <= y < z" := (x<=y /\ y<z)%bigN : bigN_scope.
-Notation "x <= y <= z" := (x<=y /\ y<=z)%bigN : bigN_scope.
+Notation "x > y" := (y < x) (only parsing) : bigN_scope.
+Notation "x >= y" := (y <= x) (only parsing) : bigN_scope.
+Notation "x < y < z" := (x<y /\ y<z) : bigN_scope.
+Notation "x < y <= z" := (x<y /\ y<=z) : bigN_scope.
+Notation "x <= y < z" := (x<=y /\ y<z) : bigN_scope.
+Notation "x <= y <= z" := (x<=y /\ y<=z) : bigN_scope.
 Notation "[ i ]" := (BigN.to_Z i) : bigN_scope.
 Infix "mod" := BigN.modulo (at level 40, no associativity) : bigN_scope.
-
-Local Open Scope bigN_scope.
 
 (** Example of reasoning about [BigN] *)
 
@@ -107,29 +97,29 @@ exact BigN.mul_1_l. exact BigN.mul_0_l. exact BigN.mul_comm.
 exact BigN.mul_assoc. exact BigN.mul_add_distr_r.
 Qed.
 
-Lemma BigNeqb_correct : forall x y, BigN.eq_bool x y = true -> x==y.
+Lemma BigNeqb_correct : forall x y, (x =? y) = true -> x==y.
 Proof. now apply BigN.eqb_eq. Qed.
 
-Lemma BigNpower : power_theory 1 BigN.mul BigN.eq (@id N) BigN.power.
+Lemma BigNpower : power_theory 1 BigN.mul BigN.eq BigN.of_N BigN.pow.
 Proof.
 constructor.
-intros. red. rewrite BigN.spec_power. unfold id.
-destruct Zpower_theory as [EQ]. rewrite EQ.
+intros. red. rewrite BigN.spec_pow, BigN.spec_of_N.
+rewrite Zpower_theory.(rpow_pow_N).
 destruct n; simpl. reflexivity.
 induction p; simpl; intros; BigN.zify; rewrite ?IHp; auto.
 Qed.
 
 Lemma BigNdiv : div_theory BigN.eq BigN.add BigN.mul (@id _)
- (fun a b => if BigN.eq_bool b 0 then (0,a) else BigN.div_eucl a b).
+ (fun a b => if b =? 0 then (0,a) else BigN.div_eucl a b).
 Proof.
 constructor. unfold id. intros a b.
 BigN.zify.
-generalize (Zeq_bool_if [b] 0); destruct (Zeq_bool [b] 0).
+case Z.eqb_spec.
 BigN.zify. auto with zarith.
 intros NEQ.
 generalize (BigN.spec_div_eucl a b).
 generalize (Z_div_mod_full [a] [b] NEQ).
-destruct BigN.div_eucl as (q,r), Zdiv_eucl as (q',r').
+destruct BigN.div_eucl as (q,r), Z.div_eucl as (q',r').
 intros (EQ,_). injection 1. intros EQr EQq.
 BigN.zify. rewrite EQr, EQq; auto.
 Qed.
@@ -163,12 +153,19 @@ Ltac isBigNcst t :=
    end
  | BigN.zero => constr:true
  | BigN.one => constr:true
+ | BigN.two => constr:true
  | _ => constr:false
  end.
 
 Ltac BigNcst t :=
  match isBigNcst t with
  | true => constr:t
+ | false => constr:NotConstant
+ end.
+
+Ltac BigN_to_N t :=
+ match isBigNcst t with
+ | true => eval vm_compute in (BigN.to_N t)
  | false => constr:NotConstant
  end.
 
@@ -183,11 +180,11 @@ Ltac Ncst t :=
 Add Ring BigNr : BigNring
  (decidable BigNeqb_correct,
   constants [BigNcst],
-  power_tac BigNpower [Ncst],
+  power_tac BigNpower [BigN_to_N],
   div BigNdiv).
 
 Section TestRing.
-Let test : forall x y, 1 + x*y + x^2 + 1 == 1*1 + 1 + y*x + 1*x*x.
+Let test : forall x y, 1 + x*y^1 + x^2 + 1 == 1*1 + 1 + y*x + 1*x*x.
 intros. ring_simplify. reflexivity.
 Qed.
 End TestRing.

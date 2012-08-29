@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: cbv.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Util
 open Pp
@@ -93,13 +91,6 @@ let rec shift_value n = function
       CONSTR (c, Array.map (shift_value n) args)
 let shift_value n v =
   if n = 0 then v else shift_value n v
-
-let rec shift_stack n = function
-    TOP -> TOP
-  | APP(v,stk) -> APP(Array.map (shift_value n) v, shift_stack n stk)
-  | CASE(c,b,i,s,stk) -> CASE(c,b,i,subs_shft(n,s), shift_stack n stk)
-let shift_stack n stk =
-  if n = 0 then stk else shift_stack n stk
 
 (* Contracts a fixpoint: given a fixpoint and a bindings,
  * returns the corresponding fixpoint body, and the bindings in which
@@ -299,7 +290,7 @@ and cbv_stack_term info stack env t =
         cbv_stack_term info (stack_app cargs stk) env br.(n-1)
 
     (* constructor of arity 0 in a Case -> IOTA *)
-    | (CONSTR((_,n),_), CASE(_,br,_,env,stk))
+    | (CONSTR((_,n),[||]), CASE(_,br,_,env,stk))
             when red_set (info_flags info) fIOTA ->
                     cbv_stack_term info stk env br.(n-1)
 
@@ -365,14 +356,14 @@ and cbv_norm_value info = function (* reduction under binders *)
 
 (* with profiling *)
 let cbv_norm infos constr =
-  with_stats (lazy (cbv_norm_term infos (ESID 0) constr))
+  with_stats (lazy (cbv_norm_term infos (subs_id 0) constr))
 
 type cbv_infos = cbv_value infos
 
 (* constant bodies are normalized at the first expansion *)
 let create_cbv_infos flgs env sigma =
   create
-    (fun old_info c -> cbv_stack_term old_info TOP (ESID 0) c)
+    (fun old_info c -> cbv_stack_term old_info TOP (subs_id 0) c)
     flgs
     env
     (Reductionops.safe_evar_value sigma)

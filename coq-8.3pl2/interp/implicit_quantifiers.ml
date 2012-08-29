@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: implicit_quantifiers.ml 13332 2010-07-26 22:12:43Z msozeau $ i*)
 
 (*i*)
 open Names
@@ -18,7 +16,7 @@ open Environ
 open Nametab
 open Mod_subst
 open Util
-open Rawterm
+open Glob_term
 open Topconstr
 open Libnames
 open Typeclasses
@@ -58,14 +56,14 @@ let cache_generalizable_type (_,(local,cmd)) =
 
 let load_generalizable_type _ (_,(local,cmd)) =
   generalizable_table := add_generalizable cmd !generalizable_table
-    
-let (in_generalizable, _) =
+
+let in_generalizable : bool * identifier located list option -> obj =
   declare_object {(default_object "GENERALIZED-IDENT") with
     load_function = load_generalizable_type;
     cache_function = cache_generalizable_type;
     classify_function = (fun (local, _ as obj) -> if local then Dispose else Keep obj)
   }
-    
+
 let declare_generalizable local gen =
  Lib.add_anonymous_leaf (in_generalizable (local, gen))
 
@@ -138,33 +136,33 @@ let add_name_to_ids set na =
   | Anonymous -> set
   | Name id -> Idset.add id set
 
-let generalizable_vars_of_rawconstr ?(bound=Idset.empty) ?(allowed=Idset.empty) =
+let generalizable_vars_of_glob_constr ?(bound=Idset.empty) ?(allowed=Idset.empty) =
   let rec vars bound vs = function
-    | RVar (loc,id) ->
+    | GVar (loc,id) ->
 	if is_freevar bound (Global.env ()) id then
 	  if List.mem_assoc id vs then vs
 	  else (id, loc) :: vs
 	else vs
-    | RApp (loc,f,args) -> List.fold_left (vars bound) vs (f::args)
-    | RLambda (loc,na,_,ty,c) | RProd (loc,na,_,ty,c) | RLetIn (loc,na,ty,c) ->
+    | GApp (loc,f,args) -> List.fold_left (vars bound) vs (f::args)
+    | GLambda (loc,na,_,ty,c) | GProd (loc,na,_,ty,c) | GLetIn (loc,na,ty,c) ->
 	let vs' = vars bound vs ty in
 	let bound' = add_name_to_ids bound na in
 	vars bound' vs' c
-    | RCases (loc,sty,rtntypopt,tml,pl) ->
+    | GCases (loc,sty,rtntypopt,tml,pl) ->
 	let vs1 = vars_option bound vs rtntypopt in
 	let vs2 = List.fold_left (fun vs (tm,_) -> vars bound vs tm) vs1 tml in
 	List.fold_left (vars_pattern bound) vs2 pl
-    | RLetTuple (loc,nal,rtntyp,b,c) ->
+    | GLetTuple (loc,nal,rtntyp,b,c) ->
 	let vs1 = vars_return_type bound vs rtntyp in
 	let vs2 = vars bound vs1 b in
 	let bound' = List.fold_left add_name_to_ids bound nal in
 	vars bound' vs2 c
-    | RIf (loc,c,rtntyp,b1,b2) ->
+    | GIf (loc,c,rtntyp,b1,b2) ->
 	let vs1 = vars_return_type bound vs rtntyp in
 	let vs2 = vars bound vs1 c in
 	let vs3 = vars bound vs2 b1 in
 	vars bound vs3 b2
-    | RRec (loc,fk,idl,bl,tyl,bv) ->
+    | GRec (loc,fk,idl,bl,tyl,bv) ->
 	let bound' = Array.fold_right Idset.add idl bound in
 	let vars_fix i vs fid =
 	  let vs1,bound1 =
@@ -182,9 +180,9 @@ let generalizable_vars_of_rawconstr ?(bound=Idset.empty) ?(allowed=Idset.empty) 
 	  vars bound1 vs2 bv.(i)
 	in
 	array_fold_left_i vars_fix vs idl
-    | RCast (loc,c,k) -> let v = vars bound vs c in
+    | GCast (loc,c,k) -> let v = vars bound vs c in
 	(match k with CastConv (_,t) -> vars bound v t | _ -> v)
-    | (RSort _ | RHole _ | RRef _ | REvar _ | RPatVar _ | RDynamic _) -> vs
+    | (GSort _ | GHole _ | GRef _ | GEvar _ | GPatVar _) -> vs
 
   and vars_pattern bound vs (loc,idl,p,c) =
     let bound' = List.fold_right Idset.add idl bound  in
@@ -204,8 +202,6 @@ let generalizable_vars_of_rawconstr ?(bound=Idset.empty) ?(allowed=Idset.empty) 
 
 let rec make_fresh ids env x =
   if is_freevar ids env x then x else make_fresh ids env (Nameops.lift_subscript x)
-
-let next_ident_away_from id avoid = make_fresh avoid (Global.env ()) id
 
 let next_name_away_from na avoid =
   match na with
@@ -297,28 +293,32 @@ let implicit_application env ?(allow_partial=true) f ty =
 	    CAppExpl (loc, (None, id), args), avoid
 	in c, avoid
 
-let implicits_of_rawterm ?(with_products=true) l =
-  let rec aux i c =
-    let abs loc na bk t b =
-      let rest = aux (succ i) b in
-	if bk = Implicit then
+let implicits_of_glob_constr ?(with_products=true) l =
+  let add_impl i na bk l =
+ 	if bk = Implicit then
 	  let name =
 	    match na with
 	    | Name id -> Some id
 	    | Anonymous -> None
 	  in
-	    (ExplByPos (i, name), (true, true, true)) :: rest
-	else rest
+	    (ExplByPos (i, name), (true, true, true)) :: l
+	else l in
+  let rec aux i c =
+    let abs na bk b =
+      add_impl i na bk (aux (succ i) b)
     in
       match c with
-      | RProd (loc, na, bk, t, b) ->
-	  if with_products then abs loc na bk t b
+      | GProd (loc, na, bk, t, b) ->
+	  if with_products then abs na bk b
 	  else 
 	    (if bk = Implicit then
 	       msg_warning (str "Ignoring implicit status of product binder " ++ 
 			      pr_name na ++ str " and following binders");
 	     [])
-      | RLambda (loc, na, bk, t, b) -> abs loc na bk t b
-      | RLetIn (loc, na, t, b) -> aux i b
+      | GLambda (loc, na, bk, t, b) -> abs na bk b
+      | GLetIn (loc, na, t, b) -> aux i b
+      | GRec (_, fix_kind, nas, args, tys, bds) ->
+       let nb = match fix_kind with |GFix (_, n) -> n | GCoFix n -> n in
+       list_fold_left_i (fun i l (na,bk,_,_) -> add_impl i na bk l) i (aux (List.length args.(nb) + i) bds.(nb)) args.(nb)
       | _ -> []
   in aux 1 l

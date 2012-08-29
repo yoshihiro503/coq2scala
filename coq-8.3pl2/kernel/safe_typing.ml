@@ -1,12 +1,61 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: safe_typing.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
+(* Created by Jean-Christophe Filliâtre as part of the rebuilding of
+   Coq around a purely functional abstract type-checker, Dec 1999 *)
+
+(* This file provides the entry points to the kernel type-checker. It
+   defines the abstract type of well-formed environments and
+   implements the rules that build well-formed environments.
+
+   An environment is made of constants and inductive types (E), of
+   section declarations (Delta), of local bound-by-index declarations
+   (Gamma) and of universe constraints (C). Below E[Delta,Gamma] |-_C
+   means that the tuple E, Delta, Gamma, C is a well-formed
+   environment. Main rules are:
+
+   empty_environment:
+
+     ------
+     [,] |-
+
+   push_named_assum(a,T):
+   
+     E[Delta,Gamma] |-_G
+     ------------------------
+     E[Delta,Gamma,a:T] |-_G'
+
+   push_named_def(a,t,T):
+   
+     E[Delta,Gamma] |-_G
+     ---------------------------
+     E[Delta,Gamma,a:=t:T] |-_G'
+
+   add_constant(ConstantEntry(DefinitionEntry(c,t,T))):
+
+     E[Delta,Gamma] |-_G
+     ---------------------------
+     E,c:=t:T[Delta,Gamma] |-_G'
+
+   add_constant(ConstantEntry(ParameterEntry(c,T))):
+
+     E[Delta,Gamma] |-_G
+     ------------------------
+     E,c:T[Delta,Gamma] |-_G'
+
+   add_mind(Ind(Ind[Gamma_p](Gamma_I:=Gamma_C))):
+
+     E[Delta,Gamma] |-_G
+     ------------------------
+     E,Ind[Gamma_p](Gamma_I:=Gamma_C)[Delta,Gamma] |-_G'
+
+   etc.
+*)
 
 open Util
 open Names
@@ -40,9 +89,6 @@ type module_info =
      variant : modvariant;
      resolver : delta_resolver;
      resolver_of_param : delta_resolver;}
-      
-let check_label l labset =
-  if Labset.mem l labset then error_existing_label l
 
 let set_engagement_opt oeng env =
   match oeng with
@@ -55,7 +101,8 @@ type safe_environment =
     { old : safe_environment;
       env : env;
       modinfo : module_info;
-      labset : Labset.t;
+      modlabels : Labset.t;
+      objlabels : Labset.t;
       revstruct : structure_body;
       univ : Univ.constraints;
       engagement : engagement option;
@@ -63,16 +110,29 @@ type safe_environment =
       loads : (module_path * module_body) list;
       local_retroknowledge : Retroknowledge.action list}
 
-(*
-  { old = senv.old;
-    env = ;
-    modinfo = senv.modinfo;
-    labset = ;
-    revsign = ;
-    imports = senv.imports ;
-    loads = senv.loads }
-*)
+let exists_modlabel l senv = Labset.mem l senv.modlabels
+let exists_objlabel l senv = Labset.mem l senv.objlabels
 
+let check_modlabel l senv =
+  if exists_modlabel l senv then error_existing_label l
+let check_objlabel l senv =
+  if exists_objlabel l senv then error_existing_label l
+
+let check_objlabels ls senv =
+  Labset.iter (fun l -> check_objlabel l senv) ls
+
+let labels_of_mib mib =
+  let add,get =
+    let labels = ref Labset.empty in
+    (fun id -> labels := Labset.add (label_of_id id) !labels),
+    (fun () -> !labels)
+  in
+  let visit_mip mip =
+    add mip.mind_typename;
+    Array.iter add mip.mind_consnames
+  in
+  Array.iter visit_mip mib.mind_packets;
+  get ()
 
 (* a small hack to avoid variants and an unused case in all functions *)
 let rec empty_environment =
@@ -84,9 +144,10 @@ let rec empty_environment =
       variant = NONE;
       resolver = empty_delta_resolver;
       resolver_of_param = empty_delta_resolver};
-    labset = Labset.empty;
+    modlabels = Labset.empty;
+    objlabels = Labset.empty;
     revstruct = [];
-    univ = Univ.Constraint.empty;
+    univ = Univ.empty_constraint;
     engagement = None;
     imports = [];
     loads = [];
@@ -95,32 +156,55 @@ let rec empty_environment =
 let env_of_safe_env senv = senv.env
 let env_of_senv = env_of_safe_env
 
-
-
-
-
-
-
 let add_constraints cst senv =
-  {senv with
+  { senv with
     env = Environ.add_constraints cst senv.env;
-    univ = Univ.Constraint.union cst senv.univ }
+    univ = Univ.union_constraints cst senv.univ }
 
+let constraints_of_sfb = function
+  | SFBconst cb -> cb.const_constraints
+  | SFBmind mib -> mib.mind_constraints
+  | SFBmodtype mtb -> mtb.typ_constraints
+  | SFBmodule mb -> mb.mod_constraints
 
-(*spiwack: functions for safe retroknowledge *)
+(* A generic function for adding a new field in a same environment.
+   It also performs the corresponding [add_constraints]. *)
 
-(* terms which are closed under the environnement env, i.e
-   terms which only depends on constant who are themselves closed *)
-let closed env term =
-  ContextObjectMap.is_empty (assumptions full_transparent_state env term)
+type generic_name =
+  | C of constant
+  | I of mutual_inductive
+  | MT of module_path
+  | M
 
-(* the set of safe terms in an environement any recursive set of
-   terms who are known not to prove inconsistent statement. It should
-   include at least all the closed terms. But it could contain other ones
-   like the axiom of excluded middle for instance *)
-let safe =
-  closed
+let add_field ((l,sfb) as field) gn senv =
+  let mlabs,olabs = match sfb with
+    | SFBmind mib ->
+      let l = labels_of_mib mib in
+      check_objlabels l senv; (Labset.empty,l)
+    | SFBconst _ ->
+      check_objlabel l senv; (Labset.empty, Labset.singleton l)
+    | SFBmodule _ | SFBmodtype _ ->
+      check_modlabel l senv; (Labset.singleton l, Labset.empty)
+  in
+  let senv = add_constraints (constraints_of_sfb sfb) senv in
+  let env' = match sfb, gn with
+    | SFBconst cb, C con -> Environ.add_constant con cb senv.env
+    | SFBmind mib, I mind -> Environ.add_mind mind mib senv.env
+    | SFBmodtype mtb, MT mp -> Environ.add_modtype mp mtb senv.env
+    | SFBmodule mb, M -> Modops.add_module mb senv.env
+    | _ -> assert false
+  in
+  { senv with
+    env = env';
+    modlabels = Labset.union mlabs senv.modlabels;
+    objlabels = Labset.union olabs senv.objlabels;
+    revstruct = field :: senv.revstruct }
 
+(* Applying a certain function to the resolver of a safe environment *)
+
+let update_resolver f senv =
+  let mi = senv.modinfo in
+  { senv with modinfo = { mi with resolver = f mi.resolver }}
 
 
 (* universal lifting, used for the "get" operations mostly *)
@@ -131,8 +215,9 @@ let register senv field value by_clause =
   (* todo : value closed, by_clause safe, by_clause of the proper type*)
   (* spiwack : updates the safe_env with the information that the register
      action has to be performed (again) when the environement is imported *)
-  {senv with env = Environ.register senv.env field value;
-             local_retroknowledge =
+  {senv with
+    env = Environ.register senv.env field value;
+    local_retroknowledge =
       Retroknowledge.RKRegister (field,value)::senv.local_retroknowledge
   }
 
@@ -185,52 +270,21 @@ type global_declaration =
   | ConstantEntry of constant_entry
   | GlobalRecipe of Cooking.recipe
 
-let hcons_constant_type = function
-  | NonPolymorphicType t ->
-      NonPolymorphicType (hcons1_constr t)
-  | PolymorphicArity (ctx,s) ->
-      PolymorphicArity (map_rel_context hcons1_constr ctx,s)
-
-let hcons_constant_body cb =
-  let body = match cb.const_body with
-      None -> None
-    | Some l_constr -> let constr = Declarations.force l_constr in
-	Some (Declarations.from_val (hcons1_constr constr))
-  in
-    { cb with
-	const_body = body;
-	const_type = hcons_constant_type cb.const_type }
-
 let add_constant dir l decl senv =
-  check_label l senv.labset;
   let kn = make_con senv.modinfo.modpath dir l in
-  let cb =
-    match decl with
-      | ConstantEntry ce -> translate_constant senv.env kn ce
-      | GlobalRecipe r ->
-	  let cb = translate_recipe senv.env kn r in
-	    if dir = empty_dirpath then hcons_constant_body cb else cb
+  let cb = match decl with
+    | ConstantEntry ce -> translate_constant senv.env kn ce
+    | GlobalRecipe r ->
+      let cb = translate_recipe senv.env kn r in
+      if dir = empty_dirpath then hcons_const_body cb else cb
   in
-  let senv' = add_constraints cb.const_constraints senv in
-  let env'' = Environ.add_constant kn cb senv'.env in
-  let resolver = 
-    if cb.const_inline then
-      add_inline_delta_resolver kn senv'.modinfo.resolver
-    else
-      senv'.modinfo.resolver
+  let senv' = add_field (l,SFBconst cb) (C kn) senv in
+  let senv'' = match cb.const_body with
+    | Undef (Some lev) ->
+      update_resolver (add_inline_delta_resolver (user_con kn) (lev,None)) senv'
+    | _ -> senv'
   in
-    kn, { old = senv'.old;
-	  env = env'';
-	  modinfo = {senv'.modinfo with
-		       resolver = resolver};
-	  labset = Labset.add l senv'.labset;
-	  revstruct = (l,SFBconst cb)::senv'.revstruct;
-          univ = senv'.univ;
-          engagement = senv'.engagement;
-	  imports = senv'.imports;
-	  loads = senv'.loads ;
-	  local_retroknowledge = senv'.local_retroknowledge }
-
+  kn, senv''
 
 (* Insertion of inductive types. *)
 
@@ -242,80 +296,41 @@ let add_mind dir l mie senv =
   if l <> label_of_id id then
     anomaly ("the label of inductive packet and its first inductive"^
 	     " type do not match");
-  check_label l senv.labset;
-    (* TODO: when we will allow reorderings we will have to verify
-       all labels *)
-  let mib = translate_mind senv.env mie in
-  let senv' = add_constraints mib.mind_constraints senv in
   let kn = make_mind senv.modinfo.modpath dir l in
-  let env'' = Environ.add_mind kn mib senv'.env in
-  kn, { old = senv'.old;
-	env = env'';
-	modinfo = senv'.modinfo;
-	labset = Labset.add l senv'.labset;  (* TODO: the same as above *)
-	revstruct = (l,SFBmind mib)::senv'.revstruct;
-        univ = senv'.univ;
-        engagement = senv'.engagement;
-	imports = senv'.imports;
-	loads = senv'.loads;
-        local_retroknowledge = senv'.local_retroknowledge }
+  let mib = translate_mind senv.env kn mie in
+  let mib = if mib.mind_hyps <> [] then mib else hcons_mind mib in
+  let senv' = add_field (l,SFBmind mib) (I kn) senv in
+  kn, senv'
 
 (* Insertion of module types *)
 
 let add_modtype l mte inl senv =
-  check_label l senv.labset;
   let mp = MPdot(senv.modinfo.modpath, l) in
   let mtb = translate_module_type senv.env mp inl mte  in
-  let senv' = add_constraints mtb.typ_constraints senv in
-   let env'' = Environ.add_modtype mp mtb senv'.env in
-    mp, { old = senv'.old;
-	  env = env'';
-	  modinfo = senv'.modinfo;
-	  labset = Labset.add l senv'.labset;
-	  revstruct = (l,SFBmodtype mtb)::senv'.revstruct;
-          univ = senv'.univ;
-          engagement = senv'.engagement;
-	  imports = senv'.imports;
-	  loads = senv'.loads;
-          local_retroknowledge = senv'.local_retroknowledge }
-
+  let senv' = add_field (l,SFBmodtype mtb) (MT mp) senv in
+  mp, senv'
 
 (* full_add_module adds module with universes and constraints *)
 let full_add_module mb senv =
   let senv = add_constraints mb.mod_constraints senv in
-  let env = Modops.add_module mb senv.env in
-    {senv with env = env}
+  { senv with env = Modops.add_module mb senv.env }
 
 (* Insertion of modules *)
 
 let add_module l me inl senv =
-  check_label l senv.labset;
   let mp = MPdot(senv.modinfo.modpath, l) in
   let mb = translate_module senv.env mp inl me in
-  let senv' = full_add_module mb senv  in
-  let modinfo = match mb.mod_type with
-      SEBstruct _ -> 
-	{ senv'.modinfo with
-	    resolver = 
-	    add_delta_resolver mb.mod_delta senv'.modinfo.resolver}
-    | _ -> senv'.modinfo
+  let senv' = add_field (l,SFBmodule mb) M senv in
+  let senv'' = match mb.mod_type with
+    | SEBstruct _ -> update_resolver (add_delta_resolver mb.mod_delta) senv'
+    | _ -> senv'
   in
-    mp,mb.mod_delta,
-  { old = senv'.old;
-    env = senv'.env;
-    modinfo = modinfo;
-    labset = Labset.add l senv'.labset;
-    revstruct = (l,SFBmodule mb)::senv'.revstruct;
-    univ = senv'.univ;
-    engagement = senv'.engagement;
-    imports = senv'.imports;
-    loads = senv'.loads;
-    local_retroknowledge = senv'.local_retroknowledge }
-    
+  mp,mb.mod_delta,senv''
+
 (* Interactive modules *)
 
 let start_module l senv =
-  check_label l senv.labset;
+  check_modlabel l senv;
  let mp = MPdot(senv.modinfo.modpath, l) in
  let modinfo = { modpath = mp;
 		 label = l;
@@ -326,9 +341,10 @@ let start_module l senv =
    mp, { old = senv;
 	 env = senv.env;
 	 modinfo = modinfo;
-	 labset = Labset.empty;
+	 modlabels = Labset.empty;
+	 objlabels = Labset.empty;
 	 revstruct = [];
-         univ = Univ.Constraint.empty;
+         univ = Univ.empty_constraint;
          engagement = None;
 	 imports = senv.imports;
 	 loads = [];
@@ -348,7 +364,7 @@ let end_module l restype senv =
       | STRUCT params -> params, (List.length params > 0)
   in
   if l <> modinfo.label then error_incompatible_labels l modinfo.label;
-  if not (empty_context senv.env) then error_local_context None;
+  if not (empty_context senv.env) then error_non_empty_local_context None;
   let functorize_struct tb =
     List.fold_left
       (fun mtb (arg_id,arg_b) ->
@@ -362,13 +378,13 @@ let end_module l restype senv =
    let mexpr,mod_typ,mod_typ_alg,resolver,cst = 
     match restype with
       | None ->  let mexpr = functorize_struct auto_tb in
-	 mexpr,mexpr,None,modinfo.resolver,Constraint.empty
+	 mexpr,mexpr,None,modinfo.resolver,empty_constraint
       | Some mtb ->
 	  let auto_mtb = {
 	    typ_mp = senv.modinfo.modpath;
 	    typ_expr = auto_tb;
 	    typ_expr_alg = None;
-	    typ_constraints = Constraint.empty;
+	    typ_constraints = empty_constraint;
 	    typ_delta = empty_delta_resolver} in
 	  let cst = check_subtypes senv.env auto_mtb
 	    mtb in
@@ -378,7 +394,7 @@ let end_module l restype senv =
 	    Option.map functorize_struct mtb.typ_expr_alg in
 	    mexpr,mod_typ,typ_alg,mtb.typ_delta,cst
   in
-  let cst = Constraint.union cst senv.univ in
+  let cst = union_constraints cst senv.univ in
   let mb =
     { mod_mp = mp;
       mod_expr = Some mexpr;
@@ -410,14 +426,15 @@ let end_module l restype senv =
     mp,resolver,{ old = oldsenv.old;
 		  env = newenv;
 		  modinfo = modinfo;
-		  labset = Labset.add l oldsenv.labset;
+		  modlabels = Labset.add l oldsenv.modlabels;
+		  objlabels = oldsenv.objlabels;
 		  revstruct = (l,SFBmodule mb)::oldsenv.revstruct;
-		  univ = Univ.Constraint.union senv'.univ oldsenv.univ;
+		  univ = Univ.union_constraints senv'.univ oldsenv.univ;
 		  (* engagement is propagated to the upper level *)
 		  engagement = senv'.engagement;
 		  imports = senv'.imports;
 		  loads = senv'.loads@oldsenv.loads;
-		  local_retroknowledge = 
+		  local_retroknowledge =
 	senv'.local_retroknowledge@oldsenv.local_retroknowledge }
 
 
@@ -425,8 +442,8 @@ let end_module l restype senv =
  let add_include me is_module inl senv =
    let sign,cst,resolver =
      if is_module then
-       let sign,resolver,cst =  
-	 translate_struct_include_module_entry senv.env 
+       let sign,_,resolver,cst =
+	 translate_struct_include_module_entry senv.env
 	   senv.modinfo.modpath inl me in
 	 sign,cst,resolver
      else
@@ -438,104 +455,46 @@ let end_module l restype senv =
    let senv = add_constraints cst senv in
    let mp_sup = senv.modinfo.modpath in
      (* Include Self support  *)
-  let rec compute_sign sign mb resolver senv = 
+   let rec compute_sign sign mb resolver senv = 
      match sign with
      | SEBfunctor(mbid,mtb,str) ->
 	 let cst_sub = check_subtypes senv.env mb mtb in
 	 let senv = add_constraints cst_sub senv in
-	 let mpsup_delta = if not inl then mb.typ_delta else
-	   complete_inline_delta_resolver senv.env mp_sup mbid mtb mb.typ_delta
+	 let mpsup_delta =
+	   inline_delta_resolver senv.env inl mp_sup mbid mtb mb.typ_delta
 	 in
 	 let subst = map_mbid mbid mp_sup mpsup_delta in
 	 let resolver = subst_codom_delta_resolver subst resolver in
 	   (compute_sign 
-	      (subst_struct_expr subst str) mb resolver senv)
+	     (subst_struct_expr subst str) mb resolver senv)
      | str -> resolver,str,senv
-  in
+   in
    let resolver,sign,senv = compute_sign sign {typ_mp = mp_sup;
 				      typ_expr = SEBstruct (List.rev senv.revstruct);
 				      typ_expr_alg = None;
-				      typ_constraints = Constraint.empty;
-				      typ_delta = senv.modinfo.resolver} resolver senv in
+				      typ_constraints = empty_constraint;
+				      typ_delta = senv.modinfo.resolver} resolver senv
+   in
    let str = match sign with
      | SEBstruct(str_l) -> str_l
      | _ -> error ("You cannot Include a high-order structure.")
    in
-   let senv =
-     {senv 
-      with modinfo = 
-	 {senv.modinfo
-	  with resolver =
-	     add_delta_resolver resolver senv.modinfo.resolver}}
+   let senv = update_resolver (add_delta_resolver resolver) senv
    in
-   let add senv (l,elem)  =
-     check_label l senv.labset;
-     match elem with
-       | SFBconst cb ->
+   let add senv ((l,elem) as field) =
+     let new_name = match elem with
+       | SFBconst _ ->
 	   let kn = make_kn mp_sup empty_dirpath l in
-	   let con = constant_of_kn_equiv kn
-	     (canonical_con 
-		(constant_of_delta resolver (constant_of_kn kn)))
-	   in
-	   let senv' = add_constraints cb.const_constraints senv in
-	   let env'' = Environ.add_constant con cb senv'.env in
-	     { old = senv'.old;
-	       env = env'';
-	       modinfo = senv'.modinfo;
-	       labset = Labset.add l senv'.labset;
-	       revstruct = (l,SFBconst cb)::senv'.revstruct;
-               univ = senv'.univ;
-               engagement = senv'.engagement;
-	       imports = senv'.imports;
-	       loads = senv'.loads ;
-	       local_retroknowledge = senv'.local_retroknowledge }
-       | SFBmind mib ->
+	   C (constant_of_delta_kn resolver kn)
+       | SFBmind _ ->
 	   let kn = make_kn mp_sup empty_dirpath l in
-	   let mind = mind_of_kn_equiv kn
-	     (canonical_mind 
-		(mind_of_delta resolver (mind_of_kn kn)))
-	   in
-	   let senv' = add_constraints mib.mind_constraints senv in
-	   let env'' = Environ.add_mind mind mib senv'.env in
-	     { old = senv'.old;
-	       env = env'';
-	       modinfo = senv'.modinfo;
-	       labset = Labset.add l senv'.labset;
-	       revstruct = (l,SFBmind mib)::senv'.revstruct;
-               univ = senv'.univ;
-               engagement = senv'.engagement;
-	       imports = senv'.imports;
-	       loads = senv'.loads;
-               local_retroknowledge = senv'.local_retroknowledge }
-
-       | SFBmodule mb ->
-	   let senv' = full_add_module mb senv in
-	     { old = senv'.old;
-	       env = senv'.env;
-	       modinfo = senv'.modinfo;
-	       labset = Labset.add l senv'.labset;
-	       revstruct = (l,SFBmodule mb)::senv'.revstruct;
-	       univ = senv'.univ;
-	       engagement = senv'.engagement;
-	       imports = senv'.imports;
-	       loads = senv'.loads;
-	       local_retroknowledge = senv'.local_retroknowledge }
-       | SFBmodtype mtb ->
-	   let senv' = add_constraints mtb.typ_constraints senv in
-	   let mp = MPdot(senv.modinfo.modpath, l) in
-	   let env' = Environ.add_modtype mp mtb senv'.env in
-	     { old = senv.old;
-	       env = env';
-	       modinfo = senv'.modinfo;
-	       labset = Labset.add l senv.labset;
-	       revstruct = (l,SFBmodtype mtb)::senv'.revstruct;
-               univ = senv'.univ;
-               engagement = senv'.engagement;
-	       imports = senv'.imports;
-	       loads = senv'.loads;
-               local_retroknowledge = senv'.local_retroknowledge }
+	   I (mind_of_delta_kn resolver kn)
+       | SFBmodule _ -> M
+       | SFBmodtype _ -> MT (MPdot(senv.modinfo.modpath, l))
+     in
+     add_field field new_name senv
    in
-     resolver,(List.fold_left add senv str)
+   resolver,(List.fold_left add senv str)
 
 (* Adding parameters to modules or module types *)
 
@@ -563,7 +522,8 @@ let add_module_parameter mbid mte inl senv =
 				   variant = new_variant;
 				   resolver_of_param = add_delta_resolver
 			      resolver_of_param senv.modinfo.resolver_of_param};
-		     labset = senv.labset;
+		     modlabels = senv.modlabels;
+		     objlabels = senv.objlabels;
 		     revstruct = [];
 		     univ = senv.univ;
 		     engagement = senv.engagement;
@@ -575,7 +535,7 @@ let add_module_parameter mbid mte inl senv =
 (* Interactive module types *)
 
 let start_modtype l senv =
-  check_label l senv.labset;
+  check_modlabel l senv;
  let mp = MPdot(senv.modinfo.modpath, l) in
  let modinfo = { modpath = mp;
 		 label = l;
@@ -586,9 +546,10 @@ let start_modtype l senv =
   mp, { old = senv;
 	env = senv.env;
 	modinfo = modinfo;
-	labset = Labset.empty;
+	modlabels = Labset.empty;
+	objlabels = Labset.empty;
 	revstruct = [];
-        univ = Univ.Constraint.empty;
+        univ = Univ.empty_constraint;
         engagement = None;
 	imports = senv.imports;
 	loads = [] ;
@@ -604,7 +565,7 @@ let end_modtype l senv =
       | SIG params -> params
   in
   if l <> modinfo.label then error_incompatible_labels l modinfo.label;
-  if not (empty_context senv.env) then error_local_context None;
+  if not (empty_context senv.env) then error_non_empty_local_context None;
   let auto_tb =
      SEBstruct (List.rev senv.revstruct)
   in
@@ -637,9 +598,10 @@ let end_modtype l senv =
     mp, { old = oldsenv.old;
 	  env = newenv;
 	  modinfo = oldsenv.modinfo;
-	  labset = Labset.add l oldsenv.labset;
+	  modlabels = Labset.add l oldsenv.modlabels;
+	  objlabels = oldsenv.objlabels;
 	  revstruct = (l,SFBmodtype mtb)::oldsenv.revstruct;
-          univ = Univ.Constraint.union senv.univ oldsenv.univ;
+          univ = Univ.union_constraints senv.univ oldsenv.univ;
           engagement = senv.engagement;
 	  imports = senv.imports;
 	  loads = senv.loads@oldsenv.loads;
@@ -696,9 +658,10 @@ let start_library dir senv =
   mp, { old = senv;
 	env = senv.env;
 	modinfo = modinfo;
-	labset = Labset.empty;
+	modlabels = Labset.empty;
+	objlabels = Labset.empty;
 	revstruct = [];
-        univ = Univ.Constraint.empty;
+        univ = Univ.empty_constraint;
         engagement = None;
 	imports = senv.imports;
 	loads = [];
@@ -709,7 +672,7 @@ let pack_module senv =
    mod_expr=None;
    mod_type= SEBstruct (List.rev senv.revstruct);
    mod_type_alg=None;
-   mod_constraints=Constraint.empty;
+   mod_constraints=empty_constraint;
    mod_delta=senv.modinfo.resolver;
    mod_retroknowledge=[];
   }
@@ -785,40 +748,146 @@ let import (dp,mb,depends,engmt) digest senv =
 	  loads = (mp,mb)::senv.loads }
 
 
-(* Remove the body of opaque constants in modules *)
- let rec lighten_module mb =
-  { mb with
-    mod_expr = None;
-    mod_type = lighten_modexpr mb.mod_type;
-  }
+ (* Store the body of modules' opaque constants inside a table.  
 
-and lighten_struct struc =
-  let lighten_body (l,body) = (l,match body with
-    | SFBconst ({const_opaque=true} as x) -> SFBconst {x with const_body=None}
-    | (SFBconst _ | SFBmind _ ) as x -> x
-    | SFBmodule m -> SFBmodule (lighten_module m)
-    | SFBmodtype m -> SFBmodtype
-	({m with
-	    typ_expr = lighten_modexpr m.typ_expr}))
-  in
-    List.map lighten_body struc
+    This module is used during the serialization and deserialization
+    of vo files. 
 
-and lighten_modexpr = function
-  | SEBfunctor (mbid,mty,mexpr) ->
-      SEBfunctor (mbid,
+    By adding an indirection to the opaque constant definitions, we
+    gain the ability not to load them. As these constant definitions
+    are usually big terms, we save a deserialization time as well as
+    some memory space. *)
+module LightenLibrary : sig
+  type table 
+  type lightened_compiled_library 
+  val save : compiled_library -> lightened_compiled_library * table
+  val load : load_proof:Flags.load_proofs -> table Lazy.t
+    -> lightened_compiled_library -> compiled_library
+end = struct
+
+  (* The table is implemented as an array of [constr_substituted].
+     Keys are hence integers. To avoid changing the [compiled_library]
+     type, we brutally encode integers into [lazy_constr]. This isn't
+     pretty, but shouldn't be dangerous since the produced structure
+     [lightened_compiled_library] is abstract and only meant for writing
+     to .vo via Marshal (which doesn't care about types).
+  *)
+  type table = constr_substituted array
+  let key_as_lazy_constr (i:int) = (Obj.magic i : lazy_constr)
+  let key_of_lazy_constr (c:lazy_constr) = (Obj.magic c : int)
+
+  (* To avoid any future misuse of the lightened library that could 
+     interpret encoded keys as real [constr_substituted], we hide 
+     these kind of values behind an abstract datatype. *)
+  type lightened_compiled_library = compiled_library
+
+  (* Map a [compiled_library] to another one by just updating 
+     the opaque term [t] to [on_opaque_const_body t]. *)
+  let traverse_library on_opaque_const_body =
+    let rec traverse_module mb =
+      match mb.mod_expr with 
+	  None -> 
+	    { mb with
+		mod_expr = None;
+		mod_type = traverse_modexpr mb.mod_type;
+	    }
+	| Some impl when impl == mb.mod_type-> 
+	    let mtb =  traverse_modexpr mb.mod_type in 
+	      { mb with
+		  mod_expr = Some mtb;
+		  mod_type = mtb;
+	      }    
+	| Some impl -> 
+	    { mb with
+		mod_expr = Option.map traverse_modexpr mb.mod_expr;
+		mod_type = traverse_modexpr mb.mod_type;
+	    }    
+    and traverse_struct struc =
+      let traverse_body (l,body) = (l,match body with
+	| SFBconst cb when is_opaque cb ->
+	  SFBconst {cb with const_body = on_opaque_const_body cb.const_body}
+	| (SFBconst _ | SFBmind _ ) as x ->
+	  x
+	| SFBmodule m -> 
+	  SFBmodule (traverse_module m)
+	| SFBmodtype m -> 
+	  SFBmodtype ({m with typ_expr = traverse_modexpr m.typ_expr}))
+      in
+      List.map traverse_body struc
+	
+    and traverse_modexpr = function
+      | SEBfunctor (mbid,mty,mexpr) ->
+	SEBfunctor (mbid,
 		    ({mty with
-			typ_expr = lighten_modexpr mty.typ_expr}),
-		  lighten_modexpr mexpr)
-  | SEBident mp as x -> x
-  | SEBstruct (struc) ->
-      SEBstruct  (lighten_struct struc)
-  | SEBapply (mexpr,marg,u) ->
-      SEBapply (lighten_modexpr mexpr,lighten_modexpr marg,u)
-  | SEBwith (seb,wdcl) ->
-      SEBwith (lighten_modexpr seb,wdcl)
+		      typ_expr = traverse_modexpr mty.typ_expr}),
+		    traverse_modexpr mexpr)
+      | SEBident mp as x -> x
+      | SEBstruct (struc) ->
+	SEBstruct  (traverse_struct struc)
+      | SEBapply (mexpr,marg,u) ->
+	SEBapply (traverse_modexpr mexpr,traverse_modexpr marg,u)
+      | SEBwith (seb,wdcl) ->
+	SEBwith (traverse_modexpr seb,wdcl)
+    in
+    fun (dp,mb,depends,s) -> (dp,traverse_module mb,depends,s) 
 
-let lighten_library (dp,mb,depends,s) = (dp,lighten_module mb,depends,s)
+  (* To disburden a library from opaque definitions, we simply 
+     traverse it and add an indirection between the module body 
+     and its reference to a [const_body]. *)
+  let save library = 
+    let ((insert    : constant_def -> constant_def),
+	 (get_table : unit -> table)) = 
+      (* We use an integer as a key inside the table. *)
+      let counter = ref (-1) in
 
+      (* During the traversal, the table is implemented by a list 
+	 to get constant time insertion. *)
+      let opaque_definitions = ref [] in
+      
+      ((* Insert inside the table. *) 
+	(fun def ->
+	  let opaque_definition = match def with
+	    | OpaqueDef lc -> force_lazy_constr lc
+	    | _ -> assert false
+	  in
+	  incr counter;
+	  opaque_definitions := opaque_definition :: !opaque_definitions;
+	  OpaqueDef (key_as_lazy_constr !counter)),
+
+       (* Get the final table representation. *)
+       (fun () -> Array.of_list (List.rev !opaque_definitions)))
+    in
+    let lightened_library = traverse_library insert library in
+    (lightened_library, get_table ())
+
+  (* Loading is also a traversing that decodes the embedded keys that
+     are inside the [lightened_library]. If the [load_proof] flag is
+     set, we lookup inside the table to graft the
+     [constr_substituted]. Otherwise, we set the [const_body] field
+     to [None]. 
+  *)
+  let load ~load_proof (table : table Lazy.t) lightened_library =
+    let decode_key = function
+      | Undef _ | Def _ -> assert false
+      | OpaqueDef k ->
+	  let k = key_of_lazy_constr k in
+	  let access key =
+	    try (Lazy.force table).(key)
+	    with _ -> error "Error while retrieving an opaque body"
+	  in
+	  match load_proof with
+	    | Flags.Force ->
+	      let lc = Lazy.lazy_from_val (access k) in
+	      OpaqueDef (make_lazy_constr lc)
+	    | Flags.Lazy ->
+	      let lc = lazy (access k) in
+	      OpaqueDef (make_lazy_constr lc)
+	    | Flags.Dont ->
+	      Undef None
+    in
+    traverse_library decode_key lightened_library
+
+end
 
 type judgment = unsafe_judgment
 

@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: tacred.ml 13804 2011-01-27 00:41:34Z letouzey $ *)
 
 open Pp
 open Util
@@ -18,11 +16,12 @@ open Termops
 open Namegen
 open Declarations
 open Inductive
+open Libobject
 open Environ
 open Closure
 open Reductionops
 open Cbv
-open Rawterm
+open Glob_term
 open Pattern
 open Matching
 
@@ -300,17 +299,6 @@ let reference_eval sigma env = function
        end)
   | ref -> compute_consteval sigma env ref
 
-let rev_firstn_liftn fn ln =
-  let rec rfprec p res l =
-    if p = 0 then
-      res
-    else
-      match l with
-        | [] -> invalid_arg "Reduction.rev_firstn_liftn"
-        | a::rest -> rfprec (p-1) ((lift ln a)::res) rest
-  in
-  rfprec fn []
-
 (* If f is bound to EliminationFix (n',infos), then n' is the minimal
    number of args for starting the reduction and infos is
    (nbfix,[(yi1,Ti1);...;(yip,Tip)],n) indicating that f converts
@@ -528,27 +516,128 @@ let special_red_case env sigma whfun (ci, p, c, lf)  =
   in
   redrec (c, empty_stack)
 
+(* data structure to hold the map kn -> rec_args for simpl *)
+
+type behaviour = {
+  b_nargs: int;
+  b_recargs: int list;
+  b_dont_expose_case: bool;
+}
+
+let behaviour_table = ref (Refmap.empty : behaviour Refmap.t)
+
+let _ =
+  Summary.declare_summary "simplbehaviour"
+    { Summary.freeze_function = (fun () -> !behaviour_table);
+      Summary.unfreeze_function = (fun x -> behaviour_table := x);
+      Summary.init_function = (fun () -> behaviour_table := Refmap.empty) }
+
+type simpl_flag = [ `SimplDontExposeCase | `SimplNeverUnfold ]
+type req =
+  | ReqLocal
+  | ReqGlobal of global_reference * (int list * int * simpl_flag list)
+
+let load_simpl_behaviour _ (_,(_,(r, b))) =
+  behaviour_table := Refmap.add r b !behaviour_table
+
+let cache_simpl_behaviour o = load_simpl_behaviour 1 o
+
+let classify_simpl_behaviour = function
+  | ReqLocal, _ -> Dispose
+  | ReqGlobal _, _ as o -> Substitute o
+
+let subst_simpl_behaviour (subst, (_, (r,o as orig))) =
+  ReqLocal,
+  let r' = fst (subst_global subst r) in if r==r' then orig else (r',o)
+
+let discharge_simpl_behaviour = function
+  | _,(ReqGlobal (ConstRef c, req), (_, b)) ->
+     let c' = pop_con c in
+     let vars = Lib.section_segment_of_constant c in
+     let extra = List.length vars in
+     let nargs' = if b.b_nargs < 0 then b.b_nargs else b.b_nargs + extra in
+     let recargs' = List.map ((+) extra) b.b_recargs in
+     let b' = { b with b_nargs = nargs'; b_recargs = recargs' } in
+     Some (ReqGlobal (ConstRef c', req), (ConstRef c', b'))
+  | _ -> None
+
+let rebuild_simpl_behaviour = function
+  | req, (ConstRef c, _ as x) -> req, x
+  | _ -> assert false
+
+let inSimplBehaviour = declare_object { (default_object "SIMPLBEHAVIOUR") with
+  load_function = load_simpl_behaviour;
+  cache_function = cache_simpl_behaviour;
+  classify_function = classify_simpl_behaviour;
+  subst_function = subst_simpl_behaviour;
+  discharge_function = discharge_simpl_behaviour;
+  rebuild_function = rebuild_simpl_behaviour;
+}
+
+let set_simpl_behaviour local r (recargs, nargs, flags as req) =
+  let nargs = if List.mem `SimplNeverUnfold flags then max_int else nargs in
+  let behaviour = {
+    b_nargs = nargs; b_recargs = recargs;
+    b_dont_expose_case = List.mem `SimplDontExposeCase flags } in
+  let req = if local then ReqLocal else ReqGlobal (r, req) in
+  Lib.add_anonymous_leaf (inSimplBehaviour (req, (r, behaviour)))
+;;
+
+let get_simpl_behaviour r =
+  try
+    let b = Refmap.find r !behaviour_table in
+    let flags =
+      if b.b_nargs = max_int then [`SimplNeverUnfold]
+      else if b.b_dont_expose_case then [`SimplDontExposeCase] else [] in
+    Some (b.b_recargs, (if b.b_nargs = max_int then -1 else b.b_nargs), flags)
+  with Not_found -> None
+
+let get_behaviour = function
+  | EvalVar _ | EvalRel _ | EvalEvar _ -> raise Not_found
+  | EvalConst c -> Refmap.find (ConstRef c) !behaviour_table
+
+let recargs r =
+  try let b = get_behaviour r in Some (b.b_recargs, b.b_nargs)
+  with Not_found -> None
+
+let dont_expose_case r =
+  try (get_behaviour r).b_dont_expose_case with Not_found -> false
+
 (* [red_elim_const] contracts iota/fix/cofix redexes hidden behind
    constants by keeping the name of the constants in the recursive calls;
    it fails if no redex is around *)
 
 let rec red_elim_const env sigma ref largs =
-  match reference_eval sigma env ref with
-    | EliminationCases n when stack_args_size largs >= n ->
+  let nargs = stack_args_size largs in
+  let largs, unfold_anyway, unfold_nonelim =
+    match recargs ref with
+    | None -> largs, false, false
+    | Some (_,n) when nargs < n -> raise Redelimination
+    | Some (x::l,_) when nargs <= List.fold_left max x l -> raise Redelimination
+    | Some (l,n) ->
+        List.fold_left (fun stack i ->
+          let arg = stack_nth stack i in
+          let rarg = whd_construct_state env sigma (arg, empty_stack) in
+          match kind_of_term (fst rarg) with
+          | Construct _ -> stack_assign stack i (app_stack rarg)
+          | _ -> raise Redelimination)
+        largs l, n >= 0 && l =  [] && nargs >= n, 
+                 n >= 0 && l <> [] && nargs >= n in
+  try match reference_eval sigma env ref with
+    | EliminationCases n when nargs >= n ->
 	let c = reference_value sigma env ref in
 	let c', lrest = whd_betadelta_state env sigma (c,largs) in
 	let whfun = whd_simpl_state env sigma in
         (special_red_case env sigma whfun (destCase c'), lrest)
-    | EliminationFix (min,minfxargs,infos) when stack_args_size largs >=min ->
+    | EliminationFix (min,minfxargs,infos) when nargs >= min ->
 	let c = reference_value sigma env ref in
 	let d, lrest = whd_betadelta_state env sigma (c,largs) in
 	let f = make_elim_fun ([|Some (minfxargs,ref)|],infos) largs in
 	let whfun = whd_construct_state env sigma in
 	(match reduce_fix_use_function env sigma f whfun (destFix d) lrest with
 	   | NotReducible -> raise Redelimination
-	   | Reduced (c,rest) -> (nf_beta sigma c, rest))
-    | EliminationMutualFix (min,refgoal,refinfos)
-	when stack_args_size largs >= min ->
+           | Reduced (c,rest) -> (nf_beta sigma c, rest))
+    | EliminationMutualFix (min,refgoal,refinfos) when nargs >= min ->
 	let rec descend ref args =
 	  let c = reference_value sigma env ref in
 	  if ref = refgoal then
@@ -563,7 +652,13 @@ let rec red_elim_const env sigma ref largs =
 	(match reduce_fix_use_function env sigma f whfun (destFix d) lrest with
 	   | NotReducible -> raise Redelimination
 	   | Reduced (c,rest) -> (nf_beta sigma c, rest))
+    | NotAnElimination when unfold_nonelim -> 
+         let c = reference_value sigma env ref in
+         whd_betaiotazeta sigma (app_stack (c, largs)), empty_stack
     | _ -> raise Redelimination
+    with Redelimination when unfold_anyway ->
+       let c = reference_value sigma env ref in
+       whd_betaiotazeta sigma (app_stack (c, largs)), empty_stack
 
 (* reduce to whd normal form or to an applied constant that does not hide
    a reducible iota/fix/cofix redex (the "simpl" tactic) *)
@@ -591,7 +686,14 @@ and whd_simpl_state env sigma s =
       | _ when isEvalRef env x ->
 	  let ref = destEvalRef x in
           (try
-	    redrec (red_elim_const env sigma ref stack)
+            let hd, _ as s' = redrec (red_elim_const env sigma ref stack) in
+            let rec is_case x = match kind_of_term x with
+              | Lambda (_,_, x) | LetIn (_,_,_, x) | Cast (x, _,_) -> is_case x
+              | App (hd, _) -> is_case hd
+              | Case _ -> true
+              | _ -> false in
+            if dont_expose_case ref && is_case hd then raise Redelimination
+            else s'
            with Redelimination ->
 	     s)
       | _ -> s
@@ -698,7 +800,7 @@ let whd_simpl_orelse_delta_but_fix_old env sigma c =
            with Redelimination ->
              match reference_opt_value sigma env ref with
 	       | Some c ->
-		   (match kind_of_term ((strip_lam c)) with
+		   (match kind_of_term (strip_lam c) with
                      | CoFix _ | Fix _ -> s
 		     | _ -> redrec (c, stack))
 	       | None -> s)
@@ -708,7 +810,7 @@ let whd_simpl_orelse_delta_but_fix_old env sigma c =
 
 (* Same as [whd_simpl] but also reduces constants that do not hide a
    reducible fix, but does this reduction of constants only until it
-   it immediately hides a non reducible fix or a cofix *)
+   immediately hides a non reducible fix or a cofix *)
 
 let whd_simpl_orelse_delta_but_fix env sigma c =
   let rec redrec s =
@@ -716,7 +818,7 @@ let whd_simpl_orelse_delta_but_fix env sigma c =
     if isEvalRef env constr then
       match reference_opt_value sigma env (destEvalRef constr) with
 	| Some c ->
-	    (match kind_of_term ((strip_lam c)) with
+	    (match kind_of_term (strip_lam c) with
               | CoFix _ | Fix _ -> s'
 	      | _ -> redrec (c, stack))
 	| None -> s'
@@ -780,7 +882,7 @@ let substlin env evalref n (nowhere_except_in,locs) c =
   let term = constr_of_evaluable_ref evalref in
   let rec substrec () c =
     if nowhere_except_in & !pos > maxocc then c
-    else if c = term then
+    else if eq_constr c term then
       let ok =
 	if nowhere_except_in then List.mem !pos locs
 	else not (List.mem !pos locs) in
@@ -867,7 +969,7 @@ let abstract_scheme env sigma (locc,a) c =
   if occur_meta a then
     mkLambda (na,ta,c)
   else
-    mkLambda (na,ta,subst_term_occ locc a c)
+    mkLambda (na,ta,subst_closed_term_occ locc a c)
 
 let pattern_occs loccs_trm env sigma c =
   let abstr_trm = List.fold_right (abstract_scheme env sigma) loccs_trm c in
@@ -905,6 +1007,10 @@ let reduce_to_ind_gen allow_product env sigma t =
 let reduce_to_quantified_ind x = reduce_to_ind_gen true x
 let reduce_to_atomic_ind x = reduce_to_ind_gen false x
 
+let rec find_hnf_rectype env sigma t =
+  let ind,t = reduce_to_atomic_ind env sigma t in
+  ind, snd (decompose_app t)
+
 (* Reduce the weak-head redex [beta,iota/fix/cofix[all],cast,zeta,simpl/delta]
    or raise [NotStepReducible] if not a weak-head redex *)
 
@@ -932,7 +1038,7 @@ let one_step_reduce env sigma c =
       | _ when isEvalRef env x ->
 	  let ref = destEvalRef x in
           (try
-            red_elim_const env sigma ref stack
+             red_elim_const env sigma ref stack
            with Redelimination ->
 	     match reference_opt_value sigma env ref with
 	       | Some d -> d, stack
@@ -972,7 +1078,7 @@ let reduce_to_ref_gen allow_product env sigma ref t =
 	  with Not_found ->
           try
 	    let t' = nf_betaiota sigma (one_step_reduce env sigma t) in
-	    elimrec env t' l
+            elimrec env t' l
           with NotStepReducible ->
 	    errorlabstrm ""
 	      (str "Cannot recognize a statement based on " ++

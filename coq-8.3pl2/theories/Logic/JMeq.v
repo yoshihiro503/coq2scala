@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: JMeq.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (** John Major's Equality as proposed by Conor McBride
 
@@ -25,6 +23,8 @@ Inductive JMeq (A:Type) (x:A) : forall B:Type, B -> Prop :=
     JMeq_refl : JMeq x x.
 
 Set Elimination Schemes.
+
+Arguments JMeq_refl {A x} , [A] x.
 
 Hint Resolve JMeq_refl.
 
@@ -113,8 +113,7 @@ apply JMeq_refl.
 Qed.
 
 Lemma eq_dep_strictly_stronger_JMeq :
- exists U, exists P, exists p, exists q, exists x, exists y,
-  JMeq x y /\ ~ eq_dep U P p x q y.
+ exists U P p q x y, JMeq x y /\ ~ eq_dep U P p x q y.
 Proof.
 exists bool. exists (fun _ => True). exists true. exists false.
 exists I. exists I.

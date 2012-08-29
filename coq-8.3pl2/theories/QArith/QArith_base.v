@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: QArith_base.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Export ZArith.
 Require Export ZArithRing.
@@ -20,16 +18,16 @@ Record Q : Set := Qmake {Qnum : Z; Qden : positive}.
 
 Delimit Scope Q_scope with Q.
 Bind Scope Q_scope with Q.
-Arguments Scope Qmake [Z_scope positive_scope].
+Arguments Qmake _%Z _%positive.
 Open Scope Q_scope.
-Ltac simpl_mult := repeat rewrite Zpos_mult_morphism.
+Ltac simpl_mult := rewrite ?Pos2Z.inj_mul.
 
 (** [a#b] denotes the fraction [a] over [b]. *)
 
 Notation "a # b" := (Qmake a b) (at level 55, no associativity) : Q_scope.
 
 Definition inject_Z (x : Z) := Qmake x 1.
-Arguments Scope inject_Z [Z_scope].
+Arguments inject_Z x%Z.
 
 Notation QDen p := (Zpos (Qden p)).
 Notation " 0 " := (0#1) : Q_scope.
@@ -48,84 +46,77 @@ Notation "x > y" := (Qlt y x)(only parsing) : Q_scope.
 Notation "x >= y" := (Qle y x)(only parsing) : Q_scope.
 Notation "x <= y <= z" := (x<=y/\y<=z) : Q_scope.
 
+(** injection from Z is injective. *)
+
+Lemma inject_Z_injective (a b: Z): inject_Z a == inject_Z b <-> a = b.
+Proof.
+ unfold Qeq. simpl. omega.
+Qed.
+
 (** Another approach : using Qcompare for defining order relations. *)
 
 Definition Qcompare (p q : Q) := (Qnum p * QDen q ?= Qnum q * QDen p)%Z.
 Notation "p ?= q" := (Qcompare p q) : Q_scope.
 
-Lemma Qeq_alt : forall p q, (p == q) <-> (p ?= q) = Eq.
+Lemma Qeq_alt p q : (p == q) <-> (p ?= q) = Eq.
 Proof.
-unfold Qeq, Qcompare; intros; split; intros.
-rewrite H; apply Zcompare_refl.
-apply Zcompare_Eq_eq; auto.
+symmetry. apply Z.compare_eq_iff.
 Qed.
 
-Lemma Qlt_alt : forall p q, (p<q) <-> (p?=q = Lt).
+Lemma Qlt_alt p q : (p<q) <-> (p?=q = Lt).
 Proof.
-unfold Qlt, Qcompare, Zlt; split; auto.
+reflexivity.
 Qed.
 
-Lemma Qgt_alt : forall p q, (p>q) <-> (p?=q = Gt).
+Lemma Qgt_alt p q : (p>q) <-> (p?=q = Gt).
 Proof.
-unfold Qlt, Qcompare, Zlt.
-intros; rewrite Zcompare_Gt_Lt_antisym; split; auto.
+symmetry. apply Z.gt_lt_iff.
 Qed.
 
-Lemma Qle_alt : forall p q, (p<=q) <-> (p?=q <> Gt).
+Lemma Qle_alt p q : (p<=q) <-> (p?=q <> Gt).
 Proof.
-unfold Qle, Qcompare, Zle; split; auto.
+reflexivity.
 Qed.
 
-Lemma Qge_alt : forall p q, (p>=q) <-> (p?=q <> Lt).
+Lemma Qge_alt p q : (p>=q) <-> (p?=q <> Lt).
 Proof.
-unfold Qle, Qcompare, Zle.
-split; intros; contradict H.
-rewrite Zcompare_Gt_Lt_antisym; auto.
-rewrite Zcompare_Gt_Lt_antisym in H; auto.
+symmetry. apply Z.ge_le_iff.
 Qed.
 
 Hint Unfold Qeq Qlt Qle : qarith.
 Hint Extern 5 (?X1 <> ?X2) => intro; discriminate: qarith.
 
-Lemma Qcompare_antisym : forall x y, CompOpp (x ?= y) = (y ?= x).
+Lemma Qcompare_antisym x y : CompOpp (x ?= y) = (y ?= x).
 Proof.
- unfold "?=". intros. apply Zcompare_antisym.
+ symmetry. apply Z.compare_antisym.
 Qed.
 
-Lemma Qcompare_spec : forall x y, CompSpec Qeq Qlt x y (x ?= y).
+Lemma Qcompare_spec x y : CompareSpec (x==y) (x<y) (y<x) (x ?= y).
 Proof.
- intros.
- destruct (x ?= y) as [ ]_eqn:H; constructor; auto.
- rewrite Qeq_alt; auto.
- rewrite Qlt_alt, <- Qcompare_antisym, H; auto.
+ unfold Qeq, Qlt, Qcompare. case Z.compare_spec; now constructor.
 Qed.
 
 (** * Properties of equality. *)
 
-Theorem Qeq_refl : forall x, x == x.
+Theorem Qeq_refl x : x == x.
 Proof.
  auto with qarith.
 Qed.
 
-Theorem Qeq_sym : forall x y, x == y -> y == x.
+Theorem Qeq_sym x y : x == y -> y == x.
 Proof.
  auto with qarith.
 Qed.
 
-Theorem Qeq_trans : forall x y z, x == y -> y == z -> x == z.
+Theorem Qeq_trans x y z : x == y -> y == z -> x == z.
 Proof.
-unfold Qeq; intros.
-apply Zmult_reg_l with (QDen y).
-auto with qarith.
-transitivity (Qnum x * QDen y * QDen z)%Z; try ring.
-rewrite H.
-transitivity (Qnum y * QDen z * QDen x)%Z; try ring.
-rewrite H0; ring.
+unfold Qeq; intros XY YZ.
+apply Z.mul_reg_r with (QDen y); [auto with qarith|].
+now rewrite Z.mul_shuffle0, XY, Z.mul_shuffle0, YZ, Z.mul_shuffle0.
 Qed.
 
-Hint Resolve Qeq_refl : qarith.
-Hint Resolve Qeq_sym : qarith.
-Hint Resolve Qeq_trans : qarith.
+Hint Immediate Qeq_sym : qarith.
+Hint Resolve Qeq_refl Qeq_trans : qarith.
 
 (** In a word, [Qeq] is a setoid equality. *)
 
@@ -134,50 +125,48 @@ Proof. split; red; eauto with qarith. Qed.
 
 (** Furthermore, this equality is decidable: *)
 
-Theorem Qeq_dec : forall x y, {x==y} + {~ x==y}.
+Theorem Qeq_dec x y : {x==y} + {~ x==y}.
 Proof.
- intros; case (Z_eq_dec (Qnum x * QDen y) (Qnum y * QDen x)); auto.
+ apply Z.eq_dec.
 Defined.
 
 Definition Qeq_bool x y :=
   (Zeq_bool (Qnum x * QDen y) (Qnum y * QDen x))%Z.
 
 Definition Qle_bool x y :=
-  (Zle_bool (Qnum x * QDen y) (Qnum y * QDen x))%Z.
+  (Z.leb (Qnum x * QDen y) (Qnum y * QDen x))%Z.
 
-Lemma Qeq_bool_iff : forall x y, Qeq_bool x y = true <-> x == y.
+Lemma Qeq_bool_iff x y : Qeq_bool x y = true <-> x == y.
 Proof.
-  unfold Qeq_bool, Qeq; intros.
   symmetry; apply Zeq_is_eq_bool.
 Qed.
 
-Lemma Qeq_bool_eq : forall x y, Qeq_bool x y = true -> x == y.
+Lemma Qeq_bool_eq x y : Qeq_bool x y = true -> x == y.
 Proof.
-  intros; rewrite <- Qeq_bool_iff; auto.
+  apply Qeq_bool_iff.
 Qed.
 
-Lemma Qeq_eq_bool : forall x y, x == y -> Qeq_bool x y = true.
+Lemma Qeq_eq_bool x y : x == y -> Qeq_bool x y = true.
 Proof.
-  intros; rewrite Qeq_bool_iff; auto.
+  apply Qeq_bool_iff.
 Qed.
 
-Lemma Qeq_bool_neq : forall x y, Qeq_bool x y = false -> ~ x == y.
+Lemma Qeq_bool_neq x y : Qeq_bool x y = false -> ~ x == y.
 Proof.
-  intros x y H; rewrite <- Qeq_bool_iff, H; discriminate.
+  rewrite <- Qeq_bool_iff. now intros ->.
 Qed.
 
-Lemma Qle_bool_iff : forall x y, Qle_bool x y = true <-> x <= y.
+Lemma Qle_bool_iff x y : Qle_bool x y = true <-> x <= y.
 Proof.
-  unfold Qle_bool, Qle; intros.
   symmetry; apply Zle_is_le_bool.
 Qed.
 
-Lemma Qle_bool_imp_le : forall x y, Qle_bool x y = true -> x <= y.
+Lemma Qle_bool_imp_le x y : Qle_bool x y = true -> x <= y.
 Proof.
-  intros; rewrite <- Qle_bool_iff; auto.
+  apply Qle_bool_iff.
 Qed.
 
-Theorem Qnot_eq_sym : forall x y, ~x == y -> ~y == x.
+Theorem Qnot_eq_sym x y : ~x == y -> ~y == x.
 Proof.
  auto with qarith.
 Qed.
@@ -218,12 +207,9 @@ Infix "/" := Qdiv : Q_scope.
 
 Notation " ' x " := (Zpos x) (at level 20, no associativity) : Z_scope.
 
-Lemma Qmake_Qdiv : forall a b, a#b==inject_Z a/inject_Z ('b).
+Lemma Qmake_Qdiv a b : a#b==inject_Z a/inject_Z ('b).
 Proof.
-intros a b.
-unfold Qeq.
-simpl.
-ring.
+unfold Qeq. simpl. ring.
 Qed.
 
 (** * Setoid compatibility results *)
@@ -276,17 +262,13 @@ Instance Qinv_comp : Proper (Qeq==>Qeq) Qinv.
 Proof.
   unfold Qeq, Qinv; simpl.
   Open Scope Z_scope.
-  intros (p1, p2) (q1, q2); simpl.
-  case p1; simpl.
-  intros.
-  assert (q1 = 0).
-  elim (Zmult_integral q1 ('p2)); auto with zarith.
-  intros; discriminate.
-  subst; auto.
-  case q1; simpl; intros; try discriminate.
-  rewrite (Pmult_comm p2 p); rewrite (Pmult_comm q2 p0); auto.
-  case q1; simpl; intros; try discriminate.
-  rewrite (Pmult_comm p2 p); rewrite (Pmult_comm q2 p0); auto.
+  intros (p1, p2) (q1, q2) EQ; simpl in *.
+  destruct q1; simpl in *.
+  - apply Z.mul_eq_0 in EQ. destruct EQ; now subst.
+  - destruct p1; simpl in *; try discriminate.
+    now rewrite Pos.mul_comm, <- EQ, Pos.mul_comm.
+  - destruct p1; simpl in *; try discriminate.
+    now rewrite Pos.mul_comm, <- EQ, Pos.mul_comm.
   Close Scope Z_scope.
 Qed.
 
@@ -363,7 +345,7 @@ Qed.
 Lemma Qplus_0_r : forall x, x+0 == x.
 Proof.
   intros (x1, x2); unfold Qeq, Qplus; simpl.
-  rewrite Pmult_comm; simpl; ring.
+  rewrite Pos.mul_comm; simpl; ring.
 Qed.
 
 (** Commutativity of addition: *)
@@ -371,7 +353,7 @@ Qed.
 Theorem Qplus_comm : forall x y, x+y == y+x.
 Proof.
   intros (x1, x2); unfold Qeq, Qplus; simpl.
-  intros; rewrite Pmult_comm; ring.
+  intros; rewrite Pos.mul_comm; ring.
 Qed.
 
 
@@ -387,6 +369,26 @@ Proof.
   red; simpl; intro; ring.
 Qed.
 
+(** Injectivity of addition (uses theory about Qopp above): *)
+
+Lemma Qplus_inj_r (x y z: Q):
+  x + z == y + z <-> x == y.
+Proof.
+ split; intro E.
+  rewrite <- (Qplus_0_r x), <- (Qplus_0_r y).
+  rewrite <- (Qplus_opp_r z); auto.
+  do 2 rewrite Qplus_assoc.
+  rewrite E. reflexivity.
+ rewrite E. reflexivity.
+Qed.
+
+Lemma Qplus_inj_l (x y z: Q):
+  z + x == z + y <-> x == y.
+Proof.
+ rewrite (Qplus_comm z x), (Qplus_comm z y).
+ apply Qplus_inj_r.
+Qed.
+
 
 (** * Properties of [Qmult] *)
 
@@ -394,7 +396,7 @@ Qed.
 
 Theorem Qmult_assoc : forall n m p, n*(m*p)==(n*m)*p.
 Proof.
-  intros; red; simpl; rewrite Pmult_assoc; ring.
+  intros; red; simpl; rewrite Pos.mul_assoc; ring.
 Qed.
 
 (** multiplication and zero *)
@@ -419,15 +421,15 @@ Qed.
 Theorem Qmult_1_r : forall n, n*1==n.
 Proof.
   intro; red; simpl.
-  rewrite Zmult_1_r with (n := Qnum n).
-  rewrite Pmult_comm; simpl; trivial.
+  rewrite Z.mul_1_r with (n := Qnum n).
+  rewrite Pos.mul_comm; simpl; trivial.
 Qed.
 
 (** Commutativity of multiplication *)
 
 Theorem Qmult_comm : forall x y, x*y==y*x.
 Proof.
-  intros; red; simpl; rewrite Pmult_comm; ring.
+  intros; red; simpl; rewrite Pos.mul_comm; ring.
 Qed.
 
 (** Distributivity over [Qadd] *)
@@ -449,18 +451,31 @@ Qed.
 Theorem Qmult_integral : forall x y, x*y==0 -> x==0 \/ y==0.
 Proof.
   intros (x1,x2) (y1,y2).
-  unfold Qeq, Qmult; simpl; intros.
-  destruct (Zmult_integral (x1*1)%Z (y1*1)%Z); auto.
-  rewrite <- H; ring.
+  unfold Qeq, Qmult; simpl.
+  now rewrite <- Z.mul_eq_0, !Z.mul_1_r.
 Qed.
 
 Theorem Qmult_integral_l : forall x y, ~ x == 0 -> x*y == 0 -> y == 0.
 Proof.
   intros (x1, x2) (y1, y2).
-  unfold Qeq, Qmult; simpl; intros.
-  apply Zmult_integral_l with x1; auto with zarith.
-  rewrite <- H0; ring.
+  unfold Qeq, Qmult; simpl.
+  rewrite !Z.mul_1_r, Z.mul_eq_0. intuition.
 Qed.
+
+
+(** * inject_Z is a ring homomorphism: *)
+
+Lemma inject_Z_plus (x y: Z): inject_Z (x + y) = inject_Z x + inject_Z y.
+Proof.
+ unfold Qplus, inject_Z. simpl. f_equal. ring.
+Qed.
+
+Lemma inject_Z_mult (x y: Z): inject_Z (x * y) = inject_Z x * inject_Z y.
+Proof. reflexivity. Qed.
+
+Lemma inject_Z_opp (x: Z): inject_Z (- x) = - inject_Z x.
+Proof. reflexivity. Qed.
+
 
 (** * Inverse and division. *)
 
@@ -500,14 +515,33 @@ Proof.
   apply Qdiv_mult_l; auto.
 Qed.
 
+(** Injectivity of Qmult (requires theory about Qinv above): *)
+
+Lemma Qmult_inj_r (x y z: Q): ~ z == 0 -> (x * z == y * z <-> x == y).
+Proof.
+ intro z_ne_0.
+ split; intro E.
+  rewrite <- (Qmult_1_r x), <- (Qmult_1_r y).
+  rewrite <- (Qmult_inv_r z); auto.
+  do 2 rewrite Qmult_assoc.
+  rewrite E. reflexivity.
+ rewrite E. reflexivity.
+Qed.
+
+Lemma Qmult_inj_l (x y z: Q): ~ z == 0 -> (z * x == z * y <-> x == y).
+Proof.
+ rewrite (Qmult_comm z x), (Qmult_comm z y).
+ apply Qmult_inj_r.
+Qed.
+
 (** * Properties of order upon Q. *)
 
-Lemma Qle_refl : forall x, x<=x.
+Lemma Qle_refl x : x<=x.
 Proof.
   unfold Qle; auto with zarith.
 Qed.
 
-Lemma Qle_antisym : forall x y, x<=y -> y<=x -> x==y.
+Lemma Qle_antisym x y : x<=y -> y<=x -> x==y.
 Proof.
   unfold Qle, Qeq; auto with zarith.
 Qed.
@@ -516,39 +550,46 @@ Lemma Qle_trans : forall x y z, x<=y -> y<=z -> x<=z.
 Proof.
   unfold Qle; intros (x1, x2) (y1, y2) (z1, z2); simpl; intros.
   Open Scope Z_scope.
-  apply Zmult_le_reg_r with ('y2).
-  red; trivial.
-  apply Zle_trans with (y1 * 'x2 * 'z2).
-  replace (x1 * 'z2 * 'y2) with (x1 * 'y2 * 'z2) by ring.
-  apply Zmult_le_compat_r; auto with zarith.
-  replace (y1 * 'x2 * 'z2) with (y1 * 'z2 * 'x2) by ring.
-  replace (z1 * 'x2 * 'y2) with (z1 * 'y2 * 'x2) by ring.
-  apply Zmult_le_compat_r; auto with zarith.
+  apply Z.mul_le_mono_pos_r with ('y2); [easy|].
+  apply Z.le_trans with (y1 * 'x2 * 'z2).
+  - rewrite Z.mul_shuffle0. now apply Z.mul_le_mono_pos_r.
+  - rewrite Z.mul_shuffle0, (Z.mul_shuffle0 z1).
+    now apply Z.mul_le_mono_pos_r.
   Close Scope Z_scope.
 Qed.
 
 Hint Resolve Qle_trans : qarith.
 
-Lemma Qlt_irrefl : forall x, ~x<x.
+Lemma Qlt_irrefl x : ~x<x.
 Proof.
  unfold Qlt. auto with zarith.
 Qed.
 
-Lemma Qlt_not_eq : forall x y, x<y -> ~ x==y.
+Lemma Qlt_not_eq x y : x<y -> ~ x==y.
 Proof.
   unfold Qlt, Qeq; auto with zarith.
 Qed.
 
+Lemma Zle_Qle (x y: Z): (x <= y)%Z = (inject_Z x <= inject_Z y).
+Proof.
+ unfold Qle. simpl. now rewrite !Z.mul_1_r.
+Qed.
+
+Lemma Zlt_Qlt (x y: Z): (x < y)%Z = (inject_Z x < inject_Z y).
+Proof.
+ unfold Qlt. simpl. now rewrite !Z.mul_1_r.
+Qed.
+
+
 (** Large = strict or equal *)
 
-Lemma Qle_lteq : forall x y, x<=y <-> x<y \/ x==y.
+Lemma Qle_lteq x y : x<=y <-> x<y \/ x==y.
 Proof.
- intros.
  rewrite Qeq_alt, Qle_alt, Qlt_alt.
  destruct (x ?= y); intuition; discriminate.
 Qed.
 
-Lemma Qlt_le_weak : forall x y, x<y -> x<=y.
+Lemma Qlt_le_weak x y : x<y -> x<=y.
 Proof.
   unfold Qle, Qlt; auto with zarith.
 Qed.
@@ -557,15 +598,11 @@ Lemma Qle_lt_trans : forall x y z, x<=y -> y<z -> x<z.
 Proof.
   unfold Qle, Qlt; intros (x1, x2) (y1, y2) (z1, z2); simpl; intros.
   Open Scope Z_scope.
-  apply Zgt_lt.
-  apply Zmult_gt_reg_r with ('y2).
-  red; trivial.
-  apply Zgt_le_trans with (y1 * 'x2 * 'z2).
-  replace (y1 * 'x2 * 'z2) with (y1 * 'z2 * 'x2) by ring.
-  replace (z1 * 'x2 * 'y2) with (z1 * 'y2 * 'x2) by ring.
-  apply Zmult_gt_compat_r; auto with zarith.
-  replace (x1 * 'z2 * 'y2) with (x1 * 'y2 * 'z2) by ring.
-  apply Zmult_le_compat_r; auto with zarith.
+  apply Z.mul_lt_mono_pos_r with ('y2); [easy|].
+  apply Z.le_lt_trans with (y1 * 'x2 * 'z2).
+  - rewrite Z.mul_shuffle0. now apply Z.mul_le_mono_pos_r.
+  - rewrite Z.mul_shuffle0, (Z.mul_shuffle0 z1).
+    now apply Z.mul_lt_mono_pos_r.
   Close Scope Z_scope.
 Qed.
 
@@ -573,15 +610,11 @@ Lemma Qlt_le_trans : forall x y z, x<y -> y<=z -> x<z.
 Proof.
   unfold Qle, Qlt; intros (x1, x2) (y1, y2) (z1, z2); simpl; intros.
   Open Scope Z_scope.
-  apply Zgt_lt.
-  apply Zmult_gt_reg_r with ('y2).
-  red; trivial.
-  apply Zle_gt_trans with (y1 * 'x2 * 'z2).
-  replace (y1 * 'x2 * 'z2) with (y1 * 'z2 * 'x2) by ring.
-  replace (z1 * 'x2 * 'y2) with (z1 * 'y2 * 'x2) by ring.
-  apply Zmult_le_compat_r; auto with zarith.
-  replace (x1 * 'z2 * 'y2) with (x1 * 'y2 * 'z2) by ring.
-  apply Zmult_gt_compat_r; auto with zarith.
+  apply Z.mul_lt_mono_pos_r with ('y2); [easy|].
+  apply Z.lt_le_trans with (y1 * 'x2 * 'z2).
+  - rewrite Z.mul_shuffle0. now apply Z.mul_lt_mono_pos_r.
+  - rewrite Z.mul_shuffle0, (Z.mul_shuffle0 z1).
+    now apply Z.mul_le_mono_pos_r.
   Close Scope Z_scope.
 Qed.
 
@@ -616,7 +649,7 @@ Qed.
 
 Lemma Qle_lt_or_eq : forall x y, x<=y -> x<y \/ x==y.
 Proof.
-  unfold Qle, Qlt, Qeq; intros; apply Zle_lt_or_eq; auto.
+  unfold Qle, Qlt, Qeq; intros; now apply Z.lt_eq_cases.
 Qed.
 
 Hint Resolve Qle_not_lt Qlt_not_le Qnot_le_lt Qnot_lt_le
@@ -641,7 +674,7 @@ Defined.
 Lemma Qopp_le_compat : forall p q, p<=q -> -q <= -p.
 Proof.
   intros (a1,a2) (b1,b2); unfold Qle, Qlt; simpl.
-  do 2 rewrite <- Zopp_mult_distr_l; omega.
+  rewrite !Z.mul_opp_l. omega.
 Qed.
 
 Hint Resolve Qopp_le_compat : qarith.
@@ -649,15 +682,13 @@ Hint Resolve Qopp_le_compat : qarith.
 Lemma Qle_minus_iff : forall p q, p <= q <-> 0 <= q+-p.
 Proof.
   intros (x1,x2) (y1,y2); unfold Qle; simpl.
-  rewrite <- Zopp_mult_distr_l.
-  split; omega.
+  rewrite Z.mul_opp_l. omega.
 Qed.
 
 Lemma Qlt_minus_iff : forall p q, p < q <-> 0 < q+-p.
 Proof.
   intros (x1,x2) (y1,y2); unfold Qlt; simpl.
-  rewrite <- Zopp_mult_distr_l.
-  split; omega.
+  rewrite Z.mul_opp_l. omega.
 Qed.
 
 Lemma Qplus_le_compat :
@@ -668,8 +699,8 @@ Proof.
   Open Scope Z_scope.
   intros.
   match goal with |- ?a <= ?b => ring_simplify a b end.
-  rewrite Zplus_comm.
-  apply Zplus_le_compat.
+  rewrite Z.add_comm.
+  apply Z.add_le_mono.
   match goal with |- ?a <= ?b => ring_simplify z1 t1 ('z2) ('t2) a b end.
   auto with zarith.
   match goal with |- ?a <= ?b => ring_simplify x1 y1 ('x2) ('y2) a b end.
@@ -677,26 +708,86 @@ Proof.
   Close Scope Z_scope.
 Qed.
 
+Lemma Qplus_lt_le_compat :
+  forall x y z t, x<y -> z<=t -> x+z < y+t.
+Proof.
+  unfold Qplus, Qle, Qlt; intros (x1, x2) (y1, y2) (z1, z2) (t1, t2);
+    simpl; simpl_mult.
+  Open Scope Z_scope.
+  intros.
+  match goal with |- ?a < ?b => ring_simplify a b end.
+  rewrite Z.add_comm.
+  apply Z.add_le_lt_mono.
+  match goal with |- ?a <= ?b => ring_simplify z1 t1 ('z2) ('t2) a b end.
+  auto with zarith.
+  match goal with |- ?a < ?b => ring_simplify x1 y1 ('x2) ('y2) a b end.
+  do 2 (apply Z.mul_lt_mono_pos_r;try easy).
+  Close Scope Z_scope.
+Qed.
+
+Lemma Qplus_le_l (x y z: Q): x + z <= y + z <-> x <= y.
+Proof.
+ split; intros.
+  rewrite <- (Qplus_0_r x), <- (Qplus_0_r y), <- (Qplus_opp_r z).
+  do 2 rewrite Qplus_assoc.
+  apply Qplus_le_compat; auto with *.
+ apply Qplus_le_compat; auto with *.
+Qed.
+
+Lemma Qplus_le_r (x y z: Q): z + x <= z + y <-> x <= y.
+Proof.
+ rewrite (Qplus_comm z x), (Qplus_comm z y).
+ apply Qplus_le_l.
+Qed.
+
+Lemma Qplus_lt_l (x y z: Q): x + z < y + z <-> x < y.
+Proof.
+ split; intros.
+  rewrite <- (Qplus_0_r x), <- (Qplus_0_r y), <- (Qplus_opp_r z).
+  do 2 rewrite Qplus_assoc.
+  apply Qplus_lt_le_compat; auto with *.
+ apply Qplus_lt_le_compat; auto with *.
+Qed.
+
+Lemma Qplus_lt_r (x y z: Q): z + x < z + y <-> x < y.
+Proof.
+ rewrite (Qplus_comm z x), (Qplus_comm z y).
+ apply Qplus_lt_l.
+Qed.
+
 Lemma Qmult_le_compat_r : forall x y z, x <= y -> 0 <= z -> x*z <= y*z.
 Proof.
   intros (a1,a2) (b1,b2) (c1,c2); unfold Qle, Qlt; simpl.
   Open Scope Z_scope.
   intros; simpl_mult.
-  replace (a1*c1*('b2*'c2)) with ((a1*'b2)*(c1*'c2)) by ring.
-  replace (b1*c1*('a2*'c2)) with ((b1*'a2)*(c1*'c2)) by ring.
-  apply Zmult_le_compat_r; auto with zarith.
+  rewrite Z.mul_shuffle1, (Z.mul_shuffle1 b1).
+  apply Z.mul_le_mono_nonneg_r; auto with zarith.
   Close Scope Z_scope.
 Qed.
 
-Lemma Qmult_lt_0_le_reg_r : forall x y z, 0 <  z  -> x*z <= y*z -> x <= y.
+Lemma Qmult_lt_0_le_reg_r : forall x y z, 0 < z  -> x*z <= y*z -> x <= y.
 Proof.
   intros (a1,a2) (b1,b2) (c1,c2); unfold Qle, Qlt; simpl.
   Open Scope Z_scope.
   simpl_mult.
-  replace (a1*c1*('b2*'c2)) with ((a1*'b2)*(c1*'c2)) by ring.
-  replace (b1*c1*('a2*'c2)) with ((b1*'a2)*(c1*'c2)) by ring.
-  intros; apply Zmult_le_reg_r with (c1*'c2); auto with zarith.
+  rewrite Z.mul_shuffle1, (Z.mul_shuffle1 b1).
+  intros LT LE.
+  apply Z.mul_le_mono_pos_r in LE; trivial.
+  apply Z.mul_pos_pos; [omega|easy].
   Close Scope Z_scope.
+Qed.
+
+Lemma Qmult_le_r (x y z: Q): 0 < z -> (x*z <= y*z <-> x <= y).
+Proof.
+ split; intro.
+  now apply Qmult_lt_0_le_reg_r with z.
+ apply Qmult_le_compat_r; auto with qarith.
+Qed.
+
+Lemma Qmult_le_l (x y z: Q): 0 < z -> (z*x <= z*y <-> x <= y).
+Proof.
+ rewrite (Qmult_comm z x), (Qmult_comm z y).
+ apply Qmult_le_r.
 Qed.
 
 Lemma Qmult_lt_compat_r : forall x y z, 0 < z  -> x < y -> x*z < y*z.
@@ -704,13 +795,28 @@ Proof.
   intros (a1,a2) (b1,b2) (c1,c2); unfold Qle, Qlt; simpl.
   Open Scope Z_scope.
   intros; simpl_mult.
-  replace (a1*c1*('b2*'c2)) with ((a1*'b2)*(c1*'c2)) by ring.
-  replace (b1*c1*('a2*'c2)) with ((b1*'a2)*(c1*'c2)) by ring.
-  apply Zmult_lt_compat_r; auto with zarith.
-  apply Zmult_lt_0_compat.
-  omega.
-  compute; auto.
+  rewrite Z.mul_shuffle1, (Z.mul_shuffle1 b1).
+  apply Z.mul_lt_mono_pos_r; auto with zarith.
+  apply Z.mul_pos_pos; [omega|reflexivity].
   Close Scope Z_scope.
+Qed.
+
+Lemma Qmult_lt_r: forall x y z, 0 < z -> (x*z < y*z <-> x < y).
+Proof.
+ Open Scope Z_scope.
+ intros (a1,a2) (b1,b2) (c1,c2).
+ unfold Qle, Qlt; simpl.
+ simpl_mult.
+ rewrite Z.mul_shuffle1, (Z.mul_shuffle1 b1).
+ intro LT. rewrite <- Z.mul_lt_mono_pos_r. reflexivity.
+ apply Z.mul_pos_pos; [omega|reflexivity].
+ Close Scope Z_scope.
+Qed.
+
+Lemma Qmult_lt_l (x y z: Q): 0 < z -> (z*x < z*y <-> x < y).
+Proof.
+ rewrite (Qmult_comm z x), (Qmult_comm z y).
+ apply Qmult_lt_r.
 Qed.
 
 Lemma Qmult_le_0_compat : forall a b, 0 <= a -> 0 <= b -> 0 <= a*b.

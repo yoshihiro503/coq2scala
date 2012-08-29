@@ -29,26 +29,53 @@ type constr_substituted
 val force_constr : constr_substituted -> constr
 val from_val : constr -> constr_substituted
 
+(** Beware! In .vo files, lazy_constr are stored as integers
+   used as indexes for a separate table. The actual lazy_constr is restored
+   later, by [Safe_typing.LightenLibrary.load]. This allows us
+   to use here a different definition of lazy_constr than coqtop:
+   since the checker will inspect all proofs parts, even opaque
+   ones, no need to use Lazy.t here *)
+
+type lazy_constr
+val force_lazy_constr : lazy_constr -> constr
+val lazy_constr_from_val : constr_substituted -> lazy_constr
+
+(** Inlining level of parameters at functor applications.
+    This is ignored by the checker. *)
+
+type inline = int option
+
+(** A constant can have no body (axiom/parameter), or a
+    transparent body, or an opaque one *)
+
+type constant_def =
+  | Undef of inline
+  | Def of constr_substituted
+  | OpaqueDef of lazy_constr
+
 type constant_body = {
     const_hyps : section_context; (* New: younger hyp at top *)
-    const_body : constr_substituted option;
+    const_body : constant_def;
     const_type : constant_type;
     const_body_code : to_patch_substituted;
-    const_constraints : Univ.constraints;
-    const_opaque : bool;
-    const_inline : bool}
+    const_constraints : Univ.constraints }
+
+val body_of_constant : constant_body -> constr_substituted option
+val constant_has_body : constant_body -> bool
+val is_opaque : constant_body -> bool
 
 (* Mutual inductives *)
 
 type recarg =
   | Norec
-  | Mrec of int
+  | Mrec of inductive
   | Imbr of inductive
 
 type wf_paths = recarg Rtree.t
 
 val mk_norec : wf_paths
 val mk_paths : recarg -> wf_paths list array -> wf_paths
+val dest_recarg : wf_paths -> recarg
 val dest_subterms : wf_paths -> wf_paths list array
 
 type monomorphic_inductive_arity = {
@@ -186,11 +213,6 @@ and module_type_body =
 
 (* Substitutions *)
 
-val fold_subst :
-  (mod_bound_id -> module_path -> 'a -> 'a) ->
-  (module_path -> module_path -> 'a -> 'a) ->
-  substitution -> 'a -> 'a
-
 type 'a subst_fun = substitution -> 'a -> 'a
 
 val empty_subst : substitution
@@ -211,6 +233,6 @@ val subst_module : substitution -> module_body -> module_body
 val join : substitution -> substitution -> substitution
 
 (* Validation *)
-val val_eng : Obj.t -> unit
-val val_module : Obj.t -> unit
-val val_modtype : Obj.t -> unit
+val val_eng : Validate.func
+val val_module : Validate.func
+val val_modtype : Validate.func

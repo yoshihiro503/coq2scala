@@ -1,13 +1,11 @@
 (* -*- coding: utf-8 -*- *)
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-(* $Id: Basics.v 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 (** Standard functions and combinators.
 
    Proofs about them require functional extensionality and can be found
@@ -19,7 +17,7 @@
 
 (** The polymorphic identity function is defined in [Datatypes]. *)
 
-Implicit Arguments id [[A]].
+Arguments id {A} x.
 
 (** Function composition. *)
 
@@ -31,7 +29,7 @@ Hint Unfold compose.
 Notation " g ∘ f " := (compose g f)
   (at level 40, left associativity) : program_scope.
 
-Open Local Scope program_scope.
+Local Open Scope program_scope.
 
 (** The non-dependent function space between [A] and [B]. *)
 
@@ -55,5 +53,5 @@ Definition apply {A B} (f : A -> B) (x : A) := f x.
 
 (** Curryfication of [prod] is defined in [Logic.Datatypes]. *)
 
-Implicit Arguments prod_curry [[A] [B] [C]].
-Implicit Arguments prod_uncurry [[A] [B] [C]].
+Arguments prod_curry   {A B C} f p.
+Arguments prod_uncurry {A B C} f x y.

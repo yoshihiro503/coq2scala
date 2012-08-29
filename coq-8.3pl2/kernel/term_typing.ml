@@ -1,12 +1,16 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: term_typing.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
+(* Created by Jacek Chrzaszcz, Aug 2002 as part of the implementation of
+   the Coq module system *)
+
+(* This module provides the main entry points for type-checking basic
+   declarations *)
 
 open Util
 open Names
@@ -28,8 +32,9 @@ let constrain_type env j cst1 = function
   | Some t ->
       let (tj,cst2) = infer_type env t in
       let (_,cst3) = judge_of_cast env j DEFAULTcast tj in
-      assert (t = tj.utj_val);
-      NonPolymorphicType t, Constraint.union (Constraint.union cst1 cst2) cst3
+	assert (eq_constr t tj.utj_val);
+	let cstrs = union_constraints (union_constraints cst1 cst2) cst3 in
+	  NonPolymorphicType t, cstrs
 
 let local_constrain_type env j cst1 = function
   | None ->
@@ -37,8 +42,8 @@ let local_constrain_type env j cst1 = function
   | Some t ->
       let (tj,cst2) = infer_type env t in
       let (_,cst3) = judge_of_cast env j DEFAULTcast tj in
-      assert (t = tj.utj_val);
-      t, Constraint.union (Constraint.union cst1 cst2) cst3
+      assert (eq_constr t tj.utj_val);
+      t, union_constraints (union_constraints cst1 cst2) cst3
 
 let translate_local_def env (b,topt) =
   let (j,cst) = infer env b in
@@ -88,13 +93,20 @@ let infer_declaration env dcl =
   match dcl with
   | DefinitionEntry c ->
       let (j,cst) = infer env c.const_entry_body in
+      let j =
+        {uj_val = hcons_constr j.uj_val;
+         uj_type = hcons_constr j.uj_type} in
       let (typ,cst) = constrain_type env j cst c.const_entry_type in
-      Some (Declarations.from_val j.uj_val), typ, cst,
-        c.const_entry_opaque, c.const_entry_boxed, false
-  | ParameterEntry (t,nl) ->
+      let def =
+	if c.const_entry_opaque
+	then OpaqueDef (Declarations.opaque_from_val j.uj_val)
+	else Def (Declarations.from_val j.uj_val)
+      in
+      def, typ, cst, c.const_entry_secctx
+  | ParameterEntry (ctx,t,nl) ->
       let (j,cst) = infer env t in
-      None, NonPolymorphicType (Typeops.assumption_of_judgment env j), cst,
-        false, false, nl
+      let t = hcons_constr (Typeops.assumption_of_judgment env j) in
+      Undef nl, NonPolymorphicType t, cst, ctx
 
 let global_vars_set_constant_type env = function
   | NonPolymorphicType t -> global_vars_set env t
@@ -104,25 +116,32 @@ let global_vars_set_constant_type env = function
 	  (fun t c -> Idset.union (global_vars_set env t) c))
       ctx ~init:Idset.empty
 
-let build_constant_declaration env kn (body,typ,cst,op,boxed,inline) =
-  let ids =
-    match body with
-    | None -> global_vars_set_constant_type env typ
-    | Some b ->
-        Idset.union
-	  (global_vars_set env (Declarations.force b))
-	  (global_vars_set_constant_type env typ)
-  in
-  let tps = Cemitcodes.from_val (compile_constant_body env body op boxed) in
-  let hyps = keep_hyps env ids in
-    { const_hyps = hyps;
-      const_body = body;
-      const_type = typ;
-      const_body_code = tps;
-     (* const_type_code = to_patch env typ;*)
-      const_constraints = cst;
-      const_opaque = op;
-      const_inline = inline}
+let build_constant_declaration env kn (def,typ,cst,ctx) =
+  let hyps = 
+    let inferred =
+      let ids_typ = global_vars_set_constant_type env typ in
+      let ids_def = match def with
+      | Undef _ -> Idset.empty
+      | Def cs -> global_vars_set env (Declarations.force cs)
+      | OpaqueDef lc -> 
+          global_vars_set env (Declarations.force_opaque lc) in
+      keep_hyps env (Idset.union ids_typ ids_def) in
+    let declared = match ctx with
+      | None -> inferred 
+      | Some declared -> declared in
+    let mk_set l = List.fold_right Idset.add (List.map pi1 l) Idset.empty in
+    let inferred_set, declared_set = mk_set inferred, mk_set declared in
+    if not (Idset.subset inferred_set declared_set) then
+      error ("The following section variable are used but not declared:\n"^
+        (String.concat ", " (List.map string_of_id
+          (Idset.elements (Idset.diff inferred_set declared_set)))));
+    declared in
+  let tps = Cemitcodes.from_val (compile_constant_body env def) in
+  { const_hyps = hyps;
+    const_body = def;
+    const_type = typ;
+    const_body_code = tps;
+    const_constraints = cst }
 
 (*s Global and local constant declaration. *)
 
@@ -130,8 +149,10 @@ let translate_constant env kn ce =
   build_constant_declaration env kn (infer_declaration env ce)
 
 let translate_recipe env kn r =
-  build_constant_declaration env kn (Cooking.cook_constant env r)
+  build_constant_declaration env kn 
+    (let def,typ,cst,hyps = Cooking.cook_constant env r in
+     def,typ,cst,Some hyps)
 
 (* Insertion of inductive types. *)
 
-let translate_mind env mie = check_inductive env mie
+let translate_mind env kn mie = check_inductive env kn mie

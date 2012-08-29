@@ -1,14 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
 (*i camlp4deps: "parsing/grammar.cma" i*)
-
-(*i $Id: tauto.ml4 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 open Term
 open Hipattern
@@ -55,6 +53,7 @@ open Goptions
 let _ =
   declare_bool_option
     { optsync  = true;
+      optdepr  = false;
       optname  = "unfolding of iff and not in intuition";
       optkey   = ["Intuition";"Iff";"Unfolding"];
       optread  = (fun () -> !iff_unfolding);
@@ -154,10 +153,12 @@ let flatten_contravariant_disj ist =
 	let hyp = valueIn (VConstr ([],hyp)) in
 	iter_tac (list_map_i (fun i arg ->
 	  let typ = valueIn (VConstr ([],mkArrow arg c)) in
+	  let i = Tacexpr.Integer i in
 	  <:tactic<
             let typ := $typ in
             let hyp := $hyp in
-	    assert typ by (intro; apply hyp; constructor $i; assumption)
+	    let i := $i in
+	    assert typ by (intro; apply hyp; constructor i; assumption)
 	  >>) 1 args) <:tactic< let hyp := $hyp in clear hyp >>
       else
 	<:tactic<fail>>
@@ -268,8 +269,6 @@ let t_reduction_not = tacticIn reduction_not
 let intuition_gen tac =
   interp (tacticIn (tauto_intuit t_reduction_not tac))
 
-let simplif_gen = interp (tacticIn simplif)
-
 let tauto_intuitionistic g =
   try intuition_gen <:tactic<fail>> g
   with
@@ -301,5 +300,5 @@ END
 
 TACTIC EXTEND intuition
 | [ "intuition" ] -> [ intuition_gen default_intuition_tac ]
-| [ "intuition" tactic(t) ] -> [ intuition_gen (fst t) ]
+| [ "intuition" tactic(t) ] -> [ intuition_gen t ]
 END

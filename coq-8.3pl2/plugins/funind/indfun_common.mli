@@ -35,11 +35,11 @@ val list_union_eq :
 val list_add_set_eq :
   ('a -> 'a -> bool) -> 'a -> 'a list -> 'a list
 
-val chop_rlambda_n : int -> Rawterm.rawconstr ->
-  (name*Rawterm.rawconstr*bool) list * Rawterm.rawconstr
+val chop_rlambda_n : int -> Glob_term.glob_constr ->
+  (name*Glob_term.glob_constr*bool) list * Glob_term.glob_constr
 
-val chop_rprod_n : int -> Rawterm.rawconstr ->
-  (name*Rawterm.rawconstr) list * Rawterm.rawconstr
+val chop_rprod_n : int -> Glob_term.glob_constr ->
+  (name*Glob_term.glob_constr) list * Glob_term.glob_constr
 
 val def_of_const : Term.constr -> Term.constr
 val eq : Term.constr Lazy.t
@@ -50,14 +50,7 @@ val jmeq_refl : unit -> Term.constr
 
 (* [save_named] is a copy of [Command.save_named] but uses
    [nf_betaiotazeta] instead of [nf_betaiotaevar_preserving_vm_cast]
-
-
-
-   DON'T USE IT if you cannot ensure that there is no VMcast in the proof
-
 *)
-
-(* val nf_betaiotazeta : Reductionops.reduction_function *)
 
 val new_save_named : bool -> unit
 

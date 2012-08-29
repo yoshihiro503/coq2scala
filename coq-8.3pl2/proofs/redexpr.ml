@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: redexpr.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Pp
 open Util
@@ -14,7 +12,7 @@ open Names
 open Term
 open Declarations
 open Libnames
-open Rawterm
+open Glob_term
 open Pattern
 open Reductionops
 open Tacred
@@ -40,12 +38,13 @@ let set_strategy_one ref l  =
         Csymtable.set_opaque_const sp
     | ConstKey sp, _ ->
         let cb = Global.lookup_constant sp in
-        if cb.const_body <> None & cb.const_opaque then
-          errorlabstrm "set_transparent_const"
-            (str "Cannot make" ++ spc () ++
-            Nametab.pr_global_env Idset.empty (ConstRef sp) ++
-            spc () ++ str "transparent because it was declared opaque.");
-        Csymtable.set_transparent_const sp
+	(match cb.const_body with
+	  | OpaqueDef _ ->
+            errorlabstrm "set_transparent_const"
+              (str "Cannot make" ++ spc () ++
+		 Nametab.pr_global_env Idset.empty (ConstRef sp) ++
+		 spc () ++ str "transparent because it was declared opaque.");
+	  | _ -> Csymtable.set_transparent_const sp)
     | _ -> ()
 
 let cache_strategy (_,str) =
@@ -87,7 +86,10 @@ let discharge_strategy (_,(local,obj)) =
   if local then None else
   map_strategy disch_ref obj
 
-let (inStrategy,outStrategy) =
+type strategy_obj =
+    bool * (Conv_oracle.level * evaluable_global_reference list) list
+
+let inStrategy : strategy_obj -> obj =
   declare_object {(default_object "STRATEGY") with
                     cache_function = (fun (_,obj) -> cache_strategy obj);
 		    load_function = (fun _ (_,obj) -> cache_strategy obj);
@@ -213,7 +215,7 @@ let subst_red_expr subs e =
     (Pattern.subst_pattern subs)
     e
 
-let (inReduction,_) =
+let inReduction : bool * string * red_expr -> obj =
   declare_object
     {(default_object "REDUCTION") with
        cache_function = (fun (_,(_,s,e)) -> decl_red_expr s e);

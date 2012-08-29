@@ -1,14 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i camlp4use: "pa_extend.cmo q_MLast.cmo" i*)
-
-(* $Id: tacextend.ml4 13799 2011-01-25 17:38:40Z glondu $ *)
+(*i camlp4deps: "tools/compat5b.cmo" i*)
 
 open Util
 open Genarg
@@ -18,6 +16,7 @@ open Argextend
 open Pcoq
 open Extrawit
 open Egrammar
+open Compat
 
 let rec make_patt = function
   | [] -> <:patt< [] >>
@@ -43,19 +42,8 @@ let rec make_let e = function
       let loc = join_loc loc (MLast.loc_of_expr e) in
       let e = make_let e l in
       let v = <:expr< Genarg.out_gen $make_wit loc t$ $lid:p$ >> in
-      let v =
-        (* Special case for tactics which must be stored in algebraic
-           form to avoid marshalling closures and to be reprinted *)
-        if is_tactic_genarg t then
-          <:expr< ($v$, Tacinterp.eval_tactic $v$) >>
-        else v in
       <:expr< let $lid:p$ = $v$ in $e$ >>
   | _::l -> make_let e l
-
-let add_clause s (pt,e) l =
-  let p = make_patt pt in
-  let w = Some (make_when (MLast.loc_of_expr e) pt) in
-  (p, <:vala< w >>, make_let e pt)::l
 
 let rec extract_signature = function
   | [] -> []
@@ -69,12 +57,14 @@ let check_unicity s l =
       ("Two distinct rules of tactic entry "^s^" have the same\n"^
       "non-terminals in the same order: put them in distinct tactic entries")
 
-let make_clauses s l =
+let make_clause (pt,e) =
+  (make_patt pt,
+   vala (Some (make_when (MLast.loc_of_expr e) pt)),
+   make_let e pt)
+
+let make_fun_clauses loc s l =
   check_unicity s l;
-  let default =
-    (<:patt< _ >>,<:vala<None>>,
-     <:expr< failwith "Tactic extension: cannot occur" >>) in
-  List.fold_right (add_clause s) l [default]
+  Compat.make_fun loc (List.map make_clause l)
 
 let rec make_args = function
   | [] -> <:expr< [] >>
@@ -89,9 +79,7 @@ let rec make_eval_tactic e = function
       let p = Names.string_of_id p in
       let loc = join_loc loc (MLast.loc_of_expr e) in
       let e = make_eval_tactic e l in
-        (* Special case for tactics which must be stored in algebraic
-           form to avoid marshalling closures and to be reprinted *)
-      <:expr< let $lid:p$ = ($lid:p$,Tacinterp.eval_tactic $lid:p$) in $e$ >>
+      <:expr< let $lid:p$ = $lid:p$ in $e$ >>
   | _::l -> make_eval_tactic e l
 
 let rec make_fun e = function
@@ -131,20 +119,42 @@ let make_one_printing_rule se (pt,e) =
 
 let make_printing_rule se = mlexpr_of_list (make_one_printing_rule se)
 
-let rec contains_epsilon = function
-  | List0ArgType _ -> true
-  | List1ArgType t -> contains_epsilon t
-  | OptArgType _ -> true
-  | PairArgType(t1,t2) -> contains_epsilon t1 && contains_epsilon t2
-  | ExtraArgType("hintbases") -> true
-  | _ -> false
-let is_atomic = function
-  | GramTerminal s :: l when
-      List.for_all (function
-          GramTerminal _ -> false
-	| GramNonTerminal(_,t,_,_) -> contains_epsilon t) l
-	-> [s]
-  | _ -> []
+let rec possibly_empty_subentries loc = function
+  | [] -> []
+  | (s,prodsl) :: l ->
+    let rec aux = function
+    | [] -> (false,<:expr< None >>)
+    | prods :: rest ->
+      try
+        let l = List.map (function
+        | GramNonTerminal(_,(List0ArgType _|
+                             OptArgType _|
+                             ExtraArgType _ as t),_,_)->
+            (* This possibly parses epsilon *)
+            let rawwit = make_rawwit loc t in
+            <:expr< match Genarg.default_empty_value $rawwit$ with
+                    [ None -> failwith ""
+                    | Some v ->
+                        Tacinterp.intern_genarg Tacinterp.fully_empty_glob_sign
+                          (Genarg.in_gen $rawwit$ v) ] >>
+        | GramTerminal _ | GramNonTerminal(_,_,_,_) ->
+            (* This does not parse epsilon (this Exit is static time) *)
+             raise Exit) prods in
+        if has_extraarg prods then
+          (true,<:expr< try Some $mlexpr_of_list (fun x -> x) l$
+                        with [ Failure "" -> $snd (aux rest)$ ] >>)
+        else
+          (true, <:expr< Some $mlexpr_of_list (fun x -> x) l$ >>)
+      with Exit -> aux rest in
+    let (nonempty,v) = aux prodsl in
+    if nonempty then (s,v) :: possibly_empty_subentries loc l
+    else possibly_empty_subentries loc l
+
+let possibly_atomic loc prods =
+  let l = list_map_filter (function
+    | GramTerminal s :: l, _ -> Some (s,l)
+    | _ -> None) prods in
+  possibly_empty_subentries loc (list_factorize_left l)
 
 let declare_tactic loc s cl =
   let se = mlexpr_of_string s in
@@ -163,32 +173,37 @@ let declare_tactic loc s cl =
   in
   let hidden = if List.length cl = 1 then List.map hide_tac cl else [] in
   let atomic_tactics =
-    mlexpr_of_list mlexpr_of_string
-      (List.flatten (List.map (fun (al,_) -> is_atomic al) cl)) in
-  <:str_item<
-    declare
-      open Pcoq;
-      open Extrawit;
-      declare $list:hidden$ end;
+    mlexpr_of_list (mlexpr_of_pair mlexpr_of_string (fun x -> x))
+      (possibly_atomic loc cl) in
+  declare_str_items loc
+   (hidden @
+    [ <:str_item< do {
       try
-        let _=Tacinterp.add_tactic $se$ (fun [ $list:make_clauses s cl$ ]) in
+        let _=Tacinterp.add_tactic $se$ $make_fun_clauses loc s cl$ in
         List.iter
-          (fun s -> Tacinterp.add_primitive_tactic s
+          (fun (s,l) -> match l with
+           [ Some l ->
+              Tacinterp.add_primitive_tactic s
               (Tacexpr.TacAtom($default_loc$,
-                 Tacexpr.TacExtend($default_loc$,s,[]))))
+                 Tacexpr.TacExtend($default_loc$,$se$,l)))
+           | None -> () ])
           $atomic_tactics$
-      with e -> Pp.pp (Cerrors.explain_exn e);
+      with e ->
+	    Pp.msg_warning
+	      (Stream.iapp
+	        (Pp.str ("Exception in tactic extend " ^ $se$ ^": "))
+	        (Errors.print e));
       Egrammar.extend_tactic_grammar $se$ $gl$;
-      List.iter Pptactic.declare_extra_tactic_pprule $pp$;
-    end
-  >>
+      List.iter Pptactic.declare_extra_tactic_pprule $pp$; } >>
+    ])
 
 open Pcaml
+open PcamlSig
 
 EXTEND
   GLOBAL: str_item;
   str_item:
-    [ [ "TACTIC"; "EXTEND"; s = [ UIDENT | LIDENT ];
+    [ [ "TACTIC"; "EXTEND"; s = tac_name;
         OPT "|"; l = LIST1 tacrule SEP "|";
         "END" ->
          declare_tactic loc s l ] ]
@@ -212,6 +227,11 @@ EXTEND
       | s = STRING ->
 	if s = "" then Util.user_err_loc (loc,"",Pp.str "Empty terminal.");
         GramTerminal s
+    ] ]
+  ;
+  tac_name:
+    [ [ s = LIDENT -> s
+      | s = UIDENT -> s
     ] ]
   ;
   END

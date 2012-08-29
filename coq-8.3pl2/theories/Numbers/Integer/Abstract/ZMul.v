@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,12 +8,10 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: ZMul.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Export ZAdd.
 
-Module ZMulPropFunct (Import Z : ZAxiomsSig').
-Include ZAddPropFunct Z.
+Module ZMulProp (Import Z : ZAxiomsMiniSig').
+Include ZAddProp Z.
 
 (** A note on naming: right (correspondingly, left) distributivity
     happens when the sum is multiplied by a number on the right
@@ -41,7 +39,7 @@ Qed.
 
 Theorem mul_opp_l : forall n m, (- n) * m == - (n * m).
 Proof.
-intros n m. apply -> add_move_0_r.
+intros n m. apply add_move_0_r.
 now rewrite <- mul_add_distr_r, add_opp_diag_l, mul_0_l.
 Qed.
 
@@ -53,6 +51,11 @@ Qed.
 Theorem mul_opp_opp : forall n m, (- n) * (- m) == n * m.
 Proof.
 intros n m; now rewrite mul_opp_l, mul_opp_r, opp_involutive.
+Qed.
+
+Theorem mul_opp_comm : forall n m, (- n) * m == n * (- m).
+Proof.
+intros n m. now rewrite mul_opp_l, <- mul_opp_r.
 Qed.
 
 Theorem mul_sub_distr_l : forall n m p, n * (m - p) == n * m - n * p.
@@ -67,6 +70,6 @@ intros n m p; rewrite (mul_comm (n - m) p), (mul_comm n p), (mul_comm m p);
 now apply mul_sub_distr_l.
 Qed.
 
-End ZMulPropFunct.
+End ZMulProp.
 
 

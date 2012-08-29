@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,48 +8,23 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: NBase.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Export Decidable.
 Require Export NAxioms.
 Require Import NZProperties.
 
-Module NBasePropFunct (Import N : NAxiomsSig').
+Module NBaseProp (Import N : NAxiomsMiniSig').
 (** First, we import all known facts about both natural numbers and integers. *)
-Include NZPropFunct N.
+Include NZProp N.
 
-(** We prove that the successor of a number is not zero by defining a
-function (by recursion) that maps 0 to false and the successor to true *)
-
-Definition if_zero (A : Type) (a b : A) (n : N.t) : A :=
-  recursion a (fun _ _ => b) n.
-
-Implicit Arguments if_zero [A].
-
-Instance if_zero_wd (A : Type) :
- Proper (Logic.eq ==> Logic.eq ==> N.eq ==> Logic.eq) (@if_zero A).
-Proof.
-intros; unfold if_zero.
-repeat red; intros. apply recursion_wd; auto. repeat red; auto.
-Qed.
-
-Theorem if_zero_0 : forall (A : Type) (a b : A), if_zero a b 0 = a.
-Proof.
-unfold if_zero; intros; now rewrite recursion_0.
-Qed.
-
-Theorem if_zero_succ :
- forall (A : Type) (a b : A) (n : N.t), if_zero a b (S n) = b.
-Proof.
-intros; unfold if_zero.
-now rewrite recursion_succ.
-Qed.
+(** From [pred_0] and order facts, we can prove that 0 isn't a successor. *)
 
 Theorem neq_succ_0 : forall n, S n ~= 0.
 Proof.
-intros n H.
-generalize (Logic.eq_refl (if_zero false true 0)).
-rewrite <- H at 1. rewrite if_zero_0, if_zero_succ; discriminate.
+ intros n EQ.
+ assert (EQ' := pred_succ n).
+ rewrite EQ, pred_0 in EQ'.
+ rewrite <- EQ' in EQ.
+ now apply (neq_succ_diag_l 0).
 Qed.
 
 Theorem neq_0_succ : forall n, 0 ~= S n.
@@ -66,7 +41,7 @@ nzinduct n.
 now apply eq_le_incl.
 intro n; split.
 apply le_le_succ_r.
-intro H; apply -> le_succ_r in H; destruct H as [H | H].
+intro H; apply le_succ_r in H; destruct H as [H | H].
 assumption.
 symmetry in H; false_hyp H neq_succ_0.
 Qed.
@@ -119,12 +94,11 @@ Qed.
 Theorem eq_pred_0 : forall n, P n == 0 <-> n == 0 \/ n == 1.
 Proof.
 cases n.
-rewrite pred_0. setoid_replace (0 == 1) with False using relation iff. tauto.
-split; intro H; [symmetry in H; false_hyp H neq_succ_0 | elim H].
+rewrite pred_0. now split; [left|].
 intro n. rewrite pred_succ.
-setoid_replace (S n == 0) with False using relation iff by
-  (apply -> neg_false; apply neq_succ_0).
-rewrite succ_inj_wd. tauto.
+split. intros H; right. now rewrite H, one_succ.
+intros [H|H]. elim (neq_succ_0 _ H).
+apply succ_inj_wd. now rewrite <- one_succ.
 Qed.
 
 Theorem succ_pred : forall n, n ~= 0 -> S (P n) == n.
@@ -155,6 +129,7 @@ Theorem pair_induction :
   A 0 -> A 1 ->
     (forall n, A n -> A (S n) -> A (S (S n))) -> forall n, A n.
 Proof.
+rewrite one_succ.
 intros until 3.
 assert (D : forall n, A n /\ A (S n)); [ |intro n; exact (proj1 (D n))].
 induct n; [ | intros n [IH1 IH2]]; auto.
@@ -204,7 +179,7 @@ Ltac double_induct n m :=
   try intros until n;
   try intros until m;
   pattern n, m; apply double_induction; clear n m;
-  [solve_relation_wd | | | ].
+  [solve_proper | | | ].
 
-End NBasePropFunct.
+End NBaseProp.
 

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,28 +8,26 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: NZOrder.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Import NZAxioms NZBase Decidable OrdersTac.
 
-Module Type NZOrderPropSig
- (Import NZ : NZOrdSig')(Import NZBase : NZBasePropSig NZ).
+Module Type NZOrderProp
+ (Import NZ : NZOrdSig')(Import NZBase : NZBaseProp NZ).
 
 Instance le_wd : Proper (eq==>eq==>iff) le.
 Proof.
-intros n n' Hn m m' Hm. rewrite !lt_eq_cases, !Hn, !Hm; auto with *.
+intros n n' Hn m m' Hm. now rewrite <- !lt_succ_r, Hn, Hm.
 Qed.
 
 Ltac le_elim H := rewrite lt_eq_cases in H; destruct H as [H | H].
 
 Theorem lt_le_incl : forall n m, n < m -> n <= m.
 Proof.
-intros; apply <- lt_eq_cases; now left.
+intros. apply lt_eq_cases. now left.
 Qed.
 
 Theorem le_refl : forall n, n <= n.
 Proof.
-intro; apply <- lt_eq_cases; now right.
+intro. apply lt_eq_cases. now right.
 Qed.
 
 Theorem lt_succ_diag_r : forall n, n < S n.
@@ -99,7 +97,7 @@ intros n m; nzinduct n m.
 intros H; false_hyp H lt_irrefl.
 intro n; split; intros H H1 H2.
 apply lt_succ_r in H2. le_elim H2.
-apply H; auto. apply -> le_succ_l. now apply lt_le_incl.
+apply H; auto. apply le_succ_l. now apply lt_le_incl.
 rewrite H2 in H1. false_hyp H1 nlt_succ_diag_l.
 apply le_succ_l in H1. le_elim H1.
 apply H; auto. rewrite lt_succ_r. now apply lt_le_incl.
@@ -148,7 +146,8 @@ Definition lt_compat := lt_wd.
 Definition lt_total := lt_trichotomy.
 Definition le_lteq := lt_eq_cases.
 
-Module OrderElts <: TotalOrder.
+Module Private_OrderTac.
+Module Elts <: TotalOrder.
  Definition t := t.
  Definition eq := eq.
  Definition lt := lt.
@@ -158,9 +157,10 @@ Module OrderElts <: TotalOrder.
  Definition lt_compat := lt_compat.
  Definition lt_total := lt_total.
  Definition le_lteq := le_lteq.
-End OrderElts.
-Module OrderTac := !MakeOrderTac OrderElts.
-Ltac order := OrderTac.order.
+End Elts.
+Module Tac := !MakeOrderTac Elts.
+End Private_OrderTac.
+Ltac order := Private_OrderTac.Tac.order.
 
 (** Some direct consequences of [order]. *)
 
@@ -208,12 +208,12 @@ Qed.
 
 Theorem lt_succ_l : forall n m, S n < m -> n < m.
 Proof.
-intros n m H; apply -> le_succ_l; order.
+intros n m H; apply le_succ_l; order.
 Qed.
 
 Theorem le_le_succ_r : forall n m, n <= m -> n <= S m.
 Proof.
-intros n m LE. rewrite <- lt_succ_r in LE. order.
+intros n m LE. apply lt_succ_r in LE. order.
 Qed.
 
 Theorem lt_lt_succ_r : forall n m, n < m -> n < S m.
@@ -233,19 +233,37 @@ Qed.
 
 Theorem lt_0_1 : 0 < 1.
 Proof.
-apply lt_succ_diag_r.
+rewrite one_succ. apply lt_succ_diag_r.
 Qed.
 
 Theorem le_0_1 : 0 <= 1.
 Proof.
-apply le_succ_diag_r.
+apply lt_le_incl, lt_0_1.
 Qed.
+
+Theorem lt_1_2 : 1 < 2.
+Proof.
+rewrite two_succ. apply lt_succ_diag_r.
+Qed.
+
+Theorem lt_0_2 : 0 < 2.
+Proof.
+transitivity 1. apply lt_0_1. apply lt_1_2.
+Qed.
+
+Theorem le_0_2 : 0 <= 2.
+Proof.
+apply lt_le_incl, lt_0_2.
+Qed.
+
+(** The order tactic enriched with some knowledge of 0,1,2 *)
+
+Ltac order' := generalize lt_0_1 lt_1_2; order.
 
 Theorem lt_1_l : forall n m, 0 < n -> n < m -> 1 < m.
 Proof.
-intros n m H1 H2. apply <- le_succ_l in H1. order.
+intros n m H1 H2. rewrite <- le_succ_l, <- one_succ in H1. order.
 Qed.
-
 
 (** More Trichotomy, decidability and double negation elimination. *)
 
@@ -347,7 +365,7 @@ Proof.
 intro z; nzinduct n z.
 order.
 intro n; split; intros IH m H1 H2.
-apply -> le_succ_r in H2. destruct H2 as [H2 | H2].
+apply le_succ_r in H2. destruct H2 as [H2 | H2].
 now apply IH. exists n. now split; [| rewrite <- lt_succ_r; rewrite <- H2].
 apply IH. assumption. now apply le_le_succ_r.
 Qed.
@@ -357,6 +375,13 @@ Theorem lt_exists_pred :
 Proof.
 intros z n H; apply lt_exists_pred_strong with (z := z) (n := n).
 assumption. apply le_refl.
+Qed.
+
+Lemma lt_succ_pred : forall z n, z < n -> S (P n) == n.
+Proof.
+ intros z n H.
+ destruct (lt_exists_pred _ _ H) as (n' & EQ & LE).
+ rewrite EQ. now rewrite pred_succ.
 Qed.
 
 (** Stronger variant of induction with assumptions n >= 0 (n < 0)
@@ -390,14 +415,14 @@ Qed.
 Lemma rs'_rs'' : right_step' -> right_step''.
 Proof.
 intros RS' n; split; intros H1 m H2 H3.
-apply -> lt_succ_r in H3; le_elim H3;
+apply lt_succ_r in H3; le_elim H3;
 [now apply H1 | rewrite H3 in *; now apply RS'].
 apply H1; [assumption | now apply lt_lt_succ_r].
 Qed.
 
 Lemma rbase : A' z.
 Proof.
-intros m H1 H2. apply -> le_ngt in H1. false_hyp H2 H1.
+intros m H1 H2. apply le_ngt in H1. false_hyp H2 H1.
 Qed.
 
 Lemma A'A_right : (forall n, A' n) -> forall n, z <= n -> A n.
@@ -449,28 +474,28 @@ Let left_step'' := forall n, A' n <-> A' (S n).
 Lemma ls_ls' :  A z -> left_step -> left_step'.
 Proof.
 intros Az LS n H1 H2. le_elim H1.
-apply LS; trivial. apply H2; [now apply <- le_succ_l | now apply eq_le_incl].
+apply LS; trivial. apply H2; [now apply le_succ_l | now apply eq_le_incl].
 rewrite H1; apply Az.
 Qed.
 
 Lemma ls'_ls'' : left_step' -> left_step''.
 Proof.
 intros LS' n; split; intros H1 m H2 H3.
-apply -> le_succ_l in H3. apply lt_le_incl in H3. now apply H1.
+apply le_succ_l in H3. apply lt_le_incl in H3. now apply H1.
 le_elim H3.
-apply <- le_succ_l in H3. now apply H1.
+apply le_succ_l in H3. now apply H1.
 rewrite <- H3 in *; now apply LS'.
 Qed.
 
 Lemma lbase : A' (S z).
 Proof.
-intros m H1 H2. apply -> le_succ_l in H2.
-apply -> le_ngt in H1. false_hyp H2 H1.
+intros m H1 H2. apply le_succ_l in H2.
+apply le_ngt in H1. false_hyp H2 H1.
 Qed.
 
 Lemma A'A_left : (forall n, A' n) -> forall n, n <= z -> A n.
 Proof.
-intros H1 n H2. apply H1 with (n := n); [assumption | now apply eq_le_incl].
+intros H1 n H2. apply (H1 n); [assumption | now apply eq_le_incl].
 Qed.
 
 Theorem strong_left_induction: left_step' -> forall n, n <= z -> A n.
@@ -527,8 +552,8 @@ Theorem order_induction' :
     forall n, A n.
 Proof.
 intros Az AS AP n; apply order_induction; try assumption.
-intros m H1 H2. apply AP in H2; [| now apply <- le_succ_l].
-apply -> (A_wd (P (S m)) m); [assumption | apply pred_succ].
+intros m H1 H2. apply AP in H2; [|now apply le_succ_l].
+now rewrite pred_succ in H2.
 Qed.
 
 End Center.
@@ -555,11 +580,11 @@ Theorem lt_ind : forall (n : t),
    forall m, n < m -> A m.
 Proof.
 intros n H1 H2 m H3.
-apply right_induction with (S n); [assumption | | now apply <- le_succ_l].
-intros; apply H2; try assumption. now apply -> le_succ_l.
+apply right_induction with (S n); [assumption | | now apply le_succ_l].
+intros; apply H2; try assumption. now apply le_succ_l.
 Qed.
 
-(** Elimintation principle for <= *)
+(** Elimination principle for <= *)
 
 Theorem le_ind : forall (n : t),
   A n ->
@@ -582,8 +607,8 @@ Section WF.
 
 Variable z : t.
 
-Let Rlt (n m : t) := z <= n /\ n < m.
-Let Rgt (n m : t) := m < n /\ n <= z.
+Let Rlt (n m : t) := z <= n < m.
+Let Rgt (n m : t) := m < n <= z.
 
 Instance Rlt_wd : Proper (eq ==> eq ==> iff) Rlt.
 Proof.
@@ -595,25 +620,13 @@ Proof.
 intros x1 x2 H1 x3 x4 H2; unfold Rgt; rewrite H1; now rewrite H2.
 Qed.
 
-Instance Acc_lt_wd : Proper (eq==>iff) (Acc Rlt).
-Proof.
-intros x1 x2 H; split; intro H1; destruct H1 as [H2];
-constructor; intros; apply H2; now (rewrite H || rewrite <- H).
-Qed.
-
-Instance Acc_gt_wd : Proper (eq==>iff) (Acc Rgt).
-Proof.
-intros x1 x2 H; split; intro H1; destruct H1 as [H2];
-constructor; intros; apply H2; now (rewrite H || rewrite <- H).
-Qed.
-
 Theorem lt_wf : well_founded Rlt.
 Proof.
 unfold well_founded.
 apply strong_right_induction' with (z := z).
-apply Acc_lt_wd.
+auto with typeclass_instances.
 intros n H; constructor; intros y [H1 H2].
-apply <- nle_gt in H2. elim H2. now apply le_trans with z.
+apply nle_gt in H2. elim H2. now apply le_trans with z.
 intros n H1 H2; constructor; intros m [H3 H4]. now apply H2.
 Qed.
 
@@ -621,24 +634,20 @@ Theorem gt_wf : well_founded Rgt.
 Proof.
 unfold well_founded.
 apply strong_left_induction' with (z := z).
-apply Acc_gt_wd.
+auto with typeclass_instances.
 intros n H; constructor; intros y [H1 H2].
-apply <- nle_gt in H2. elim H2. now apply le_lt_trans with n.
+apply nle_gt in H2. elim H2. now apply le_lt_trans with n.
 intros n H1 H2; constructor; intros m [H3 H4].
-apply H2. assumption. now apply <- le_succ_l.
+apply H2. assumption. now apply le_succ_l.
 Qed.
 
 End WF.
 
-End NZOrderPropSig.
-
-Module NZOrderPropFunct (NZ : NZOrdSig) :=
- NZBasePropSig NZ <+ NZOrderPropSig NZ.
+End NZOrderProp.
 
 (** If we have moreover a [compare] function, we can build
     an [OrderedType] structure. *)
 
-Module NZOrderedTypeFunct (NZ : NZDecOrdSig')
-  <: DecidableTypeFull <: OrderedTypeFull :=
- NZ <+ NZOrderPropFunct <+ Compare2EqBool <+ HasEqBool2Dec.
-
+Module NZOrderedType (NZ : NZDecOrdSig')
+ <: DecidableTypeFull <: OrderedTypeFull
+ := NZ <+ NZBaseProp <+ NZOrderProp <+ Compare2EqBool <+ HasEqBool2Dec.

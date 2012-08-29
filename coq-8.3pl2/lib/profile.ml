@@ -1,17 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: profile.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
-
-open Gc
-
 let word_length = Sys.word_size / 8
-let int_size = Sys.word_size - 1
 
 let float_of_time t = float_of_int t /. 100.
 let time_of_float f = int_of_float (f *. 100.)
@@ -354,7 +349,6 @@ let close_profile print =
 	end
     | _ -> failwith "Inconsistency"
 
-let append_profile () = close_profile false
 let print_profile () = close_profile true
 
 let declare_profile name =

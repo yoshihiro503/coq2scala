@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: indrec.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 (* File initially created by Christine Paulin, 1996 *)
 
@@ -18,7 +16,6 @@ open Names
 open Libnames
 open Nameops
 open Term
-open Termops
 open Namegen
 open Declarations
 open Entries
@@ -53,11 +50,15 @@ let mkLambda_string s t c = mkLambda (Name (id_of_string s), t, c)
 (* Christine Paulin, 1996 *)
 
 let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
-  let lnamespar = mib.mind_params_ctxt in
+  let lnamespar = List.map
+    (fun (n, c, t) -> (n, c, Termops.refresh_universes t))
+    mib.mind_params_ctxt
+  in
+
   if not (List.mem kind (elim_sorts specif)) then
     raise
       (RecursionSchemeError
-	 (NotAllowedCaseAnalysis (false,new_sort_in_family kind,ind)));
+	 (NotAllowedCaseAnalysis (false, Termops.new_sort_in_family kind, ind)));
 
   let ndepar = mip.mind_nrealargs_ctxt + 1 in
 
@@ -65,7 +66,7 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
   (* mais pas très joli ... (mais manque get_sort_of à ce niveau) *)
   let env' = push_rel_context lnamespar env in
 
-  let indf = make_ind_family(ind, extended_rel_list 0 lnamespar) in
+  let indf = make_ind_family(ind, Termops.extended_rel_list 0 lnamespar) in
   let constrs = get_constructors env indf in
 
   let rec add_branch env k =
@@ -81,8 +82,8 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
       let pbody =
         appvect
           (mkRel (ndepar + nbprod),
-           if dep then extended_rel_vect 0 deparsign
-           else extended_rel_vect 1 arsign) in
+           if dep then Termops.extended_rel_vect 0 deparsign
+           else Termops.extended_rel_vect 1 arsign) in
       let p =
 	it_mkLambda_or_LetIn_name env'
 	  ((if dep then mkLambda_name env' else mkLambda)
@@ -92,7 +93,7 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
       it_mkLambda_or_LetIn_name env'
        	(mkCase (ci, lift ndepar p,
 		     mkRel 1,
-		     rel_vect ndepar k))
+		     Termops.rel_vect ndepar k))
        	deparsign
     else
       let cs = lift_constructor (k+1) constrs.(k) in
@@ -100,7 +101,7 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
       mkLambda_string "f" t
 	(add_branch (push_rel (Anonymous, None, t) env) (k+1))
   in
-  let typP = make_arity env' dep indf (new_sort_in_family kind) in
+  let typP = make_arity env' dep indf (Termops.new_sort_in_family kind) in
   it_mkLambda_or_LetIn_name env
     (mkLambda_string "P" typP
        (add_branch (push_rel (Anonymous,None,typP) env') 0)) lnamespar
@@ -140,7 +141,7 @@ let type_rec_branch is_rec dep env sigma (vargs,depPvect,decP) tyi cs recargs =
 	    let base = applist (lift i pk,realargs) in
             if depK then
 	      Reduction.beta_appvect
-                base [|applist (mkRel (i+1),extended_rel_list 0 sign)|]
+                base [|applist (mkRel (i+1), Termops.extended_rel_list 0 sign)|]
             else
 	      base
       	| _ -> assert false
@@ -155,9 +156,9 @@ let type_rec_branch is_rec dep env sigma (vargs,depPvect,decP) tyi cs recargs =
 	      | [] -> None,[]
               | ra::rest ->
                   (match dest_recarg ra with
-	            | Mrec j when is_rec -> (depPvect.(j),rest)
+	            | Mrec (_,j) when is_rec -> (depPvect.(j),rest)
 	            | Imbr _  ->
-		        Flags.if_verbose warning "Ignoring recursive call";
+		        Flags.if_warn msg_warning (str "Ignoring recursive call");
 		        (None,rest)
                     | _ -> (None, rest))
 	  in
@@ -212,7 +213,7 @@ let make_rec_branch_arg env sigma (nparrec,fvect,decF) f cstr recargs =
 	    mkLetIn (n,b,t,prec (push_rel d env) (i+1) (d::hyps) c)
      	| Ind _ ->
             let realargs = list_skipn nparrec largs
-            and arg = appvect (mkRel (i+1),extended_rel_vect 0 hyps) in
+            and arg = appvect (mkRel (i+1), Termops.extended_rel_vect 0 hyps) in
             applist(lift i fk,realargs@[arg])
      	| _ -> assert false
     in
@@ -225,7 +226,7 @@ let make_rec_branch_arg env sigma (nparrec,fvect,decF) f cstr recargs =
 	  match dest_recarg recarg with
             | Norec   -> None
             | Imbr _  -> None
-            | Mrec i  -> fvect.(i)
+            | Mrec (_,i)  -> fvect.(i)
 	in
         (match optionpos with
            | None ->
@@ -298,7 +299,7 @@ let mis_make_indrec env sigma listdepkind mib =
 
             (* arity in the context of the fixpoint, i.e.
                P1..P_nrec f1..f_nbconstruct *)
-	    let args = extended_rel_list (nrec+nbconstruct) lnamesparrec in
+	    let args = Termops.extended_rel_list (nrec+nbconstruct) lnamesparrec in
 	    let indf = make_ind_family(indi,args) in
 
 	    let arsign,_ = get_arity env indf in
@@ -312,15 +313,15 @@ let mis_make_indrec env sigma listdepkind mib =
 
             (* constructors in context of the Cases expr, i.e.
                P1..P_nrec f1..f_nbconstruct F_1..F_nrec a_1..a_nar x:I *)
-	    let args' = extended_rel_list (dect+nrec) lnamesparrec in
-	    let args'' = extended_rel_list ndepar lnonparrec in
+	    let args' = Termops.extended_rel_list (dect+nrec) lnamesparrec in
+	    let args'' = Termops.extended_rel_list ndepar lnonparrec in
             let indf' = make_ind_family(indi,args'@args'') in
 
 	    let branches =
 	      let constrs = get_constructors env indf' in
-	      let fi = rel_vect (dect-i-nctyi) nctyi in
+	      let fi = Termops.rel_vect (dect-i-nctyi) nctyi in
 	      let vecfi = Array.map
-		(fun f -> appvect (f,extended_rel_vect ndepar lnonparrec))
+		(fun f -> appvect (f, Termops.extended_rel_vect ndepar lnonparrec))
 		fi
 	      in
 		array_map3
@@ -341,9 +342,9 @@ let mis_make_indrec env sigma listdepkind mib =
 	    let deparsign' = (Anonymous,None,depind')::arsign' in
 
 	    let pargs =
-	      let nrpar = extended_rel_list (2*ndepar) lnonparrec
-	      and nrar = if dep then extended_rel_list 0 deparsign'
-		else extended_rel_list 1 arsign'
+	      let nrpar = Termops.extended_rel_list (2*ndepar) lnonparrec
+	      and nrar = if dep then Termops.extended_rel_list 0 deparsign'
+		else Termops.extended_rel_list 1 arsign'
 	      in nrpar@nrar
 
 	    in
@@ -362,15 +363,15 @@ let mis_make_indrec env sigma listdepkind mib =
 		  (mkCase (ci, pred,
 		          mkRel 1,
 			  branches))
-		  (lift_rel_context nrec deparsign)
+		  (Termops.lift_rel_context nrec deparsign)
 	    in
 
 	    (* type of i-th component of the mutual fixpoint *)
 
 	    let typtyi =
 	      let concl =
-		let pargs = if dep then extended_rel_vect 0 deparsign
-		  else extended_rel_vect 1 arsign
+		let pargs = if dep then Termops.extended_rel_vect 0 deparsign
+		  else Termops.extended_rel_vect 1 arsign
 		in appvect (mkRel (nbconstruct+ndepar+nonrecpar+j),pargs)
 	      in it_mkProd_or_LetIn_name env
 		concl
@@ -397,7 +398,7 @@ let mis_make_indrec env sigma listdepkind mib =
 	    else
 	      let recarg = (dest_subterms recargsvec.(tyi)).(j) in
 	      let recarg = recargpar@recarg in
-	      let vargs = extended_rel_list (nrec+i+j) lnamesparrec in
+	      let vargs = Termops.extended_rel_list (nrec+i+j) lnamesparrec in
 	      let cs = get_constructor (indi,mibi,mipi,vargs) (j+1) in
 	      let p_0 =
 		type_rec_branch
@@ -411,8 +412,8 @@ let mis_make_indrec env sigma listdepkind mib =
     in
     let rec put_arity env i = function
       | (indi,_,_,dep,kinds)::rest ->
-	  let indf = make_ind_family (indi,extended_rel_list i lnamesparrec) in
-	  let typP = make_arity env dep indf (new_sort_in_family kinds) in
+	  let indf = make_ind_family (indi, Termops.extended_rel_list i lnamesparrec) in
+	  let typP = make_arity env dep indf (Termops.new_sort_in_family kinds) in
 	    mkLambda_string "P" typP
 	      (put_arity (push_rel (Anonymous,None,typP) env) (i+1) rest)
       | [] ->
@@ -506,7 +507,7 @@ let check_arities listdepkind =
        let kelim = elim_sorts (mibi,mipi) in
        if not (List.exists ((=) kind) kelim) then raise
 	 (RecursionSchemeError
-	   (NotAllowedCaseAnalysis (true,new_sort_in_family kind,mind)))
+	   (NotAllowedCaseAnalysis (true, Termops.new_sort_in_family kind,mind)))
        else if List.mem ni ln then raise
 	 (RecursionSchemeError (NotMutualInScheme (mind,mind)))
        else ni::ln)
@@ -558,8 +559,7 @@ let lookup_eliminator ind_sp s =
   (* Try first to get an eliminator defined in the same section as the *)
   (* inductive type *)
   try
-    let cst =Global.constant_of_delta
-      (make_con mp dp (label_of_id id)) in
+    let cst =Global.constant_of_delta_kn (make_kn mp dp (label_of_id id)) in
     let _ = Global.lookup_constant cst in
       mkConst cst
   with Not_found ->
@@ -571,5 +571,5 @@ let lookup_eliminator ind_sp s =
       (strbrk "Cannot find the elimination combinator " ++
        pr_id id ++ strbrk ", the elimination of the inductive definition " ++
        pr_global_env Idset.empty (IndRef ind_sp) ++
-       strbrk " on sort " ++ pr_sort_family s ++
+       strbrk " on sort " ++ Termops.pr_sort_family s ++
        strbrk " is probably not allowed.")

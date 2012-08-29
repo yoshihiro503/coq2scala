@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -18,4 +18,4 @@ Ltac Ncst t :=
   | _ => constr:NotConstant
   end.
 
-Add Ring Nr : Nth (decidable Neq_bool_ok, constants [Ncst]).
+Add Ring Nr : Nth (decidable Neqb_ok, constants [Ncst]).

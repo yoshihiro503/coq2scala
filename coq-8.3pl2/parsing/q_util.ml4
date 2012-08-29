@@ -1,41 +1,16 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i camlp4use: "q_MLast.cmo" i*)
-
-(* $Id: q_util.ml4 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 (* This file defines standard combinators to build ml expressions *)
 
-open Util
 open Extrawit
-open Pcoq
-
-let not_impl name x =
-  let desc =
-    if Obj.is_block (Obj.repr x) then
-      "tag = " ^ string_of_int (Obj.tag (Obj.repr x))
-    else
-      "int_val = " ^ string_of_int (Obj.magic x)
-  in
-  failwith ("<Q_util." ^ name ^ ", not impl: " ^ desc)
-
-let rec patt_of_expr e =
-  let loc = MLast.loc_of_expr e in
-  match e with
-    | <:expr< $e1$.$e2$ >> -> <:patt< $patt_of_expr e1$.$patt_of_expr e2$ >>
-    | <:expr< $e1$ $e2$ >> -> <:patt< $patt_of_expr e1$ $patt_of_expr e2$ >>
-    | <:expr< loc >> -> <:patt< _ >>
-    | <:expr< $lid:s$ >> -> <:patt< $lid:s$ >>
-    | <:expr< $uid:s$ >> -> <:patt< $uid:s$ >>
-    | <:expr< $str:s$ >> -> <:patt< $str:s$ >>
-    | <:expr< $anti:e$ >> -> <:patt< $anti:patt_of_expr e$ >>
-    | _ -> not_impl "patt_of_expr" e
+open Compat
+open Util
 
 let mlexpr_of_list f l =
   List.fold_right
@@ -77,19 +52,18 @@ let mlexpr_of_option f = function
   | Some e -> <:expr< Some $f e$ >>
 
 open Vernacexpr
-open Pcoq
 open Genarg
 
 let rec mlexpr_of_prod_entry_key = function
-  | Extend.Alist1 s -> <:expr< Extend.Alist1 $mlexpr_of_prod_entry_key s$ >>
-  | Extend.Alist1sep (s,sep) -> <:expr< Extend.Alist1sep $mlexpr_of_prod_entry_key s$ $str:sep$ >>
-  | Extend.Alist0 s -> <:expr< Extend.Alist0 $mlexpr_of_prod_entry_key s$ >>
-  | Extend.Alist0sep (s,sep) -> <:expr< Extend.Alist0sep $mlexpr_of_prod_entry_key s$ $str:sep$ >>
-  | Extend.Aopt s -> <:expr< Extend.Aopt $mlexpr_of_prod_entry_key s$ >>
-  | Extend.Amodifiers s -> <:expr< Extend.Amodifiers $mlexpr_of_prod_entry_key s$ >>
-  | Extend.Aself -> <:expr< Extend.Aself >>
-  | Extend.Anext -> <:expr< Extend.Anext >>
-  | Extend.Atactic n -> <:expr< Extend.Atactic $mlexpr_of_int n$ >>
-  | Extend.Agram s -> anomaly "Agram not supported"
-  | Extend.Aentry ("",s) -> <:expr< Extend.Agram (Gram.Entry.obj $lid:s$) >>
-  | Extend.Aentry (u,s) -> <:expr< Extend.Aentry $str:u$ $str:s$ >>
+  | Pcoq.Alist1 s -> <:expr< Pcoq.Alist1 $mlexpr_of_prod_entry_key s$ >>
+  | Pcoq.Alist1sep (s,sep) -> <:expr< Pcoq.Alist1sep $mlexpr_of_prod_entry_key s$ $str:sep$ >>
+  | Pcoq.Alist0 s -> <:expr< Pcoq.Alist0 $mlexpr_of_prod_entry_key s$ >>
+  | Pcoq.Alist0sep (s,sep) -> <:expr< Pcoq.Alist0sep $mlexpr_of_prod_entry_key s$ $str:sep$ >>
+  | Pcoq.Aopt s -> <:expr< Pcoq.Aopt $mlexpr_of_prod_entry_key s$ >>
+  | Pcoq.Amodifiers s -> <:expr< Pcoq.Amodifiers $mlexpr_of_prod_entry_key s$ >>
+  | Pcoq.Aself -> <:expr< Pcoq.Aself >>
+  | Pcoq.Anext -> <:expr< Pcoq.Anext >>
+  | Pcoq.Atactic n -> <:expr< Pcoq.Atactic $mlexpr_of_int n$ >>
+  | Pcoq.Agram s -> Util.anomaly "Agram not supported"
+  | Pcoq.Aentry ("",s) -> <:expr< Pcoq.Agram (Pcoq.Gram.Entry.obj $lid:s$) >>
+  | Pcoq.Aentry (u,s) -> <:expr< Pcoq.Aentry $str:u$ $str:s$ >>

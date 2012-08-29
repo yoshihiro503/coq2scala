@@ -1,12 +1,10 @@
+BinNatDef.vo
 BinNat.vo
-BinPos.vo
 NArith.vo
 Ndec.vo
 Ndigits.vo
 Ndist.vo
 Nnat.vo
-Pnat.vo
-POrderedType.vo
-Pminmax.vo
-NOrderedType.vo
-Nminmax.vo
+Ndiv_def.vo
+Nsqrt_def.vo
+Ngcd_def.vo

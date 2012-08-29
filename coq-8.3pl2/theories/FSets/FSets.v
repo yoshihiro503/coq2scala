@@ -6,8 +6,6 @@
 (*         *       GNU Lesser General Public License Version 2.1       *)
 (***********************************************************************)
 
-(* $Id: FSets.v 13297 2010-07-19 23:32:42Z letouzey $ *)
-
 Require Export OrderedType.
 Require Export OrderedTypeEx.
 Require Export OrderedTypeAlt.

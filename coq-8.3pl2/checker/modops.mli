@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: modops.mli 9821 2007-05-11 17:00:58Z aspiwack $ i*)
 
 (*i*)
 open Util
@@ -22,7 +20,7 @@ open Environ
 (* make the envirconment entry out of type *)
 val module_body_of_type : module_path -> module_type_body -> module_body
 
-val module_type_of_module : env -> module_path option -> module_body ->
+val module_type_of_module : module_path option -> module_body ->
   module_type_body
 
 val destr_functor :
@@ -33,11 +31,9 @@ val add_signature : module_path -> structure_body -> delta_resolver -> env -> en
 (* adds a module and its components, but not the constraints *)
 val add_module : module_body ->  env -> env
 
-val check_modpath_equiv : env -> module_path -> module_path -> unit
+val strengthen : module_type_body -> module_path -> module_type_body
 
-val strengthen : env -> module_type_body -> module_path -> module_type_body
-
-val subst_and_strengthen : module_body -> module_path -> env -> module_body 
+val subst_and_strengthen : module_body -> module_path -> module_body
 
 val error_incompatible_modtypes :
   module_type_body -> module_type_body -> 'a

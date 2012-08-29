@@ -1,17 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i camlp4use: "pa_macro.cmo" i*)
-(* WARNING
- * camlp4deps will not work for this file unless Makefile system enhanced.
- *)
-
-(* $Id: mltop.ml4 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Util
 open Pp
@@ -133,8 +126,8 @@ let add_ml_dir s =
     | _ -> ()
 
 (* For Rec Add ML Path *)
-let add_rec_ml_dir dir =
-  List.iter (fun (lp,_) -> add_ml_dir lp) (all_subdirs dir)
+let add_rec_ml_dir unix_path =
+  List.iter (fun (lp,_) -> add_ml_dir lp) (all_subdirs ~unix_path)
 
 (* Adding files to Coq and ML loadpath *)
 
@@ -150,24 +143,24 @@ let add_path ~unix_path:dir ~coq_root:coq_dirpath =
 let convert_string d =
   try Names.id_of_string d
   with _ ->
-    if_verbose warning
-      ("Directory "^d^" cannot be used as a Coq identifier (skipped)");
+    if_warn msg_warning
+      (str ("Directory "^d^" cannot be used as a Coq identifier (skipped)"));
     flush_all ();
     failwith "caught"
 
-let add_rec_path ~unix_path:dir ~coq_root:coq_dirpath =
-  if exists_dir dir then
-    let dirs = all_subdirs dir in
-    let prefix = Names.repr_dirpath coq_dirpath in
+let add_rec_path ~unix_path ~coq_root =
+  if exists_dir unix_path then
+    let dirs = all_subdirs ~unix_path in
+    let prefix = Names.repr_dirpath coq_root in
     let convert_dirs (lp,cp) =
       (lp,Names.make_dirpath (List.map convert_string (List.rev cp)@prefix)) in
     let dirs = map_succeed convert_dirs dirs in
     List.iter (fun lpe -> add_ml_dir (fst lpe)) dirs;
-    add_ml_dir dir;
+    add_ml_dir unix_path;
     List.iter (Library.add_load_path false) dirs;
-    Library.add_load_path true (dir,coq_dirpath)
+    Library.add_load_path true (unix_path, coq_root)
   else
-    msg_warning (str ("Cannot open " ^ dir))
+    msg_warning (str ("Cannot open " ^ unix_path))
 
 (* convertit un nom quelconque en nom de fichier ou de module *)
 let mod_of_name name =
@@ -224,16 +217,9 @@ let file_of_name name =
     coqtop could always load plugins, we prefer to have uniformity between
     bytecode and native versions. *)
 
-let stdlib_use_plugins = Coq_config.has_natdynlink
-
 (* [known_loaded_module] contains the names of the loaded ML modules
  * (linked or loaded with load_object). It is used not to load a
  * module twice. It is NOT the list of ML modules Coq knows. *)
-
-type ml_module_object = {
-  mlocal : Vernacexpr.locality_flag;
-  mnames : string list
-}
 
 let known_loaded_modules = ref Stringset.empty
 
@@ -244,75 +230,98 @@ let add_known_module mname =
 let module_is_known mname =
   Stringset.mem (String.capitalize mname) !known_loaded_modules
 
-let load_object mname fname=
+(** A plugin is just an ML module with an initialization function. *)
+
+let known_loaded_plugins = ref Stringmap.empty
+
+let add_known_plugin init name =
+  let name = String.capitalize name in
+  add_known_module name;
+  known_loaded_plugins := Stringmap.add name init !known_loaded_plugins
+
+let init_known_plugins () =
+  Stringmap.iter (fun _ f -> f()) !known_loaded_plugins
+
+(** ml object = ml module or plugin *)
+
+let init_ml_object mname =
+  try Stringmap.find mname !known_loaded_plugins ()
+  with Not_found -> ()
+
+let load_ml_object mname fname=
   dir_ml_load fname;
-  add_known_module mname
+  add_known_module mname;
+  init_ml_object mname
 
 (* Summary of declared ML Modules *)
 
-(* List and not Stringset because order is important *)
-let loaded_modules = ref []
-let get_loaded_modules () = !loaded_modules
-let add_loaded_module md = loaded_modules := md :: !loaded_modules
+(* List and not Stringset because order is important: most recent first. *)
 
-let orig_loaded_modules = ref !loaded_modules
-let init_ml_modules () = loaded_modules := !orig_loaded_modules
+let loaded_modules = ref []
+let get_loaded_modules () = List.rev !loaded_modules
+let add_loaded_module md = loaded_modules := md :: !loaded_modules
+let reset_loaded_modules () = loaded_modules := []
+
+let if_verbose_load verb f name fname =
+  if not verb then f name fname
+  else
+    let info = "[Loading ML file "^fname^" ..." in
+    try
+      f name fname;
+      msgnl (str (info^" done]"));
+    with e ->
+      msgnl (str (info^" failed]"));
+      raise e
+
+(** Load a module for the first time (i.e. dynlink it)
+    or simulate its reload (i.e. doing nothing except maybe
+    an initialization function). *)
+
+let cache_ml_object verb reinit name =
+  begin
+    if module_is_known name then
+      (if reinit then init_ml_object name)
+    else if not has_dynlink then
+      error ("Dynamic link not supported (module "^name^")")
+    else
+      if_verbose_load (verb && is_verbose ())
+	load_ml_object name (file_of_name name)
+  end;
+  add_loaded_module name
 
 let unfreeze_ml_modules x =
-  loaded_modules := [];
-  List.iter
-    (fun name ->
-       let mname = mod_of_name name in
-       if not (module_is_known mname) then
-         if has_dynlink then
-           let fname = file_of_name mname in
-           load_object mname fname
-         else
-	   errorlabstrm "Mltop.unfreeze_ml_modules"
-             (str"Loading of ML object file forbidden in a native Coq.");
-       add_loaded_module mname)
-    x
+  reset_loaded_modules ();
+  List.iter (cache_ml_object false false) x
 
 let _ =
   Summary.declare_summary "ML-MODULES"
-    { Summary.freeze_function = (fun () -> List.rev (get_loaded_modules()));
-      Summary.unfreeze_function = (fun x -> unfreeze_ml_modules x);
-      Summary.init_function = (fun () -> init_ml_modules ()) }
+    { Summary.freeze_function = get_loaded_modules;
+      Summary.unfreeze_function = unfreeze_ml_modules;
+      Summary.init_function = reset_loaded_modules }
 
-(* Same as restore_ml_modules, but verbosely *)
+(* Liboject entries of declared ML Modules *)
 
-let cache_ml_module_object (_,{mnames=mnames}) =
-  List.iter
-    (fun name ->
-       let mname = mod_of_name name in
-       if not (module_is_known mname) then
-	 if has_dynlink then
-           let fname = file_of_name mname in
-	   try
-	     if_verbose
-	       msg (str"[Loading ML file " ++ str fname ++ str" ...");
-             load_object mname fname;
-             if_verbose msgnl (str" done]");
-             add_loaded_module mname
-           with e ->
-	     if_verbose msgnl (str" failed]");
-	     raise e
-	 else
-	     (if_verbose msgnl (str" failed]");
-	      error ("Dynamic link not supported (module "^name^")")))
-    mnames
+type ml_module_object = {
+  mlocal : Vernacexpr.locality_flag;
+  mnames : string list
+}
 
-let classify_ml_module_object ({mlocal=mlocal} as o) =
+let cache_ml_objects (_,{mnames=mnames}) =
+  List.iter (cache_ml_object true true) mnames
+
+let classify_ml_objects ({mlocal=mlocal} as o) =
   if mlocal then Dispose else Substitute o
 
-let (inMLModule,outMLModule) =
-  declare_object {(default_object "ML-MODULE") with
-                    load_function = (fun _ -> cache_ml_module_object);
-                    cache_function = cache_ml_module_object;
-                    subst_function = (fun (_,o) -> o);
-                    classify_function = classify_ml_module_object }
+let inMLModule : ml_module_object -> obj =
+  declare_object
+    {(default_object "ML-MODULE") with
+      load_function = (fun _ -> cache_ml_objects);
+      cache_function = cache_ml_objects;
+      subst_function = (fun (_,o) -> o);
+      classify_function = classify_ml_objects }
 
 let declare_ml_modules local l =
+  let l = List.map mod_of_name l in
   Lib.add_anonymous_leaf (inMLModule {mlocal=local; mnames=l})
 
 let print_ml_path () =
@@ -320,7 +329,7 @@ let print_ml_path () =
   ppnl (str"ML Load Path:" ++ fnl () ++ str"  " ++
           hv 0 (prlist_with_sep pr_fnl pr_str l))
 
-	  (* Printing of loaded ML modules *)
+(* Printing of loaded ML modules *)
 
 let print_ml_modules () =
   let l = get_loaded_modules () in

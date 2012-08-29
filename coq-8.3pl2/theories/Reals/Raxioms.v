@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Raxioms.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (*********************************************************)
 (**    Axiomatisation of the classical reals             *)
@@ -14,7 +12,7 @@
 
 Require Export ZArith_base.
 Require Export Rdefinitions.
-Open Local Scope R_scope.
+Local Open Scope R_scope.
 
 (*********************************************************)
 (** *            Field axioms                            *)
@@ -107,13 +105,13 @@ Hint Resolve Rlt_asym Rplus_lt_compat_l Rmult_lt_compat_l: real.
 (**********************************************************)
 
 (**********)
-Boxed Fixpoint INR (n:nat) : R :=
+Fixpoint INR (n:nat) : R :=
   match n with
   | O => 0
   | S O => 1
   | S n => INR n + 1
   end.
-Arguments Scope INR [nat_scope].
+Arguments INR n%nat.
 
 
 (**********************************************************)
@@ -124,10 +122,10 @@ Arguments Scope INR [nat_scope].
 Definition IZR (z:Z) : R :=
   match z with
   | Z0 => 0
-  | Zpos n => INR (nat_of_P n)
-  | Zneg n => - INR (nat_of_P n)
+  | Zpos n => INR (Pos.to_nat n)
+  | Zneg n => - INR (Pos.to_nat n)
   end.
-Arguments Scope IZR [Z_scope].
+Arguments IZR z%Z.
 
 (**********************************************************)
 (** *    [R] Archimedean                                  *)

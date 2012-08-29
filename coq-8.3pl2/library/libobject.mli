@@ -1,30 +1,26 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: libobject.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
-(*i*)
 open Names
 open Libnames
 open Mod_subst
-(*i*)
 
-(* [Libobject] declares persistent objects, given with methods:
+(** [Libobject] declares persistent objects, given with methods:
 
    * a caching function specifying how to add the object in the current
      scope;
      If the object wishes to register its visibility in the Nametab,
-     it should do so for all possible sufixes.
+     it should do so for all possible suffixes.
 
    * a loading function, specifying what to do when the module
      containing the object is loaded;
      If the object wishes to register its visibility in the Nametab,
-     it should do so for all sufixes no shorter than the "int" argument
+     it should do so for all suffixes no shorter than the "int" argument
 
    * an opening function, specifying what to do when the module
      containing the object is opened (imported);
@@ -39,7 +35,7 @@ open Mod_subst
                   the module name must be updated
      Keep       - the object is not substitutive, but survives module
                   closing
-     Anticipate - this is for objects that have to be explicitely
+     Anticipate - this is for objects that have to be explicitly
                   managed by the [end_module] function (like Require
                   and Read markers)
 
@@ -74,7 +70,7 @@ type 'a object_declaration = {
   discharge_function : object_name * 'a -> 'a option;
   rebuild_function : 'a -> 'a }
 
-(* The default object is a "Keep" object with empty methods.
+(** The default object is a "Keep" object with empty methods.
    Object creators are advised to use the construction
    [{(default_object "MY_OBJECT") with
       cache_function = ...
@@ -85,17 +81,21 @@ type 'a object_declaration = {
 
 val default_object : string -> 'a object_declaration
 
-(* the identity substitution function *)
+(** the identity substitution function *)
 val ident_subst_function : substitution * 'a -> 'a
 
-(*s Given an object declaration, the function [declare_object]
+(** {6 ... } *)
+(** Given an object declaration, the function [declare_object_full]
    will hand back two functions, the "injection" and "projection"
    functions for dynamically typed library-objects. *)
 
 type obj
 
-val declare_object :
+val declare_object_full :
   'a object_declaration -> ('a -> obj) * (obj -> 'a)
+
+val declare_object :
+  'a object_declaration -> ('a -> obj)
 
 val object_tag : obj -> string
 

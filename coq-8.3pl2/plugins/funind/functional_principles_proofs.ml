@@ -1,7 +1,6 @@
 open Printer
 open Util
 open Term
-open Termops
 open Namegen
 open Names
 open Declarations
@@ -35,9 +34,10 @@ let observennl strm =
 let do_observe_tac s tac g =
  try let v = tac g in (* msgnl (goal ++ fnl () ++ (str s)++(str " ")++(str "finished")); *) v
  with e ->
-   let goal = begin try (Printer.pr_goal (sig_it g)) with _ -> assert false end in
+   let e = Cerrors.process_vernac_interp_error e in
+   let goal = begin try (Printer.pr_goal g) with _ -> assert false end in
    msgnl (str "observation "++ s++str " raised exception " ++
-	    Cerrors.explain_exn e ++ str " on goal " ++ goal );
+	    Errors.print e ++ str " on goal " ++ goal );
    raise e;;
 
 let observe_tac_stream s tac g =
@@ -263,7 +263,7 @@ let change_eq env sigma hyp_id (context:rel_context) x t end_of_type  =
     in
     let sub = compute_substitution Intmap.empty (snd t1) (snd t2) in
     let sub = compute_substitution sub (fst t1) (fst t2) in
-    let end_of_type_with_pop = pop end_of_type in (*the equation will be removed *)
+    let end_of_type_with_pop = Termops.pop end_of_type in (*the equation will be removed *)
     let new_end_of_type =
       (* Ugly hack to prevent Map.fold order change between ocaml-3.08.3 and ocaml-3.08.4
 	 Can be safely replaced by the next comment for Ocaml >= 3.08.4
@@ -286,7 +286,7 @@ let change_eq env sigma hyp_id (context:rel_context) x t end_of_type  =
 	   try
 	     let witness = Intmap.find i sub in
 	     if b' <> None then anomaly "can not redefine a rel!";
-	     (pop end_of_type,ctxt_size,mkLetIn(x',witness,t',witness_fun))
+	     (Termops.pop end_of_type,ctxt_size,mkLetIn(x',witness,t',witness_fun))
 	   with Not_found  ->
 	     (mkProd_or_LetIn decl end_of_type, ctxt_size + 1, mkLambda_or_LetIn decl witness_fun)
 	)
@@ -350,9 +350,9 @@ let isLetIn t =
 
 let h_reduce_with_zeta =
   h_reduce
-    (Rawterm.Cbv
-       {Rawterm.all_flags
-	with Rawterm.rDelta = false;
+    (Glob_term.Cbv
+       {Glob_term.all_flags
+	with Glob_term.rDelta = false;
        })
 
 
@@ -388,7 +388,7 @@ let clean_hyp_with_heq ptes_infos eq_hyps hyp_id env sigma =
   let coq_I = Coqlib.build_coq_I () in
   let rec scan_type  context type_of_hyp : tactic =
     if isLetIn type_of_hyp then
-      let real_type_of_hyp = it_mkProd_or_LetIn ~init:type_of_hyp context in
+      let real_type_of_hyp = it_mkProd_or_LetIn type_of_hyp context in
       let reduced_type_of_hyp = nf_betaiotazeta real_type_of_hyp in
       (* length of context didn't change ? *)
       let new_context,new_typ_of_hyp =
@@ -406,13 +406,13 @@ let clean_hyp_with_heq ptes_infos eq_hyps hyp_id env sigma =
     then
       begin
 	let (x,t_x,t') = destProd type_of_hyp in
-	let actual_real_type_of_hyp = it_mkProd_or_LetIn ~init:t' context in
+	let actual_real_type_of_hyp = it_mkProd_or_LetIn t' context in
 	if is_property ptes_infos t_x actual_real_type_of_hyp then
 	  begin
 	    let pte,pte_args =  (destApp t_x) in
 	    let (* fix_info *) prove_rec_hyp = (Idmap.find (destVar pte) ptes_infos).proving_tac in
-	    let popped_t' = pop t' in
-	    let real_type_of_hyp = it_mkProd_or_LetIn ~init:popped_t' context in
+	    let popped_t' = Termops.pop t' in
+	    let real_type_of_hyp = it_mkProd_or_LetIn popped_t' context in
 	    let prove_new_type_of_hyp =
 	      let context_length = List.length context in
 	      tclTHENLIST
@@ -461,9 +461,9 @@ let clean_hyp_with_heq ptes_infos eq_hyps hyp_id env sigma =
 (* 	    observe (str "In "++Ppconstr.pr_id hyp_id++  *)
 (* 		       str " removing useless precond True" *)
 (* 		    );  *)
-	  let popped_t' = pop t' in
+	  let popped_t' = Termops.pop t' in
 	  let real_type_of_hyp =
-	    it_mkProd_or_LetIn ~init:popped_t' context
+	    it_mkProd_or_LetIn popped_t' context
 	  in
 	  let prove_trivial =
 	    let nb_intro = List.length context in
@@ -489,9 +489,9 @@ let clean_hyp_with_heq ptes_infos eq_hyps hyp_id env sigma =
 	  ]
 	else if is_trivial_eq t_x
 	then (*  t_x :=  t = t   => we remove this precond *)
-	  let popped_t' = pop t' in
+	  let popped_t' = Termops.pop t' in
 	  let real_type_of_hyp =
-	    it_mkProd_or_LetIn ~init:popped_t' context
+	    it_mkProd_or_LetIn popped_t' context
 	  in
 	  let hd,args = destApp t_x in
 	  let get_args hd args =
@@ -589,7 +589,7 @@ let treat_new_case ptes_infos nb_prod continue_tac term dyn_infos =
 	 let fun_body =
 	   mkLambda(Anonymous,
 		    pf_type_of g' term,
-		    replace_term term (mkRel 1) dyn_infos.info
+		    Termops.replace_term term (mkRel 1) dyn_infos.info
 		   )
 	 in
 	 let new_body = pf_nf_betaiota g' (mkApp(fun_body,[| new_term_value |])) in
@@ -609,7 +609,7 @@ let my_orelse tac1 tac2 g =
   try
     tac1 g
   with e ->
-(*     observe (str "using snd tac since : " ++ Cerrors.explain_exn e); *)
+(*     observe (str "using snd tac since : " ++ Errors.print e); *)
     tac2 g
 
 let instanciate_hyps_with_args (do_prove:identifier list -> tactic) hyps args_id =
@@ -909,8 +909,8 @@ let generalize_non_dep hyp g =
   let to_revert,_ =
     Environ.fold_named_context_reverse (fun (clear,keep) (hyp,_,_ as decl) ->
       if List.mem hyp hyps
-	or List.exists (occur_var_in_decl env hyp) keep
-	or occur_var env hyp hyp_typ
+	or List.exists (Termops.occur_var_in_decl env hyp) keep
+	or Termops.occur_var env hyp hyp_typ
 	or Termops.is_section_variable hyp (* should be dangerous *)
       then (clear,decl::keep)
       else (hyp::clear,keep))
@@ -936,7 +936,7 @@ let generate_equation_lemma fnames f fun_num nb_params nb_args rec_args_num =
   let f_def = Global.lookup_constant (destConst f) in
   let eq_lhs = mkApp(f,Array.init (nb_params + nb_args) (fun i -> mkRel(nb_params + nb_args - i))) in
   let f_body =
-    force (Option.get f_def.const_body)
+    force (Option.get (body_of_constant f_def))
   in
   let params,f_body_with_params = decompose_lam_n nb_params f_body in
   let (_,num),(_,_,bodies) = destFix f_body_with_params in
@@ -954,7 +954,7 @@ let generate_equation_lemma fnames f fun_num nb_params nb_args rec_args_num =
   let type_ctxt,type_of_f = decompose_prod_n_assum (nb_params + nb_args)
     (Typeops.type_of_constant_type (Global.env()) f_def.const_type) in
   let eqn = mkApp(Lazy.force eq,[|type_of_f;eq_lhs;eq_rhs|]) in
-  let lemma_type = it_mkProd_or_LetIn ~init:eqn type_ctxt in
+  let lemma_type = it_mkProd_or_LetIn eqn type_ctxt in
   let f_id = id_of_label (con_label (destConst f)) in
   let prove_replacement =
     tclTHENSEQ
@@ -964,7 +964,7 @@ let generate_equation_lemma fnames f fun_num nb_params nb_args rec_args_num =
 	   let rec_id = pf_nth_hyp_id g 1 in
 	   tclTHENSEQ
 	     [(* observe_tac "generalize_non_dep in generate_equation_lemma" *) (generalize_non_dep rec_id);
-	      (* observe_tac "h_case" *) (h_case false (mkVar rec_id,Rawterm.NoBindings));
+	      (* observe_tac "h_case" *) (h_case false (mkVar rec_id,Glob_term.NoBindings));
 	      intros_reflexivity] g
 	)
       ]
@@ -1009,7 +1009,7 @@ let do_replace params rec_arg_num rev_args_id f fun_num all_funs g =
 	  | _ -> ()
 
       in
-      Tacinterp.constr_of_id (pf_env g) equation_lemma_id
+      Constrintern.construct_reference (pf_hyps g) equation_lemma_id
   in
   let nb_intro_to_do = nb_prod (pf_concl g) in
     tclTHEN
@@ -1052,7 +1052,7 @@ let prove_princ_for_struct interactive_proof fun_num fnames all_funs _nparams : 
       }
     in
     let get_body const =
-      match (Global.lookup_constant const ).const_body with
+      match body_of_constant (Global.lookup_constant const) with
 	| Some b ->
 	     let body = force b in
 	     Tacred.cbv_norm_flags
@@ -1300,7 +1300,7 @@ let prove_princ_for_struct interactive_proof fun_num fnames all_funs _nparams : 
 		 in
 		 let fname = destConst (fst (decompose_app (List.hd (List.rev pte_args)))) in
 		 tclTHENSEQ
-		   [unfold_in_concl [(all_occurrences,Names.EvalConstRef fname)];
+		   [unfold_in_concl [(Termops.all_occurrences, Names.EvalConstRef fname)];
 		    let do_prove =
 		      build_proof
 			interactive_proof
@@ -1371,7 +1371,7 @@ let prove_with_tcc tcc_lemma_constr eqs : tactic =
 (* 		 let ids = List.filter (fun id -> not (List.mem id ids)) ids' in  *)
 (* 		 rewrite *)
 (* 	      ) *)
-	      Eauto.gen_eauto false (false,5) [] (Some [])
+	      Eauto.gen_eauto (false,5) [] (Some [])
 	    ]
 	    gls
 
@@ -1400,10 +1400,10 @@ let build_clause eqs =
   {
     Tacexpr.onhyps =
       Some (List.map
-	      (fun id -> (Rawterm.all_occurrences_expr,id),InHyp)
+	      (fun id -> (Glob_term.all_occurrences_expr, id), Termops.InHyp)
 	      eqs
 	   );
-    Tacexpr.concl_occs = Rawterm.no_occurrences_expr
+    Tacexpr.concl_occs = Glob_term.no_occurrences_expr
   }
 
 let rec rewrite_eqs_in_eqs eqs =
@@ -1416,7 +1416,7 @@ let rec rewrite_eqs_in_eqs eqs =
 	       (fun id gl ->
 		  observe_tac
 		    (Format.sprintf "rewrite %s in %s " (string_of_id eq) (string_of_id id))
-		    (tclTRY (Equality.general_rewrite_in true all_occurrences (* dep proofs also: *) true id (mkVar eq) false))
+		    (tclTRY (Equality.general_rewrite_in true Termops.all_occurrences true (* dep proofs also: *) true id (mkVar eq) false))
 		    gl
 	       )
 	       eqs
@@ -1438,7 +1438,7 @@ let new_prove_with_tcc is_mes acc_inv hrec tcc_hyps eqs : tactic =
 		  (fun g ->
 		     if is_mes
 		     then
-		       unfold_in_concl [(all_occurrences, evaluable_of_global_reference (delayed_force ltof_ref))] g
+		       unfold_in_concl [(Termops.all_occurrences, evaluable_of_global_reference (delayed_force ltof_ref))] g
 		     else tclIDTAC g
 		  );
 		  observe_tac "rew_and_finish"
@@ -1449,9 +1449,8 @@ let new_prove_with_tcc is_mes acc_inv hrec tcc_hyps eqs : tactic =
 			   (
 			    tclCOMPLETE(
 				    Eauto.eauto_with_bases
-				      false
 				      (true,5)
-				      [Lazy.force refl_equal]
+				      [Evd.empty,Lazy.force refl_equal]
 				      [Auto.Hint_db.empty empty_transparent_state false]
 				  )
 			   )

@@ -30,7 +30,7 @@ let version = "1.2";;
 
 let html_config = "Configwin bindings configurator for html parameters"
 
-let home = System.home
+let home = Minilib.home
 
 let mCapture = "Capture";;
 let mType_key = "Type key" ;;

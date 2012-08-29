@@ -5,6 +5,8 @@ the Gallina's syntax.
 
 \section{Record types
 \comindex{Record}
+\comindex{Inductive}
+\comindex{CoInductive}
 \label{Record}}
 
 The \verb+Record+ construction is a macro allowing the definition of
@@ -20,9 +22,12 @@ construction allows to define ``signatures''.
 {\sentence} & ++= & {\record}\\
   & & \\
 {\record} & ::= &
-   {\tt Record} {\ident} \zeroone{\binders} \zeroone{{\tt :} {\sort}} \verb.:=. \\
+   {\recordkw} {\ident} \zeroone{\binders} \zeroone{{\tt :} {\sort}} \verb.:=. \\
 && ~~~~\zeroone{\ident}
        \verb!{! \zeroone{\nelist{\field}{;}} \verb!}! \verb:.:\\
+  & & \\
+{\recordkw} & ::= &
+   {\tt Record} $|$ {\tt Inductive} $|$ {\tt CoInductive}\\
   & & \\
 {\field} & ::= & {\name} \zeroone{\binders} : {\type} [ {\tt where} {\it notation} ] \\
  & $|$ & {\name} \zeroone{\binders} {\typecstr} := {\term}
@@ -149,6 +154,13 @@ Eval compute in half.(Rat_bottom_cond).
 Reset Initial.
 \end{coq_eval}
 
+Records defined  with the {\tt Record}  keyword are not  allowed to be
+recursive (references  to the record's name  in the type  of its field
+raises an  error). To define recursive  records, one can  use the {\tt
+  Inductive} and {\tt CoInductive} keywords, resulting in an inductive
+or  co-inductive record.  A  \emph{caveat}, however,  is that  records
+cannot appear in mutually inductive (or co-inductive) definitions.
+
 \begin{Warnings}
 \item {\tt Warning: {\ident$_i$} cannot be defined.}
 
@@ -167,10 +179,16 @@ Reset Initial.
 
 \begin{ErrMsgs}
 
-\item \errindex{A record cannot be recursive}
+\item \errindex{Records declared with the keyword Record or Structure cannot be recursive.}
 
-  The record name {\ident} appears in the type of its fields.
-  
+  The record name {\ident} appears in the type of its fields, but uses
+  the keyword  {\tt Record}. Use  the keyword {\tt Inductive}  or {\tt
+    CoInductive} instead.
+\item \errindex{Cannot handle mutually (co)inductive records.}
+
+  Records  cannot  be  defined  as  part  of  mutually  inductive  (or
+  co-inductive) definitions,  whether with records only  or mixed with
+  standard definitions.
 \item During the definition of the one-constructor inductive
   definition, all the errors of inductive definitions, as described in
   Section~\ref{gal_Inductive_Definitions}, may also occur.
@@ -199,6 +217,20 @@ Section~\ref{Program}).
 Definition b := {| x := 5; y := 3 |}.
 Definition c := {| y := 3; x := 5 |}.
 \end{coq_example}
+
+This syntax can be disabled globally for printing by
+\begin{quote}
+{\tt Unset Printing Records.}
+\end{quote}
+For a given type, one can override this using either
+\begin{quote}
+{\tt Add Printing Record {\ident}.}
+\end{quote}
+to get record syntax or
+\begin{quote}
+{\tt Add Printing Constructor {\ident}.}
+\end{quote}
+to get constructor syntax.
 
 This syntax can also be used for pattern matching.
 
@@ -675,7 +707,15 @@ Function plus (n m : nat) {struct n} : nat :=
 \paragraph[Limitations]{Limitations\label{sec:Function-limitations}}
 \term$_0$ must be build as a \emph{pure pattern-matching tree}
 (\texttt{match...with}) with applications only \emph{at the end} of
-each branch.  For now dependent cases are not treated.
+each branch.  
+
+Function does not support partial application of the function being defined. Thus, the following example cannot be accepted due to the presence of partial application of \ident{wrong} into the body of \ident{wrong}~:
+\begin{coq_example*}
+  Function wrong (C:nat) {\ldots} : nat := 
+    List.hd(List.map wrong (C::nil)).
+\end{coq_example*}
+
+For now dependent cases are not treated for non structurally terminating functions.
 
 
 
@@ -1119,14 +1159,14 @@ possible, the correct argument will be automatically generated.
 \end{ErrMsgs}
 
 \subsection{Declaration of implicit arguments for a constant
-\comindex{Implicit Arguments}}
+\comindex{Arguments}}
 \label{ImplicitArguments}
 
 In case one wants that some arguments of a given object (constant,
 inductive types, constructors, assumptions, local or not) are always
 inferred by Coq, one may declare once and for all which are the expected
 implicit arguments of this object. There are two ways to do this,
-a-priori and a-posteriori. 
+a priori and a posteriori.
 
 \subsubsection{Implicit Argument Binders}
 
@@ -1166,44 +1206,44 @@ Print list.
 One can always specify the parameter if it is not uniform using the
 usual implicit arguments disambiguation syntax.
 
-\subsubsection{The Implicit Arguments Vernacular Command}
+\subsubsection{Declaring Implicit Arguments}
 
-To set implicit arguments for a constant a-posteriori, one can use the
+To set implicit arguments for a constant a posteriori, one can use the
 command:
 \begin{quote}
-\tt Implicit Arguments {\qualid} [ \nelist{\possiblybracketedident}{} ]
+\tt Arguments {\qualid} \nelist{\possiblybracketedident}{}
 \end{quote}
-where the list of {\possiblybracketedident} is the list of parameters
-to be declared implicit, each of the identifier of the list being
-optionally surrounded by square brackets, then meaning that this
-parameter has to be maximally inserted.
+where the list of {\possiblybracketedident} is the list of all arguments of
+{\qualid} where the ones to be declared implicit are surrounded by
+square brackets and the ones to be declared as maximally inserted implicits
+are surrounded by curly braces.
 
 After the above declaration is issued, implicit arguments can just (and
 have to) be skipped in any expression involving an application of
 {\qualid}.
 
 \begin{Variants}
-\item {\tt Global Implicit Arguments {\qualid} [ \nelist{\possiblybracketedident}{} ]
-\comindex{Global Implicit Arguments}}
+\item {\tt Global Arguments {\qualid} \nelist{\possiblybracketedident}{}
+\comindex{Global Arguments}}
 
-Tells to recompute the implicit arguments of {\qualid} after ending of
+Tell to recompute the implicit arguments of {\qualid} after ending of
 the current section if any, enforcing the implicit arguments known
 from inside the section to be the ones declared by the command.
 
-\item {\tt Local Implicit Arguments {\qualid} [ \nelist{\possiblybracketedident}{} ]
-\comindex{Local Implicit Arguments}}
+\item {\tt Local Arguments {\qualid} \nelist{\possiblybracketedident}{}
+\comindex{Local Arguments}}
 
-When in a module, tells not to activate the implicit arguments of
-{\qualid} declared by this commands to contexts that requires the
+When in a module, tell not to activate the implicit arguments of
+{\qualid} declared by this command to contexts that require the
 module.
 
-\item {\tt \zeroone{Global {\sl |} Local} Implicit Arguments {\qualid} \sequence{[ \nelist{\possiblybracketedident}{} ]}{}}
+\item {\tt \zeroone{Global {\sl |} Local} Arguments {\qualid} \sequence{\nelist{\possiblybracketedident}{}}{,}}
 
 For names of constants, inductive types, constructors, lemmas which
 can only be applied to a fixed number of arguments (this excludes for
-instance constants whose type is polymorphic), multiple lists
-of implicit arguments can be given. These lists must be of different
-length, and, depending on the number of arguments {\qualid} is applied
+instance constants whose type is polymorphic), multiple 
+implicit arguments decflarations can be given. 
+Depending on the number of arguments {\qualid} is applied
 to in practice, the longest applicable list of implicit arguments is
 used to select which implicit arguments are inserted.
 
@@ -1223,17 +1263,17 @@ Inductive list (A:Type) : Type :=
 \end{coq_example*}
 \begin{coq_example}
 Check (cons nat 3 (nil nat)).
-Implicit Arguments cons [A].
-Implicit Arguments nil [A].
+Arguments cons [A] _ _.
+Arguments nil [A].
 Check (cons 3 nil).
 Fixpoint map (A B:Type) (f:A->B) (l:list A) : list B :=
   match l with nil => nil | cons a t => cons (f a) (map A B f t) end.
 Fixpoint length (A:Type) (l:list A) : nat :=
   match l with nil => 0 | cons _ m => S (length A m) end.
-Implicit Arguments map [A B].
-Implicit Arguments length [[A]]. (* A has to be maximally inserted *)
+Arguments map [A B] f l.
+Arguments length {A} l. (* A has to be maximally inserted *)
 Check (fun l:list (list nat) => map length l).
-Implicit Arguments map [A B] [A] [].
+Arguments map [A B] f l, [A] B f l, A B f l.
 Check (fun l => map length l = map (list nat) nat length l).
 \end{coq_example}
 
@@ -1248,8 +1288,8 @@ implicit arguments of {\qualid}.
 {\Coq} can also automatically detect what are the implicit arguments
 of a defined object. The command is just
 \begin{quote}
-{\tt Implicit Arguments {\qualid}
-\comindex{Implicit Arguments}}
+{\tt Arguments {\qualid} : default implicits
+\comindex{Arguments}}
 \end{quote}
 The auto-detection is governed by options telling if strict,
 contextual, or reversible-pattern implicit arguments must be
@@ -1258,16 +1298,16 @@ Sections~\ref{SetStrictImplicit},~\ref{SetContextualImplicit},~\ref{SetReversibl
 and also~\ref{SetMaximalImplicitInsertion}).
 
 \begin{Variants}
-\item {\tt Global Implicit Arguments {\qualid}
-\comindex{Global Implicit Arguments}}
+\item {\tt Global Arguments {\qualid} : default implicits
+\comindex{Global Arguments}}
 
-Tells to recompute the implicit arguments of {\qualid} after ending of
+Tell to recompute the implicit arguments of {\qualid} after ending of
 the current section if any.
 
-\item {\tt Local Implicit Arguments {\qualid}
-\comindex{Local Implicit Arguments}}
+\item {\tt Local Arguments {\qualid} : default implicits
+\comindex{Local Arguments}}
 
-When in a module, tells not to activate the implicit arguments of
+When in a module, tell not to activate the implicit arguments of
 {\qualid} computed by this declaration to contexts that requires the
 module.
 
@@ -1283,12 +1323,12 @@ Inductive list (A:Set) : Set :=
   | cons : A -> list A -> list A.
 \end{coq_example*}
 \begin{coq_example}
-Implicit Arguments cons.
+Arguments cons : default implicits.
 Print Implicit cons.
-Implicit Arguments nil.
+Arguments nil : default implicits.
 Print Implicit nil.
 Set Contextual Implicit.
-Implicit Arguments nil.
+Arguments nil : default implicits.
 Print Implicit nil.
 \end{coq_example}
 
@@ -1304,7 +1344,7 @@ Definition Relation := X -> X -> Prop.
 Definition Transitivity (R:Relation) :=
   forall x y:X, R x y -> forall z:X, R y z -> R x z.
 Variables (R : Relation) (p : Transitivity R).
-Implicit Arguments p.
+Arguments p : default implicits.
 \end{coq_example*}
 \begin{coq_example}
 Print p.
@@ -1316,6 +1356,21 @@ Variables (a b c : X) (r1 : R a b) (r2 : R b c).
 \begin{coq_example}
 Check (p r1 r2).
 \end{coq_example}
+
+Implicit arguments can be cleared with the following syntax:
+
+\begin{quote}
+{\tt Arguments {\qualid} : clear implicits
+\comindex{Arguments}}
+\end{quote}
+
+In the following example implict arguments declarations for the {\tt nil}
+constant are cleared:
+\begin{coq_example}
+Arguments cons : clear implicits.
+Print Implicit cons.
+\end{coq_example}
+
 
 \subsection{Mode for automatic declaration of implicit arguments
 \label{Auto-implicit}
@@ -1410,7 +1465,7 @@ Implicit Insertion}.
 \subsection{Explicit applications
 \index{Explicitly given implicit arguments}
 \label{Implicits-explicitation}
-\index{qualid@{\qualid}}}
+\index{qualid@{\qualid}} \index{\symbol{64}}}
 
 In presence of non strict or contextual argument, or in presence of
 partial applications, the synthesis of implicit arguments may fail, so
@@ -1441,6 +1496,28 @@ given Figure~\ref{fig:explicitations}.
 Check (p r1 (z:=c)).
 Check (p (x:=a) (y:=b) r1 (z:=c) r2).
 \end{coq_example}
+
+\subsection{Renaming implicit arguments
+\comindex{Arguments}
+}
+
+Implicit arguments names can be redefined using the following syntax:
+\begin{quote}
+{\tt Arguments {\qualid} \nelist{\name}{}  : rename}
+\end{quote}
+
+Without the {\tt rename} flag, {\tt Arguments} can be used to assert
+that a given constant has the expected number of arguments and that
+these arguments are named as expected.
+
+\noindent {\bf Example (continued): }
+\begin{coq_example}
+Arguments p [s t] _ [u] _: rename.
+Check (p r1 (u:=c)).
+Check (p (s:=a) (t:=b) r1 (u:=c) r2).
+Fail Arguments p [s t] _ [w] _.
+\end{coq_example}
+
 
 \subsection{Displaying what the implicit arguments are
 \comindex{Print Implicit}
@@ -1498,8 +1575,23 @@ but succeeds in
 Check Prop = nat.
 \end{coq_example*}
 
+\subsection{Deactivation of implicit arguments for parsing}
+\comindex{Set Parsing Explicit}
+\comindex{Unset Parsing Explicit}
 
+Use of implicit arguments can be deactivated by issuing the command:
+\begin{quote}
+{\tt Set Parsing Explicit.}
+\end{quote}
 
+In this case, all arguments of constants, inductive types,
+constructors, etc, including the arguments declared as implicit, have
+to be given as if none arguments were implicit. By symmetry, this also
+affects printing. To restore parsing and normal printing of implicit
+arguments, use:
+\begin{quote}
+{\tt Set Parsing Explicit.}
+\end{quote}
 
 \subsection{Canonical structures
 \comindex{Canonical Structure}}
@@ -1622,7 +1714,7 @@ the generalized variables. Inside implicit generalization
 delimiters, free variables in the current context are automatically
 quantified using a product or a lambda abstraction to generate a closed
 term. In the following statement for example, the variables \texttt{n}
-and \texttt{m} are automatically generalized and become explicit
+and \texttt{m} are autamatically generalized and become explicit
 arguments of the lemma as we are using \verb|`( )|:
 
 \begin{coq_example}
@@ -1638,7 +1730,7 @@ generalizations when mistyping identifiers. There are three variants of
 the command:
 
 \begin{quote}
-{\tt (Global)? Generalizable (All|No) Variable(s)? ({\ident$_1$ \ident$_n$})?.}
+{\tt Generalizable (All|No) Variable(s)? ({\ident$_1$ \ident$_n$})?.}
 \end{quote}
 
 \begin{Variants}
@@ -1742,13 +1834,25 @@ of the occurrences of {\Type}, use
 \end{quote}
 
 \comindex{Print Universes}
+\comindex{Print Sorted Universes}
 
 The constraints on the internal level of the occurrences of {\Type}
 (see Section~\ref{Sorts}) can be printed using the command
 \begin{quote}
-{\tt Print Universes.}
+{\tt Print \zeroone{Sorted} Universes.}
 \end{quote}
+If the optional {\tt Sorted} option is given, each universe will be
+made equivalent to a numbered label reflecting its level (with a
+linear ordering) in the universe hierarchy.
 
+This command also accepts an optional output filename:
+\begin{quote}
+\tt Print \zeroone{Sorted} Universes {\str}.
+\end{quote}
+If {\str} ends in \texttt{.dot} or \texttt{.gv}, the constraints are
+printed in the DOT language, and can be processed by Graphviz
+tools. The format is unspecified if {\str} doesn't end in
+\texttt{.dot} or \texttt{.gv}.
 
 %%% Local Variables: 
 %%% mode: latex

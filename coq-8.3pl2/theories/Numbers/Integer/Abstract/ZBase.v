@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,26 +8,29 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: ZBase.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Export Decidable.
 Require Export ZAxioms.
 Require Import NZProperties.
 
-Module ZBasePropFunct (Import Z : ZAxiomsSig').
-Include NZPropFunct Z.
+Module ZBaseProp (Import Z : ZAxiomsMiniSig').
+Include NZProp Z.
 
 (* Theorems that are true for integers but not for natural numbers *)
 
 Theorem pred_inj : forall n m, P n == P m -> n == m.
 Proof.
-intros n m H. apply succ_wd in H. now do 2 rewrite succ_pred in H.
+intros n m H. apply succ_wd in H. now rewrite 2 succ_pred in H.
 Qed.
 
 Theorem pred_inj_wd : forall n1 n2, P n1 == P n2 <-> n1 == n2.
 Proof.
-intros n1 n2; split; [apply pred_inj | apply pred_wd].
+intros n1 n2; split; [apply pred_inj | intros; now f_equiv].
 Qed.
 
-End ZBasePropFunct.
+Lemma succ_m1 : S (-1) == 0.
+Proof.
+ now rewrite one_succ, opp_succ, opp_0, succ_pred.
+Qed.
+
+End ZBaseProp.
 

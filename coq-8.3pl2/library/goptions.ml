@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: goptions.ml 13922 2011-03-21 16:25:18Z letouzey $ *)
 
 (* This module manages customization parameters at the vernacular level     *)
 
@@ -19,21 +17,17 @@ open Term
 open Nametab
 open Mod_subst
 
+open Goptionstyp
+
+type option_name = Goptionstyp.option_name
+
 (****************************************************************************)
 (* 0- Common things                                                         *)
-
-type option_name = string list
 
 let nickname table = String.concat " " table
 
 let error_undeclared_key key =
   error ((nickname key)^": no table or option of this type")
-
-type value =
-  | BoolValue   of bool
-  | IntValue    of int option
-  | StringValue of string
-  | IdentValue  of global_reference
 
 (****************************************************************************)
 (* 1- Tables                                                                *)
@@ -96,7 +90,7 @@ module MakeTable =
 	    if p' == p then obj else
 	      (f,p')
 	in
-        let (inGo,outGo) =
+        let inGo : option_mark * A.t -> obj =
           Libobject.declare_object {(Libobject.default_object nick) with
                 Libobject.load_function = load_options;
 		Libobject.open_function = load_options;
@@ -201,12 +195,13 @@ module MakeRefTable =
 
 type 'a option_sig = {
   optsync  : bool;
+  optdepr  : bool;
   optname  : string;
   optkey   : option_name;
   optread  : unit -> 'a;
   optwrite : 'a -> unit }
 
-type option_type = bool * (unit -> value) -> (value -> unit)
+type option_type = bool * (unit -> option_value) -> (option_value -> unit)
 
 module OptionMap =
   Map.Make (struct  type t = option_name let compare = compare end)
@@ -230,28 +225,29 @@ open Libobject
 open Lib
 
 let declare_option cast uncast
-  { optsync=sync; optname=name; optkey=key; optread=read; optwrite=write } =
+  { optsync=sync; optdepr=depr; optname=name; optkey=key; optread=read; optwrite=write } =
   check_key key;
   let default = read() in
   (* spiwack: I use two spaces in the nicknames of "local" and "global" objects.
       That way I shouldn't collide with [nickname key] for any [key]. As [key]-s are
        lists of strings *without* spaces. *)
   let (write,lwrite,gwrite) = if sync then
-    let (ldecl_obj,_) = (* "Local": doesn't survive section or modules. *)
+    let ldecl_obj = (* "Local": doesn't survive section or modules. *)
       declare_object {(default_object ("L  "^nickname key)) with
 		       cache_function = (fun (_,v) -> write v);
 		       classify_function = (fun _ -> Dispose)}
     in
-    let (decl_obj,_) = (* default locality: survives sections but not modules. *)
+    let decl_obj = (* default locality: survives sections but not modules. *)
       declare_object {(default_object (nickname key)) with
 		       cache_function = (fun (_,v) -> write v);
 		       classify_function = (fun _ -> Dispose);
 		       discharge_function = (fun (_,v) -> Some v)}
     in
-    let (gdecl_obj,_) = (* "Global": survives section and modules. *)
+    let gdecl_obj = (* "Global": survives section and modules. *)
       declare_object {(default_object ("G  "^nickname key)) with
 		       cache_function = (fun (_,v) -> write v);
 		       classify_function = (fun v -> Substitute v);
+		       subst_function = (fun (_,v) -> v);
 		       discharge_function = (fun (_,v) -> Some v);
 		       load_function = (fun _ (_,v) -> write v)}
     in
@@ -269,7 +265,7 @@ let declare_option cast uncast
   let cwrite v = write (uncast v) in
   let clwrite v = lwrite (uncast v) in
   let cgwrite v = gwrite (uncast v) in
-  value_tab := OptionMap.add key (name,(sync,cread,cwrite,clwrite,cgwrite)) !value_tab;
+  value_tab := OptionMap.add key (name, depr, (sync,cread,cwrite,clwrite,cgwrite)) !value_tab;
   write
 
 type 'a write_function = 'a -> unit
@@ -292,7 +288,7 @@ let declare_string_option =
 (* Setting values of options *)
 
 let set_option_value locality check_and_cast key v =
-  let (name,(_,read,write,lwrite,gwrite)) =
+  let (name, depr, (_,read,write,lwrite,gwrite)) =
     try get_option key
     with Not_found -> error ("There is no option "^(nickname key)^".")
   in
@@ -330,12 +326,12 @@ let set_int_option_value_gen locality =
   set_option_value locality check_int_value
 let set_bool_option_value_gen locality key v =
   try set_option_value locality check_bool_value key v
-  with UserError (_,s) -> Flags.if_verbose msg_warning s
+  with UserError (_,s) -> Flags.if_warn msg_warning s
 let set_string_option_value_gen locality =
   set_option_value locality check_string_value
 let unset_option_value_gen locality key =
   try set_option_value locality check_unset_value key ()
-  with UserError (_,s) -> Flags.if_verbose msg_warning s
+  with UserError (_,s) -> Flags.if_warn msg_warning s
 
 let set_int_option_value = set_int_option_value_gen None
 let set_bool_option_value = set_bool_option_value_gen None
@@ -350,10 +346,10 @@ let msg_option_value (name,v) =
     | IntValue (Some n) -> int n
     | IntValue None   -> str "undefined"
     | StringValue s   -> str s
-    | IdentValue r    -> pr_global_env Idset.empty r
+(*     | IdentValue r    -> pr_global_env Idset.empty r *)
 
 let print_option_value key =
-  let (name,(_,read,_,_,_)) = get_option key in
+  let (name, depr, (_,read,_,_,_)) = get_option key in
   let s = read () in
   match s with
     | BoolValue b ->
@@ -364,25 +360,37 @@ let print_option_value key =
 	     msg_option_value (name,s) ++ fnl ())
 
 
+let get_tables () =
+  let tables = !value_tab in
+  let fold key (name, depr, (sync,read,_,_,_)) accu =
+    let state = {
+      opt_sync = sync;
+      opt_name = name;
+      opt_depr = depr;
+      opt_value = read ();
+    } in
+    OptionMap.add key state accu
+  in
+  OptionMap.fold fold tables OptionMap.empty
+
 let print_tables () =
+  let print_option key name value depr =
+    let msg = str ("  "^(nickname key)^": ") ++ msg_option_value (name, value) in
+    if depr then msg ++ str " [DEPRECATED]" ++ fnl ()
+    else msg ++ fnl ()
+  in
   msg
     (str "Synchronous options:" ++ fnl () ++
      OptionMap.fold
-       (fun key (name,(sync,read,_,_,_)) p ->
-	  if sync then
-	    p ++ str ("  "^(nickname key)^": ") ++
-	    msg_option_value (name,read()) ++ fnl ()
-	  else
-	    p)
+       (fun key (name, depr, (sync,read,_,_,_)) p ->
+	  if sync then p ++ print_option key name (read ()) depr
+	  else p)
        !value_tab (mt ()) ++
      str "Asynchronous options:" ++ fnl () ++
      OptionMap.fold
-       (fun key (name,(sync,read,_,_,_)) p ->
-	  if sync then
-	    p
-	  else
-	    p ++ str ("  "^(nickname key)^": ") ++
-            msg_option_value (name,read()) ++ fnl ())
+       (fun key (name, depr, (sync,read,_,_,_)) p ->
+	  if sync then p
+	  else p ++ print_option key name (read ()) depr)
        !value_tab (mt ()) ++
      str "Tables:" ++ fnl () ++
      List.fold_right

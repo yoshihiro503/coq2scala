@@ -3,8 +3,8 @@
 
 (* Undoing arbitrary commands, as first step *)
 
-Theorem a : O=O.
-Ltac f x := x.
+Theorem a : O=O. (* 2 *)
+Ltac f x := x. (* 1 * 3 *)
 assert True by trivial.
 trivial.
 Qed.
@@ -79,6 +79,7 @@ Definition q := O.
 Definition r := O.
 
 (* Bug 2082 : Follow the numbers *)
+(* Broken due to proof engine rewriting *)
 
 Variable A : Prop.
 Variable B : Prop.

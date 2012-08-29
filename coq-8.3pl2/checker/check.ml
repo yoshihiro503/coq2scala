@@ -1,18 +1,15 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: library.ml 9679 2007-02-24 15:22:07Z herbelin $ *)
-
 open Pp
 open Util
 open Names
 
-let pr_id id = str (string_of_id id)
 let pr_dirpath dp = str (string_of_dirpath dp)
 let default_root_prefix = make_dirpath []
 let split_dirpath d =
@@ -42,7 +39,7 @@ type compilation_unit_name = dir_path
 
 type library_disk = {
   md_name : compilation_unit_name;
-  md_compiled : Safe_typing.compiled_library;
+  md_compiled : Safe_typing.LightenLibrary.lightened_compiled_library;
   md_objects : library_objects;
   md_deps : (compilation_unit_name * Digest.t) list;
   md_imports : compilation_unit_name list }
@@ -155,12 +152,6 @@ let find_logical_path phys_dir =
   | _,[] -> default_root_prefix
   | _,l -> anomaly ("Two logical paths are associated to "^phys_dir)
 
-let is_in_load_paths phys_dir =
-  let dir = canonical_path_name phys_dir in
-  let lp = get_load_paths () in
-  let check_p = fun p -> (String.compare dir p) == 0 in
-    List.exists check_p lp
-
 let remove_load_path dir =
   load_paths := list_filter2 (fun p d -> p <> dir) !load_paths
 
@@ -191,12 +182,8 @@ let add_load_path (phys_path,coq_path) =
 	  load_paths := (phys_path :: fst !load_paths, coq_path :: snd !load_paths)
       | _ -> anomaly ("Two logical paths are associated to "^phys_path)
 
-let physical_paths (dp,lp) = dp
-
 let load_paths_of_dir_path dir =
   fst (list_filter2 (fun p d -> d = dir) !load_paths)
-
-let get_full_load_paths () = List.combine (fst !load_paths) (snd !load_paths)
 
 (************************************************************************)
 (*s Locate absolute or partially qualified library names in the path *)
@@ -269,8 +256,8 @@ let try_locate_qualified_library qid =
 
 (*s Loading from disk to cache (preparation phase) *)
 
-let (raw_extern_library, raw_intern_library) =
-  System.raw_extern_intern Coq_config.vo_magic_number ".vo"
+let raw_intern_library =
+  snd (System.raw_extern_intern Coq_config.vo_magic_number ".vo")
 
 let with_magic_number_check f a =
   try f a
@@ -283,10 +270,10 @@ let with_magic_number_check f a =
 (************************************************************************)
 (* Internalise libraries *)
 
-let mk_library md f digest = {
+let mk_library md f table digest = {
   library_name = md.md_name;
   library_filename = f;
-  library_compiled = md.md_compiled;
+  library_compiled = Safe_typing.LightenLibrary.load table md.md_compiled;
   library_deps = md.md_deps;
   library_digest = digest }
 
@@ -300,20 +287,21 @@ let depgraph = ref LibraryMap.empty
 
 let intern_from_file (dir, f) =
   Flags.if_verbose msg (str"[intern "++str f++str" ...");
-  let (md,digest) =
+  let (md,table,digest) =
     try
       let ch = with_magic_number_check raw_intern_library f in
       let (md:library_disk) = System.marshal_in ch in
       let digest = System.marshal_in ch in
+      let table = (System.marshal_in ch : Safe_typing.LightenLibrary.table) in
       close_in ch;
       if dir <> md.md_name then
         errorlabstrm "load_physical_library"
           (name_clash_message dir md.md_name f);
       Flags.if_verbose msgnl(str" done]");
-      md,digest
+      md,table,digest
     with e -> Flags.if_verbose msgnl(str" failed!]"); raise e in
   depgraph := LibraryMap.add md.md_name md.md_deps !depgraph;
-  mk_library md f digest
+  mk_library md f table digest
 
 let get_deps (dir, f) =
   try LibraryMap.find dir !depgraph

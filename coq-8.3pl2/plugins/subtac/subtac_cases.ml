@@ -1,13 +1,10 @@
-(* -*- compile-command: "make -C ../.. plugins/subtac/subtac_plugin.cma" -*- *)
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: subtac_cases.ml 14003 2011-04-14 23:09:41Z letouzey $ *)
 
 open Cases
 open Util
@@ -23,7 +20,7 @@ open Sign
 open Reductionops
 open Typeops
 open Type_errors
-open Rawterm
+open Glob_term
 open Retyping
 open Pretype_errors
 open Evarutil
@@ -89,7 +86,7 @@ let mkSpecialLetInJudge j (na,(deppat,nondeppat,d,t)) =
 type rhs =
     { rhs_env    : env;
       avoid_ids  : identifier list;
-      it         : rawconstr;
+      it         : glob_constr;
     }
 
 type equation =
@@ -158,22 +155,22 @@ let feed_history arg = function
 
 (* This is for non exhaustive error message *)
 
-let rec rawpattern_of_partial_history args2 = function
+let rec glob_pattern_of_partial_history args2 = function
   | Continuation (n, args1, h) ->
       let args3 = make_anonymous_patvars (n - (List.length args2)) in
-      build_rawpattern (List.rev_append args1 (args2@args3)) h
+      build_glob_pattern (List.rev_append args1 (args2@args3)) h
   | Result pl -> pl
 
-and build_rawpattern args = function
+and build_glob_pattern args = function
   | Top -> args
   | MakeAlias (AliasLeaf, rh) ->
       assert (args = []);
-      rawpattern_of_partial_history [PatVar (dummy_loc, Anonymous)] rh
+      glob_pattern_of_partial_history [PatVar (dummy_loc, Anonymous)] rh
   | MakeAlias (AliasConstructor pci, rh) ->
-      rawpattern_of_partial_history
+      glob_pattern_of_partial_history
 	[PatCstr (dummy_loc, pci, args, Anonymous)] rh
 
-let complete_history = rawpattern_of_partial_history []
+let complete_history = glob_pattern_of_partial_history []
 
 (* This is to build glued pattern-matching history and alias bodies *)
 
@@ -237,7 +234,7 @@ type pattern_matching_problem =
       mat      : matrix;
       caseloc  : loc;
       casestyle: case_style;
-      typing_function: type_constraint -> env -> rawconstr -> unsafe_judgment }
+      typing_function: type_constraint -> env -> glob_constr -> unsafe_judgment }
 
 (*--------------------------------------------------------------------------*
  * A few functions to infer the inductive type from the patterns instead of *
@@ -369,10 +366,10 @@ let find_tomatch_tycon isevars env loc = function
   | None -> empty_tycon
 
 let coerce_row typing_fun isevars env pats (tomatch,(_,indopt)) =
-  let loc = Some (loc_of_rawconstr tomatch) in
+  let loc = Some (loc_of_glob_constr tomatch) in
   let tycon = find_tomatch_tycon isevars env loc indopt in
   let j = typing_fun tycon env tomatch in
-  let evd, j = Coercion.inh_coerce_to_base (loc_of_rawconstr tomatch) env !isevars j in
+  let evd, j = Coercion.inh_coerce_to_base (loc_of_glob_constr tomatch) env !isevars j in
   isevars := evd;
   let typ = nf_evar ( !isevars) j.uj_type in
   let t =
@@ -530,7 +527,7 @@ let extract_rhs pb =
 let occur_in_rhs na rhs =
   match na with
     | Anonymous -> false
-    | Name id -> occur_rawconstr id rhs.it
+    | Name id -> occur_glob_constr id rhs.it
 
 let is_dep_patt eqn = function
   | PatVar (_,name) -> occur_in_rhs name eqn.rhs
@@ -604,7 +601,7 @@ let regeneralize_index_tomatch n =
   genrec 0
 
 let rec replace_term n c k t =
-  if t = mkRel (n+k) then lift k c
+  if isRel t && destRel t = n+k then lift k c
   else map_constr_with_binders succ (replace_term n c) k t
 
 let replace_tomatch n c =
@@ -1518,7 +1515,7 @@ let mk_JMeq typ x typ' y =
   mkApp (delayed_force Subtac_utils.jmeq_ind, [| typ; x ; typ'; y |])
 let mk_JMeq_refl typ x = mkApp (delayed_force Subtac_utils.jmeq_refl, [| typ; x |])
 
-let hole = RHole (dummy_loc, Evd.QuestionMark (Evd.Define true))
+let hole = GHole (dummy_loc, Evd.QuestionMark (Evd.Define true))
 
 let constr_of_pat env isevars arsign pat avoid =
   let rec typ env (ty, realargs) pat avoid =
@@ -1534,7 +1531,7 @@ let constr_of_pat env isevars arsign pat avoid =
     | PatCstr (l,((_, i) as cstr),args,alias) ->
 	let cind = inductive_of_constructor cstr in
 	let IndType (indf, _) = 
-	  try find_rectype env ( !isevars) (lift (-(List.length realargs)) ty) 
+	  try find_rectype env ( !isevars) (lift (-(List.length realargs)) ty)
 	  with Not_found -> error_case_not_inductive env 
 	    {uj_val = ty; uj_type = Typing.type_of env !isevars ty}
 	in
@@ -1548,7 +1545,7 @@ let constr_of_pat env isevars arsign pat avoid =
 	  List.fold_right2
 	    (fun (na, c, t) ua (patargs, args, sign, env, n, m, avoid)  ->
 	       let pat', sign', arg', typ', argtypargs, n', avoid =
-		 typ env (lift (n - m) t, []) ua avoid
+		 typ env (substl args (liftn (List.length sign) (succ (List.length args)) t), []) ua avoid
 	       in
 	       let args' = arg' :: List.map (lift n') args in
 	       let env' = push_rels sign' env in
@@ -1607,12 +1604,12 @@ let vars_of_ctx ctx =
       match b with
 	| Some t' when kind_of_term t' = Rel 0 ->
 	    prev,
-	    (RApp (dummy_loc,
-		(RRef (dummy_loc, delayed_force refl_ref)), [hole; RVar (dummy_loc, prev)])) :: vars
+	    (GApp (dummy_loc,
+		(GRef (dummy_loc, delayed_force refl_ref)), [hole; GVar (dummy_loc, prev)])) :: vars
 	| _ ->
 	    match na with
 		Anonymous -> raise (Invalid_argument "vars_of_ctx")
-	      | Name n -> n, RVar (dummy_loc, n) :: vars)
+	      | Name n -> n, GVar (dummy_loc, n) :: vars)
       ctx (id_of_string "vars_of_ctx_error", [])
   in List.rev y
 
@@ -1744,13 +1741,13 @@ let constrs_of_pats typing_fun env isevars eqns tomatchs sign neqs arity =
 	 let branch_name = id_of_string ("program_branch_" ^ (string_of_int !i)) in
 	 let branch_decl = (Name branch_name, Some (lift !i bbody), (lift !i btype)) in
 	 let branch =
-	   let bref = RVar (dummy_loc, branch_name) in
+	   let bref = GVar (dummy_loc, branch_name) in
 	     match vars_of_ctx rhs_rels with
 		 [] -> bref
-	       | l -> RApp (dummy_loc, bref, l)
+	       | l -> GApp (dummy_loc, bref, l)
 	 in
 	 let branch = match ineqs with
-	     Some _ -> RApp (dummy_loc, branch, [ hole ])
+	     Some _ -> GApp (dummy_loc, branch, [ hole ])
 	   | None -> branch
 	 in
 	 incr i;
@@ -1786,7 +1783,7 @@ let abstract_tomatch env tomatchs tycon =
 	     Rel n -> (lift lenctx c, lift_tomatch_type lenctx t) :: prev, ctx, names, tycon
 	   | _ ->
 	       let tycon = Option.map
-		 (fun t -> subst_term_occ all_occurrences (lift 1 c) (lift 1 t)) tycon in
+		 (fun t -> subst_term (lift 1 c) (lift 1 t)) tycon in
 	       let name = next_ident_away (id_of_string "filtered_var") names in
 		 (mkRel 1, lift_tomatch_type (succ lenctx) t) :: lift_ctx 1 prev,
 	       (Name name, Some (lift lenctx c), lift lenctx $ type_of_tomatch t) :: ctx,
@@ -1848,7 +1845,7 @@ let build_dependent_signature env evars avoid tomatchs arsign =
 			 refl_arg :: refl_args,
 			 pred slift,
 			 (Name id, b, t) :: argsign'))
-		   (env, 0, [], [], slift, []) args argsign
+		   (env, neqs, [], [], slift, []) args argsign
 	       in
 	       let eq = mk_JMeq
 		 (lift (nargeqs + slift) appt)

@@ -238,3 +238,144 @@ eapply f_equal with (* should fail because ill-typed *)
         end) in H
 || injection H.
 Abort.
+
+(* A legitimate simple eapply that was failing in coq <= 8.3.
+   Cf. in Unification.w_merge the addition of an extra pose_all_metas_as_evars
+   on 30/9/2010
+*)
+
+Lemma simple_eapply_was_failing :
+ (forall f:nat->nat, exists g, f = g) -> True.
+Proof.
+ assert (modusponens : forall P Q, P -> (P->Q) -> Q) by auto.
+ intros.
+ eapply modusponens.
+ simple eapply H.
+ (* error message with V8.3 :
+    Impossible to unify "?18" with "fun g : nat -> nat => ?6 = g". *)
+Abort.
+
+(* Regression test *)
+
+Definition fo : option nat -> nat := option_rec _ (fun a => 0) 0.
+
+(* This example revealed an incorrect evar restriction at some time
+   around October 2011 *)
+
+Goal forall (A:Type) (a:A) (P:forall A, A -> Prop), (P A a) /\ (P A a).
+intros.
+refine ((fun H => conj (proj1 H) (proj2 H)) _).
+Abort.
+
+(* The argument of e below failed to be inferred from r14219 (Oct 2011) to *)
+(* r14753 after the restrictions made on detecting Miller's pattern in the *)
+(* presence of alias, only the second-order unification procedure was *)
+(* able to solve this problem but it was deactivated for 8.4 in r14219 *)
+
+Definition k0
+  (e:forall P : nat -> Prop, (exists n : nat, P n) -> nat)
+  (j : forall a, exists n : nat, n = a) o :=
+ match o with (* note: match introduces an alias! *)
+ | Some a => e _ (j a)
+ | None => O
+ end.
+
+Definition k1
+  (e:forall P : nat -> Prop, (exists n : nat, P n) -> nat)
+  (j : forall a, exists n : nat, n = a) a (b:=a) := e _ (j a).
+
+Definition k2
+  (e:forall P : nat -> Prop, (exists n : nat, P n) -> nat)
+  (j : forall a, exists n : nat, n = a) a (b:=a) := e _ (j b).
+
+(* Other examples about aliases involved in pattern unification *)
+
+Definition k3
+  (e:forall P : nat -> Prop, (exists n : nat, P n) -> nat)
+  (j : forall a, exists n : nat, let a' := a in n = a') a (b:=a) := e _ (j b).
+
+Definition k4
+  (e:forall P : nat -> Prop, (exists n : nat, P n) -> nat)
+  (j : forall a, exists n : nat, let a' := S a in n = a') a (b:=a) := e _ (j b).
+
+Definition k5
+  (e:forall P : nat -> Prop, (exists n : nat, P n) -> nat)
+  (j : forall a, let a' := S a in exists n : nat, n = a') a (b:=a) := e _ (j b).
+
+Definition k6
+  (e:forall P : nat -> Prop, (exists n : nat, P n) -> nat)
+  (j : forall a, exists n : nat, let n' := S n in n' = a) a (b:=a) := e _ (j b).
+
+Definition k7
+  (e:forall P : nat -> Prop, (exists n : nat, let n' := n in P n') -> nat)
+  (j : forall a, exists n : nat, n = a) a (b:=a) := e _ (j b).
+
+(* An example that uses materialize_evar under binders *)
+(* Extracted from bigop.v in the mathematical components library *)
+
+Section Bigop.
+
+Variable bigop : forall R I: Type,
+  R -> (R -> R -> R) -> list I -> (I->Prop) -> (I -> R) -> R.
+
+Hypothesis eq_bigr :
+forall (R : Type) (idx : R) (op : R -> R -> R)
+       (I : Type) (r : list I) (P : I -> Prop) (F1 F2 : I -> R),
+       (forall i : I, P i -> F1 i = F2 i) ->
+       bigop R I idx op r (fun i : I => P i) (fun i : I => F1 i) = idx.
+
+Hypothesis big_tnth :
+forall (R : Type) (idx : R) (op : R -> R -> R)
+     (I : Type) (r : list I) (P : I -> Prop) (F : I -> R),
+     bigop R I idx op r (fun i : I => P i) (fun i : I => F i) = idx.
+
+Hypothesis big_tnth_with_letin :
+forall (R : Type) (idx : R) (op : R -> R -> R)
+     (I : Type) (r : list I) (P : I -> Prop) (F : I -> R),
+     bigop R I idx op r (fun i : I => let i:=i in P i) (fun i : I => F i) = idx.
+
+Variable R : Type.
+Variable idx : R.
+Variable op : R -> R -> R.
+Variable I : Type.
+Variable J : Type.
+Variable rI : list I.
+Variable rJ : list J.
+Variable xQ : J -> Prop.
+Variable P : I -> Prop.
+Variable Q : I -> J -> Prop.
+Variable F : I -> J -> R.
+
+(* Check unification under binders *)
+
+Check (eq_bigr _ _ _ _ _ _ _ _ (fun _ _ => big_tnth _ _ _ _ rI _ _))
+  : (bigop R J idx op rJ
+        (fun j : J => let k:=j in xQ k)
+        (fun j : J => let k:=j in 
+         bigop R I idx
+           op rI
+           (fun i : I => P i /\ Q i k) (fun i : I => let k:=j in F i k))) = idx.
+
+(* Check also with let-in *)
+
+Check (eq_bigr _ _ _ _ _ _ _ _ (fun _ _ => big_tnth_with_letin _ _ _ _ rI _ _))
+  : (bigop R J idx op rJ
+        (fun j : J => let k:=j in xQ k)
+        (fun j : J => let k:=j in 
+         bigop R I idx
+           op rI
+           (fun i : I => P i /\ Q i k) (fun i : I => let k:=j in F i k))) = idx.
+
+End Bigop.
+
+(* Check the use of (at least) an heuristic to solve problems of the form
+   "?x[t] = ?y" where ?y occurs in t without easily knowing if ?y can
+   eventually be erased in t *)
+
+Section evar_evar_occur.
+  Variable id : nat -> nat.
+  Variable f : forall x, id x = 0 -> id x = 0 -> x = 1 /\ x = 2.
+  Variable g : forall y, id y = 0 /\ id y = 0.
+  (* Still evars in the resulting type, but constraints should be solved *)
+  Check match g _ with conj a b => f _ a b end.
+End evar_evar_occur.

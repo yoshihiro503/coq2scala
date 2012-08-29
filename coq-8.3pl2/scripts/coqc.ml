@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: coqc.ml 14015 2011-04-15 17:48:45Z letouzey $ *)
 
 (* Afin de rendre Coq plus portable, ce programme Caml remplace le script
    coqc.
@@ -30,8 +28,6 @@ let image = ref ""
 
 (* coqc options *)
 
-let specification = ref false
-let keep = ref false
 let verbose = ref false
 
 (* Verifies that a string starts by a letter and do not contain
@@ -106,34 +102,27 @@ let parse_args () =
   let rec parse (cfiles,args) = function
     | [] ->
 	List.rev cfiles, List.rev args
-    | "-i" :: rem ->
-	specification := true ; parse (cfiles,args) rem
-    | "-t" :: rem ->
-	keep := true ; parse (cfiles,args) rem
     | ("-verbose" | "--verbose") :: rem ->
 	verbose := true ; parse (cfiles,args) rem
-    | "-boot" :: rem ->
-	Flags.boot := true;
-	parse (cfiles, "-boot"::args) rem
-    | "-byte" :: rem ->
-	binary := "coqtop.byte"; parse (cfiles,args) rem
-    | "-opt" :: rem ->
-	binary := "coqtop.opt"; parse (cfiles,args) rem
     | "-image" :: f :: rem ->
 	image := f; parse (cfiles,args) rem
     | "-image" :: [] ->
 	usage ()
+    | "-byte" :: rem ->
+       binary := "coqtop.byte"; parse (cfiles,args) rem
+    | "-opt" :: rem ->
+       binary := "coqtop.opt"; parse (cfiles,args) rem
     | "-libdir" :: _ :: rem ->
-        print_string "Warning: option -libdir deprecated\n"; flush stdout;
+        print_string "Warning: option -libdir deprecated and ignored\n"; flush stdout;
         parse (cfiles,args) rem
     | ("-db"|"-debugger") :: rem ->
-        print_string "Warning: option -db/-debugger deprecated\n";flush stdout;
+        print_string "Warning: option -db/-debugger deprecated and ignored\n";flush stdout;
         parse (cfiles,args) rem
 
     | ("-?"|"-h"|"-H"|"-help"|"--help") :: _ -> usage ()
     | ("-outputstate"|"-inputstate"|"-is"
       |"-load-vernac-source"|"-l"|"-load-vernac-object"
-      |"-load-ml-source"|"-require"|"-load-ml-object"|"-user"
+      |"-load-ml-source"|"-require"|"-load-ml-object"
       |"-init-file"|"-dump-glob"|"-compat"|"-coqlib" as o) :: rem ->
 	begin
 	  match rem with
@@ -152,13 +141,12 @@ let parse_args () =
     | "-R" :: s :: "-as" :: [] -> usage ()
     | "-R" :: s :: t :: rem -> parse (cfiles,t::s::"-R"::args) rem
 
-    | ("-notactics"|"-debug"|"-nolib"
-      |"-debugVM"|"-alltransp"|"-VMno"
+    | ("-notactics"|"-debug"|"-nolib"|"-boot"
       |"-batch"|"-nois"|"-noglob"|"-no-glob"
       |"-q"|"-full"|"-profile"|"-just-parsing"|"-echo" |"-unsafe"|"-quiet"
       |"-silent"|"-m"|"-xml"|"-v7"|"-v8"|"-beautify"|"-strict-implicit"
-      |"-dont-load-proofs"|"-impredicative-set"|"-vm"
-      |"-unboxed-values"|"-unboxed-definitions"|"-draw-vm-instr" as o) :: rem ->
+      |"-dont-load-proofs"|"-load-proofs"|"-force-load-proofs"
+      |"-impredicative-set"|"-vm" as o) :: rem ->
 	parse (cfiles,o::args) rem
 
     | ("-where") :: _ ->
@@ -169,7 +157,7 @@ let parse_args () =
     | ("-config" | "--config") :: _ -> Usage.print_config (); exit 0
 
     | ("-v"|"--version") :: _ ->
-        Usage.version ()
+        Usage.version 0
     | f :: rem ->
 	if Sys.file_exists f then
 	  parse (f::cfiles,args) rem
@@ -195,7 +183,7 @@ let main () =
     end;
     let coqtopname =
       if !image <> "" then !image
-      else Filename.concat (Envars.coqbin ()) (!binary ^ Coq_config.exec_extension)
+      else Filename.concat Envars.coqbin (!binary ^ Coq_config.exec_extension)
     in
       (*  List.iter (compile coqtopname args) cfiles*)
       Unix.handle_unix_error (compile coqtopname args) cfiles

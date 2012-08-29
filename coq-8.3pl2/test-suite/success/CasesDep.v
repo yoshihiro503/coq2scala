@@ -26,6 +26,40 @@ Fixpoint foldrn (n : nat) (bs : listn B n) {struct bs} : C :=
   end.
 End Folding.
 
+(** Testing post-processing of nested dependencies *)
+
+Check fun x:{x|x=0}*nat+nat => match x with
+      | inl ((exist 0 eq_refl),0) => None
+      | _ => Some 0
+      end.
+
+Check fun x:{_:{x|x=0}|True}+nat => match x with
+      | inl (exist (exist 0 eq_refl) I) => None
+      | _ => Some 0
+      end.
+
+Check fun x:{_:{x|x=0}|True}+nat => match x with
+      | inl (exist (exist 0 eq_refl) I) => None
+      | _ => Some 0
+      end.
+
+Check fun x:{_:{x|x=0}|True}+nat => match x return option nat with
+      | inl (exist (exist 0 eq_refl) I) => None
+      | _ => Some 0
+      end.
+
+  (* the next two examples were failing from r14703 (Nov 22 2011) to r14732 *)
+  (* due to a bug in dependencies postprocessing (revealed by CoLoR) *)
+
+Check fun x:{x:nat*nat|fst x = 0 & True} => match x return option nat with
+      | exist2 (x,y) eq_refl I => None
+      end.
+
+Check fun x:{_:{x:nat*nat|fst x = 0 & True}|True}+nat => match x return option nat with
+      | inl (exist (exist2 (x,y) eq_refl I) I) => None
+      | _ => Some 0
+      end.
+
 (* -------------------------------------------------------------------- *)
 (*   Example to test patterns matching on dependent families            *)
 (* This exemple extracted from the developement done by Nacira Chabane  *)
@@ -188,7 +222,7 @@ Definition Dposint := Build_DSetoid Set_of_posint Eq_posint_deci.
  de l'arite de chaque operateur *)
 
 
-Section Sig.
+Module Sig.
 
 Record Signature : Type :=
   {Sigma : DSetoid; Arity : Map (Set_of Sigma) (Set_of Dposint)}.
@@ -243,7 +277,7 @@ Type
   | _, _ => False
   end.
 
-
+Module Type Version1.
 
 Definition equalT (t1 t2 : TERM) : Prop :=
   match t1, t2 with
@@ -260,11 +294,14 @@ Definition EqListT (n1 : posint) (l1 : LTERM n1) (n2 : posint)
   | _, _ => False
   end.
 
+End Version1.
 
-Reset equalT.
+
 (* ------------------------------------------------------------------*)
 (*          Initial exemple (without patterns)                       *)
 (*-------------------------------------------------------------------*)
+
+Module Version2.
 
 Fixpoint equalT (t1 : TERM) : TERM -> Prop :=
   match t1 return (TERM -> Prop) with
@@ -313,11 +350,13 @@ Fixpoint equalT (t1 : TERM) : TERM -> Prop :=
       end
   end.
 
+End Version2.
 
 (* ---------------------------------------------------------------- *)
 (*                Version with simple patterns                      *)
 (* ---------------------------------------------------------------- *)
-Reset equalT.
+
+Module Version3.
 
 Fixpoint equalT (t1 : TERM) : TERM -> Prop :=
   match t1 with
@@ -354,8 +393,9 @@ Fixpoint equalT (t1 : TERM) : TERM -> Prop :=
       end
   end.
 
+End Version3.
 
-Reset equalT.
+Module Version4.
 
 Fixpoint equalT (t1 : TERM) : TERM -> Prop :=
   match t1 with
@@ -389,10 +429,13 @@ Fixpoint equalT (t1 : TERM) : TERM -> Prop :=
       end
   end.
 
+End Version4.
+
 (* ---------------------------------------------------------------- *)
 (*                  Version with multiple patterns                  *)
 (* ---------------------------------------------------------------- *)
-Reset equalT.
+
+Module Version5.
 
 Fixpoint equalT (t1 t2 : TERM) {struct t1} : Prop :=
   match t1, t2 with
@@ -411,6 +454,7 @@ Fixpoint equalT (t1 t2 : TERM) {struct t1} : Prop :=
   | _, _ => False
   end.
 
+End Version5.
 
 (* ------------------------------------------------------------------ *)
 
@@ -506,3 +550,23 @@ Definition test (s:step E E) :=
     | Step nil _ (cons E nil) _ Plus l l' => true
     | _ => false
   end.
+
+(* Testing regression of bug 2454 ("get" used not be type-checkable when
+   defined with its type constraint) *)
+
+Inductive K : nat -> Type := KC : forall (p q:nat), K p.
+
+Definition get : K O -> nat := fun x => match x with KC p q => q end.
+
+(* Checking correct order of substitution of realargs *)
+(* (was broken from revision 14664 to 14669) *)
+(* Example extracted from contrib CoLoR *)
+
+Inductive EQ : nat -> nat -> Prop := R x y : EQ x y.
+
+Check fun e t (d1 d2:EQ e t) =>
+      match d1 in EQ e1 t1, d2 in EQ e2 t2 return
+        (e1,t1) = (e2,t2) -> (e1,t1) = (e,t) -> 0=0
+      with
+      | R _ _, R _ _ => fun _ _ => eq_refl
+      end.

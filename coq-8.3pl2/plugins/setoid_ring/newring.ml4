@@ -1,14 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
 (*i camlp4deps: "parsing/grammar.cma" i*)
-
-(*i $Id: newring.ml4 13332 2010-07-26 22:12:43Z msozeau $ i*)
 
 open Pp
 open Util
@@ -18,8 +16,7 @@ open Closure
 open Environ
 open Libnames
 open Tactics
-open Rawterm
-open Termops
+open Glob_term
 open Tacticals
 open Tacexpr
 open Pcoq
@@ -87,7 +84,7 @@ let interp_map l c =
   with Not_found -> None
 
 let interp_map l t =
-  try Some(List.assoc t l) with Not_found -> None
+  try Some(list_assoc_f eq_constr t l) with Not_found -> None
 
 let protect_maps = ref Stringmap.empty
 let add_map s m = protect_maps := Stringmap.add s m !protect_maps
@@ -98,13 +95,13 @@ let lookup_map map =
 
 let protect_red map env sigma c =
   kl (create_clos_infos betadeltaiota env)
-    (mk_clos_but (lookup_map map c) (Esubst.ESID 0) c);;
+    (mk_clos_but (lookup_map map c) (Esubst.subs_id 0) c);;
 
 let protect_tac map =
   Tactics.reduct_option (protect_red map,DEFAULTcast) None ;;
 
 let protect_tac_in map id =
-  Tactics.reduct_option (protect_red map,DEFAULTcast) (Some(id,InHyp));;
+  Tactics.reduct_option (protect_red map,DEFAULTcast) (Some(id, Termops.InHyp));;
 
 
 TACTIC EXTEND protect_fv
@@ -144,7 +141,7 @@ let closed_term_ast l =
   let l = List.map (fun gr -> ArgArg(dummy_loc,gr)) l in
   TacFun([Some(id_of_string"t")],
   TacAtom(dummy_loc,TacExtend(dummy_loc,"closed_term",
-  [Genarg.in_gen Genarg.globwit_constr (RVar(dummy_loc,id_of_string"t"),None);
+  [Genarg.in_gen Genarg.globwit_constr (GVar(dummy_loc,id_of_string"t"),None);
    Genarg.in_gen (Genarg.wit_list1 Genarg.globwit_ref) l])))
 (*
 let _ = add_tacdef false ((dummy_loc,id_of_string"ring_closed_term"
@@ -161,18 +158,18 @@ let ty c = Typing.type_of (Global.env()) Evd.empty c
 let decl_constant na c =
   mkConst(declare_constant (id_of_string na) (DefinitionEntry
     { const_entry_body = c;
+      const_entry_secctx = None;
       const_entry_type = None;
-      const_entry_opaque = true;
-      const_entry_boxed = true},
+      const_entry_opaque = true },
     IsProof Lemma))
 
 (* Calling a global tactic *)
 let ltac_call tac (args:glob_tactic_arg list) =
-  TacArg(TacCall(dummy_loc, ArgArg(dummy_loc, Lazy.force tac),args))
+  TacArg(dummy_loc,TacCall(dummy_loc, ArgArg(dummy_loc, Lazy.force tac),args))
 
 (* Calling a locally bound tactic *)
 let ltac_lcall tac args =
-  TacArg(TacCall(dummy_loc, ArgVar(dummy_loc, id_of_string tac),args))
+  TacArg(dummy_loc,TacCall(dummy_loc, ArgVar(dummy_loc, id_of_string tac),args))
 
 let ltac_letin (x, e1) e2 =
   TacLetIn(false,[(dummy_loc,id_of_string x),e1],e2)
@@ -188,8 +185,10 @@ let ltac_record flds =
 let carg c = TacDynamic(dummy_loc,Pretyping.constr_in c)
 
 let dummy_goal env =
-  {Evd.it = Evd.make_evar (named_context_val env) mkProp;
-   Evd.sigma = Evd.empty}
+  let (gl,_,sigma) = 
+    Goal.V82.mk_goal Evd.empty (named_context_val env) mkProp Store.empty in
+  {Evd.it = gl;
+   Evd.sigma = sigma}
 
 let exec_tactic env n f args =
   let lid = list_tabulate(fun i -> id_of_string("x"^string_of_int i)) n in
@@ -344,7 +343,7 @@ type ring_info =
       ring_pre_tac : glob_tactic_expr;
       ring_post_tac : glob_tactic_expr }
 
-module Cmap = Map.Make(struct type t = constr let compare = compare end)
+module Cmap = Map.Make(struct type t = constr let compare = constr_ord end)
 
 let from_carrier = ref Cmap.empty
 let from_relation = ref Cmap.empty
@@ -415,7 +414,7 @@ let subst_th (subst,th) =
   let posttac'= subst_tactic subst th.ring_post_tac in
   if c' == th.ring_carrier &&
      eq' == th.ring_req &&
-     set' = th.ring_setoid &&
+     eq_constr set' th.ring_setoid &&
      ext' == th.ring_ext &&
      morph' == th.ring_morph &&
      th' == th.ring_th &&
@@ -440,7 +439,7 @@ let subst_th (subst,th) =
       ring_post_tac = posttac' }
 
 
-let (theory_to_obj, obj_to_theory) =
+let theory_to_obj : ring_info -> obj =
   let cache_th (name,th) = add_entry name th in
   declare_object
     {(default_object "tactic-new-ring-theory") with
@@ -576,13 +575,13 @@ let dest_ring env sigma th_spec =
   let th_typ = Retyping.get_type_of env sigma th_spec in
   match kind_of_term th_typ with
       App(f,[|r;zero;one;add;mul;sub;opp;req|])
-        when f = Lazy.force coq_almost_ring_theory ->
+        when eq_constr f (Lazy.force coq_almost_ring_theory) ->
           (None,r,zero,one,add,mul,Some sub,Some opp,req)
     | App(f,[|r;zero;one;add;mul;req|])
-        when f = Lazy.force coq_semi_ring_theory ->
+        when eq_constr f (Lazy.force coq_semi_ring_theory) ->
         (Some true,r,zero,one,add,mul,None,None,req)
     | App(f,[|r;zero;one;add;mul;sub;opp;req|])
-        when f = Lazy.force coq_ring_theory ->
+        when eq_constr f (Lazy.force coq_ring_theory) ->
         (Some false,r,zero,one,add,mul,Some sub,Some opp,req)
     | _ -> error "bad ring structure"
 
@@ -592,10 +591,10 @@ let dest_morph env sigma m_spec =
   match kind_of_term m_typ with
       App(f,[|r;zero;one;add;mul;sub;opp;req;
               c;czero;cone;cadd;cmul;csub;copp;ceqb;phi|])
-        when f = Lazy.force coq_ring_morph ->
+        when eq_constr f (Lazy.force coq_ring_morph) ->
           (c,czero,cone,cadd,cmul,Some csub,Some copp,ceqb,phi)
     | App(f,[|r;zero;one;add;mul;req;c;czero;cone;cadd;cmul;ceqb;phi|])
-        when f = Lazy.force coq_semi_morph ->
+        when eq_constr f (Lazy.force coq_semi_morph) ->
         (c,czero,cone,cadd,cmul,None,None,ceqb,phi)
     | _ -> error "bad morphism structure"
 
@@ -626,23 +625,23 @@ let interp_cst_tac env sigma rk kind (zero,one,add,mul,opp) cst_tac =
         (match rk, opp, kind with
             Abstract, None, _ ->
               let t = ArgArg(dummy_loc,Lazy.force ltac_inv_morphN) in
-              TacArg(TacCall(dummy_loc,t,List.map carg [zero;one;add;mul]))
+              TacArg(dummy_loc,TacCall(dummy_loc,t,List.map carg [zero;one;add;mul]))
           | Abstract, Some opp, Some _ ->
               let t = ArgArg(dummy_loc, Lazy.force ltac_inv_morphZ) in
-              TacArg(TacCall(dummy_loc,t,List.map carg [zero;one;add;mul;opp]))
+              TacArg(dummy_loc,TacCall(dummy_loc,t,List.map carg [zero;one;add;mul;opp]))
           | Abstract, Some opp, None ->
               let t = ArgArg(dummy_loc, Lazy.force ltac_inv_morphNword) in
               TacArg
-                (TacCall(dummy_loc,t,List.map carg [zero;one;add;mul;opp]))
+                (dummy_loc,TacCall(dummy_loc,t,List.map carg [zero;one;add;mul;opp]))
           | Computational _,_,_ ->
               let t = ArgArg(dummy_loc, Lazy.force ltac_inv_morph_gen) in
               TacArg
-                (TacCall(dummy_loc,t,List.map carg [zero;one;zero;one]))
+                (dummy_loc,TacCall(dummy_loc,t,List.map carg [zero;one;zero;one]))
           | Morphism mth,_,_ ->
               let (_,czero,cone,_,_,_,_,_,_) = dest_morph env sigma mth in
               let t = ArgArg(dummy_loc, Lazy.force ltac_inv_morph_gen) in
               TacArg
-                (TacCall(dummy_loc,t,List.map carg [zero;one;czero;cone])))
+                (dummy_loc,TacCall(dummy_loc,t,List.map carg [zero;one;czero;cone])))
 
 let make_hyp env c =
   let t = Retyping.get_type_of env Evd.empty c in
@@ -659,7 +658,7 @@ let interp_power env pow =
   match pow with
   | None ->
       let t = ArgArg(dummy_loc, Lazy.force ltac_inv_morph_nothing) in
-      (TacArg(TacCall(dummy_loc,t,[])), lapp coq_None [|carrier|])
+      (TacArg(dummy_loc,TacCall(dummy_loc,t,[])), lapp coq_None [|carrier|])
   | Some (tac, spec) ->
       let tac =
         match tac with
@@ -832,7 +831,7 @@ let ring_lookup (f:glob_tactic_expr) lH rl t gl =
 
 TACTIC EXTEND ring_lookup
 | [ "ring_lookup" tactic0(f) "[" constr_list(lH) "]" ne_constr_list(lrt) ] ->
-    [ let (t,lr) = list_sep_last lrt in ring_lookup (fst f) lH lr t]
+    [ let (t,lr) = list_sep_last lrt in ring_lookup f lH lr t]
 END
 
 
@@ -893,18 +892,18 @@ let dest_field env sigma th_spec =
   let th_typ = Retyping.get_type_of env sigma th_spec in
   match kind_of_term th_typ with
     | App(f,[|r;zero;one;add;mul;sub;opp;div;inv;req|])
-        when f = Lazy.force afield_theory ->
+        when eq_constr f (Lazy.force afield_theory) ->
         let rth = lapp af_ar
           [|r;zero;one;add;mul;sub;opp;div;inv;req;th_spec|] in
         (None,r,zero,one,add,mul,Some sub,Some opp,div,inv,req,rth)
     | App(f,[|r;zero;one;add;mul;sub;opp;div;inv;req|])
-        when f = Lazy.force field_theory ->
+        when eq_constr f (Lazy.force field_theory) ->
         let rth =
           lapp f_r
             [|r;zero;one;add;mul;sub;opp;div;inv;req;th_spec|] in
         (Some false,r,zero,one,add,mul,Some sub,Some opp,div,inv,req,rth)
     | App(f,[|r;zero;one;add;mul;div;inv;req|])
-        when f = Lazy.force sfield_theory ->
+        when eq_constr f (Lazy.force sfield_theory) ->
         let rth = lapp sf_sr
           [|r;zero;one;add;mul;div;inv;req;th_spec|] in
         (Some true,r,zero,one,add,mul,None,None,div,inv,req,rth)
@@ -1016,7 +1015,7 @@ let subst_th (subst,th) =
       field_pre_tac = pretac';
       field_post_tac = posttac' }
 
-let (ftheory_to_obj, obj_to_ftheory) =
+let ftheory_to_obj : field_info -> obj =
   let cache_th (name,th) = add_field_entry name th in
   declare_object
     {(default_object "tactic-new-field-theory") with
@@ -1160,5 +1159,5 @@ let field_lookup (f:glob_tactic_expr) lH rl t gl =
 
 TACTIC EXTEND field_lookup
 | [ "field_lookup" tactic(f) "[" constr_list(lH) "]" ne_constr_list(lt) ] ->
-      [ let (t,l) = list_sep_last lt in field_lookup (fst f) lH l t ]
+      [ let (t,l) = list_sep_last lt in field_lookup f lH l t ]
 END

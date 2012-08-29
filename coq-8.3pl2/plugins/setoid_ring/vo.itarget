@@ -13,3 +13,13 @@ Ring_tac.vo
 Ring_theory.vo
 Ring.vo
 ZArithRing.vo
+Algebra_syntax.vo
+Cring.vo
+Ncring.vo
+Ncring_polynom.vo
+Ncring_initial.vo
+Ncring_tac.vo
+Rings_Z.vo
+Rings_R.vo
+Rings_Q.vo
+Integral_domain.vo

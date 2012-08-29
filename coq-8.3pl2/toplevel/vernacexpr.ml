@@ -1,13 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: vernacexpr.ml 13668 2010-12-02 17:43:59Z herbelin $ i*)
-
+open Compat
 open Util
 open Names
 open Tacexpr
@@ -16,6 +15,7 @@ open Genarg
 open Topconstr
 open Decl_kinds
 open Ppextend
+open Declaremods
 
 (* Toplevel control exceptions *)
 exception Drop
@@ -30,6 +30,13 @@ type lstring = string located
 type lreference = reference
 
 type class_rawexpr = FunClass | SortClass | RefClass of reference or_by_notation
+
+type goal_identifier = string
+
+type goal_reference =
+  | OpenSubgoals
+  | NthGoal of int
+  | GoalId of goal_identifier
 
 type printable =
   | PrintTables
@@ -52,7 +59,7 @@ type printable =
   | PrintCoercions
   | PrintCoercionPaths of class_rawexpr * class_rawexpr
   | PrintCanonicalConversions
-  | PrintUniverses of string option
+  | PrintUniverses of bool * string option
   | PrintHint of reference or_by_notation
   | PrintHintGoal
   | PrintHintDbName of string
@@ -82,14 +89,8 @@ type locatable =
   | LocateTactic of reference
   | LocateFile of string
 
-type goable =
-  | GoTo of int
-  | GoTop
-  | GoNext
-  | GoPrev
-
 type showable =
-  | ShowGoal of int option
+  | ShowGoal of goal_reference
   | ShowGoalImplicitly of int option
   | ShowProof
   | ShowNode
@@ -100,8 +101,6 @@ type showable =
   | ShowIntros of bool
   | ShowMatch of lident
   | ShowThesis
-  | ExplainProof of int list
-  | ExplainTree of int list
 
 type comment =
   | CommentConstr of constr_expr
@@ -115,8 +114,6 @@ type hints_expr =
   | HintsTransparency of reference list * bool
   | HintsConstructors of reference list
   | HintsExtern of int * constr_expr option * raw_tactic_expr
-  | HintsDestruct of identifier *
-      int * (bool,unit) location * constr_expr * raw_tactic_expr
 
 type search_restriction =
   | SearchInside of reference list
@@ -126,24 +123,28 @@ type rec_flag       = bool (* true = Rec;           false = NoRec          *)
 type verbose_flag   = bool (* true = Verbose;       false = Silent         *)
 type opacity_flag   = bool (* true = Opaque;        false = Transparent    *)
 type locality_flag  = bool (* true = Local;         false = Global         *)
-type coercion_flag  = bool (* true = AddCoercion;   false = NoCoercion     *)
+type coercion_flag  = bool (* true = AddCoercion    false = NoCoercion     *)
+type instance_flag  = bool option (* Some true = Backward instance; Some false = Forward instance, None = NoInstance *)
 type export_flag    = bool (* true = Export;        false = Import         *)
 type specif_flag    = bool (* true = Specification; false = Implementation *)
 type inductive_flag = Decl_kinds.recursivity_kind
-type onlyparsing_flag = bool (* true = Parse only;  false = Print also     *)
 type infer_flag     = bool (* true = try to Infer record; false = nothing  *)
 type full_locality_flag = bool option (* true = Local; false = Global      *)
+type onlyparsing_flag = Flags.compat_version option
+ (* Some v = Parse only;  None = Print also.
+    If v<>Current, it contains the name of the coq version
+    which this notation is trying to be compatible with *)
 
-type option_value =
-  | StringValue of string
-  | IntValue of int
+type option_value = Goptionstyp.option_value =
   | BoolValue of bool
+  | IntValue of int option
+  | StringValue of string
 
 type option_ref_value =
   | StringRefValue of string
   | QualidRefValue of reference
 
-type sort_expr = Rawterm.rawsort
+type sort_expr = Glob_term.glob_sort
 
 type definition_expr =
   | ProveBody of local_binder list * constr_expr
@@ -165,11 +166,13 @@ type decl_notation = lstring * constr_expr * scope_name option
 type simple_binder = lident list  * constr_expr
 type class_binder = lident * constr_expr list
 type 'a with_coercion = coercion_flag * 'a
+type 'a with_instance = instance_flag * 'a
 type 'a with_notation = 'a * decl_notation list
+type 'a with_priority = 'a * int option
 type constructor_expr = (lident * constr_expr) with_coercion
 type constructor_list_or_record_decl_expr =
   | Constructors of constructor_expr list
-  | RecordDecl of lident option * local_decl_expr with_coercion with_notation list
+  | RecordDecl of lident option * local_decl_expr with_instance with_priority with_notation list
 type inductive_expr =
   lident with_coercion * local_binder list * constr_expr option * inductive_kind *
     constructor_list_or_record_decl_expr
@@ -177,6 +180,7 @@ type inductive_expr =
 type one_inductive_expr =
   lident * local_binder list * constr_expr option * constructor_expr list
 
+type module_ast_inl = module_ast annotated
 type module_binder = bool option * lident list * module_ast_inl
 
 type grammar_tactic_prod_item_expr =
@@ -186,9 +190,9 @@ type grammar_tactic_prod_item_expr =
 type syntax_modifier =
   | SetItemLevel of string list * production_level
   | SetLevel of int
-  | SetAssoc of Gramext.g_assoc
+  | SetAssoc of gram_assoc
   | SetEntryType of string * simple_constr_prod_entry_key
-  | SetOnlyParsing
+  | SetOnlyParsing of Flags.compat_version
   | SetFormat of string located
 
 type proof_end =
@@ -199,6 +203,13 @@ type scheme =
   | InductionScheme of bool * reference or_by_notation * sort_expr
   | CaseScheme of bool * reference or_by_notation * sort_expr
   | EqualityScheme of reference or_by_notation
+
+type inline = int option (* inlining level, none for no inlining *)
+
+type bullet =
+    | Dash
+    | Star
+    | Plus
 
 type vernac_expr =
   (* Control *)
@@ -214,8 +225,6 @@ type vernac_expr =
   | VernacOpenCloseScope of (locality_flag * bool * scope_name)
   | VernacDelimiters of scope_name * string
   | VernacBindScope of scope_name * class_rawexpr list
-  | VernacArgumentsScope of locality_flag * reference or_by_notation *
-      scope_name option list
   | VernacInfix of locality_flag * (lstring * syntax_modifier list) *
       constr_expr * scope_name option
   | VernacNotation of
@@ -230,10 +239,10 @@ type vernac_expr =
         bool * declaration_hook
   | VernacEndProof of proof_end
   | VernacExactProof of constr_expr
-  | VernacAssumption of assumption_kind * bool * simple_binder with_coercion list
+  | VernacAssumption of assumption_kind * inline * simple_binder with_coercion list
   | VernacInductive of inductive_flag * infer_flag * (inductive_expr * decl_notation list) list
-  | VernacFixpoint of (fixpoint_expr * decl_notation list) list * bool
-  | VernacCoFixpoint of (cofixpoint_expr * decl_notation list) list * bool
+  | VernacFixpoint of (fixpoint_expr * decl_notation list) list
+  | VernacCoFixpoint of (cofixpoint_expr * decl_notation list) list
   | VernacScheme of (lident option * scheme) list
   | VernacCombinedScheme of lident * lident list
 
@@ -255,13 +264,13 @@ type vernac_expr =
       bool * (* global *)
       local_binder list * (* super *)
 	typeclass_constraint * (* instance name, class name, params *)
-	constr_expr * (* props *)
+	constr_expr option * (* props *)
 	int option (* Priority *)
 
   | VernacContext of local_binder list
 
-  | VernacDeclareInstance of
-      bool (* global *) * reference (* instance name *)
+  | VernacDeclareInstances of
+      bool (* global *) * reference list (* instance names *)
 
   | VernacDeclareClass of reference (* inductive or definition name *)
 
@@ -279,13 +288,6 @@ type vernac_expr =
   | VernacSolve of int * raw_tactic_expr * bool
   | VernacSolveExistential of int * constr_expr
 
-  (* Proof Mode *)
-
-  | VernacDeclProof
-  | VernacReturn
-  | VernacProofInstr of Decl_expr.raw_proof_instr
-
-
   (* Auxiliary file and library management *)
   | VernacRequireFrom of export_flag option * specif_flag option * string
   | VernacAddLoadPath of rec_flag * string * dir_path option
@@ -299,7 +301,6 @@ type vernac_expr =
   | VernacRestoreState of string
 
   (* Resetting *)
-  | VernacRemoveName of lident
   | VernacResetName of lident
   | VernacResetInitial
   | VernacBack of int
@@ -309,11 +310,18 @@ type vernac_expr =
   | VernacDeclareTacticDefinition of
       (locality_flag * rec_flag * (reference * bool * raw_tactic_expr) list)
   | VernacCreateHintDb of locality_flag * string * bool
+  | VernacRemoveHints of locality_flag * string list * reference list
   | VernacHints of locality_flag * string list * hints_expr
   | VernacSyntacticDefinition of identifier located * (identifier list * constr_expr) *
       locality_flag * onlyparsing_flag
   | VernacDeclareImplicits of locality_flag * reference or_by_notation *
       (explicitation * bool * bool) list list
+  | VernacArguments of locality_flag * reference or_by_notation * 
+      ((name * bool * (loc * string) option * bool * bool) list) list *
+      int * [ `SimplDontExposeCase | `SimplNeverUnfold | `Rename | `ExtraScopes
+            | `ClearImplicits | `ClearScopes | `DefaultImplicits ] list
+  | VernacArgumentsScope of locality_flag * reference or_by_notation *
+      scope_name option list
   | VernacReserve of simple_binder list
   | VernacGeneralizable of locality_flag * (lident list) option
   | VernacSetOpacity of
@@ -338,17 +346,19 @@ type vernac_expr =
   | VernacAbort of lident option
   | VernacAbortAll
   | VernacRestart
-  | VernacSuspend
-  | VernacResume of lident option
   | VernacUndo of int
   | VernacUndoTo of int
   | VernacBacktrack of int*int*int
   | VernacFocus of int option
   | VernacUnfocus
-  | VernacGo of goable
+  | VernacUnfocused
+  | VernacBullet of bullet
+  | VernacSubproof of int option
+  | VernacEndSubproof
   | VernacShow of showable
   | VernacCheckGuard
-  | VernacProof of raw_tactic_expr
+  | VernacProof of raw_tactic_expr option * lident list option
+  | VernacProofMode of string
   (* Toplevel control *)
   | VernacToplevelControl of exn
 
@@ -356,6 +366,33 @@ type vernac_expr =
   | VernacExtend of string * raw_generic_argument list
 
 and located_vernac_expr = loc * vernac_expr
+
+
+(** Categories of [vernac_expr] *)
+
+let rec strip_vernac = function
+  | VernacTime c | VernacTimeout(_,c) | VernacFail c -> strip_vernac c
+  | c -> c (* TODO: what about VernacList ? *)
+
+let rec is_navigation_vernac = function
+  | VernacResetInitial
+  | VernacResetName _
+  | VernacBacktrack _
+  | VernacBackTo _
+  | VernacBack _ -> true
+  | VernacTime c -> is_navigation_vernac c (* Time Back* is harmless *)
+  | c -> is_deep_navigation_vernac c
+
+and is_deep_navigation_vernac = function
+  | VernacTimeout (_,c) | VernacFail c -> is_navigation_vernac c
+  | VernacList l -> List.exists (fun (_,c) -> is_navigation_vernac c) l
+  | _ -> false
+
+(* NB: Reset is now allowed again as asked by A. Chlipala *)
+
+let is_reset = function
+  | VernacResetInitial | VernacResetName _ -> true
+  | _ -> false
 
 (* Locating errors raised just after the dot is parsed but before the
    interpretation phase *)
@@ -368,9 +405,6 @@ let syntax_checking_error loc s = user_err_loc (loc,"",Pp.str s)
 let locality_flag = ref None
 
 let local_of_bool = function true -> Local | false -> Global
-
-let is_true = function Some (_,b) -> b | _ -> false
-let is_false = function Some (_,b) -> not b | _ -> false
 
 let check_locality () =
   match !locality_flag with
@@ -395,7 +429,7 @@ let enforce_locality_full local =
 	error "Use only prefix \"Local\"."
     | None ->
 	if local then begin
-	  Flags.if_verbose
+	  Flags.if_warn
 	   Pp.msg_warning (Pp.str"Obsolete syntax: use \"Local\" as a prefix.");
 	  Some true
 	end else

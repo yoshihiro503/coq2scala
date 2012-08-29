@@ -11,9 +11,12 @@
 ### General rules
 ######################################################################
 
-.PHONY: doc doc-html doc-pdf doc-ps refman tutorial stdlib faq rectutorial
+.PHONY: doc doc-html doc-pdf doc-ps refman refman-quick tutorial
+.PHONY: stdlib full-stdlib faq rectutorial refman-html-dir
 
-doc: refman faq tutorial rectutorial stdlib ide/index_urls.txt
+INDEXURLS:=doc/refman/html/index_urls.txt
+
+doc: refman faq tutorial rectutorial stdlib $(INDEXURLS)
 
 doc-html:\
   doc/tutorial/Tutorial.v.html doc/refman/html/index.html \
@@ -36,6 +39,9 @@ tutorial: \
 stdlib: \
   doc/stdlib/html/index.html doc/stdlib/Library.ps doc/stdlib/Library.pdf
 
+full-stdlib: \
+  doc/stdlib/html/index.html doc/stdlib/FullLibrary.ps doc/stdlib/FullLibrary.pdf
+
 faq: doc/faq/html/index.html doc/faq/FAQ.v.ps doc/faq/FAQ.v.pdf
 
 rectutorial: doc/RecTutorial/RecTutorial.html \
@@ -55,9 +61,6 @@ endif
 
 %.ps: %.dvi
 	(cd `dirname $<`; dvips -q -o `basename $@` `basename $<`)
-
-%.eps: %.png
-	pngtopnm $< | pnmtops -equalpixels -noturn -rle > $@
 
 ######################################################################
 # Macros for filtering outputs
@@ -104,7 +107,7 @@ doc/refman/Reference-Manual.dvi: $(REFMANFILES) doc/refman/Reference-Manual.tex
 	$(LATEX) -interaction=batchmode Reference-Manual > /dev/null;\
 	../tools/show_latex_messages -no-overfull Reference-Manual.log)
 
-doc/refman/Reference-Manual.pdf: $(REFMANFILES) doc/refman/Reference-Manual.tex
+doc/refman/Reference-Manual.pdf: doc/refman/Reference-Manual.dvi
 	(cd doc/refman;\
 	$(PDFLATEX) -interaction=batchmode Reference-Manual.tex;\
 	../tools/show_latex_messages -no-overfull Reference-Manual.log)
@@ -120,8 +123,13 @@ doc/refman/cover.html: doc/common/styles/html/$(HTMLSTYLE)/cover.html
 doc/refman/styles.hva: doc/common/styles/html/$(HTMLSTYLE)/styles.hva
 	$(INSTALLLIB) $< doc/refman
 
-doc/refman/html/index.html: doc/refman/Reference-Manual.html $(REFMANPNGFILES) \
-                        doc/refman/cover.html doc/refman/styles.hva doc/refman/index.html
+INDEXES:= doc/refman/html/command-index.html doc/refman/html/tactic-index.html
+ALLINDEXES:= doc/refman/html/index.html $(INDEXES)
+
+$(ALLINDEXES): refman-html-dir
+
+refman-html-dir: doc/refman/Reference-Manual.html $(REFMANPNGFILES) \
+	       doc/refman/cover.html doc/refman/styles.hva doc/refman/index.html
 	- rm -rf doc/refman/html
 	$(MKDIR) doc/refman/html
 	$(INSTALLLIB) $(REFMANPNGFILES) doc/refman/html
@@ -134,6 +142,14 @@ refman-quick:
 	$(PDFLATEX) -interaction=batchmode Reference-Manual.tex;\
 	../tools/show_latex_messages -no-overfull Reference-Manual.log && \
 	$(HEVEA) $(HEVEAOPTS) ./Reference-Manual.tex)
+
+######################################################################
+# Index file for CoqIDE
+######################################################################
+
+$(INDEXURLS): $(INDEXES)
+	cat $< | grep li-indexenv | grep HREF | sed -e 's@.*<TT>\(.*\)</TT>.*, <A HREF="\(.*\)">.*@\1,\2@' > $@
+
 
 ######################################################################
 # Tutorial
@@ -188,16 +204,16 @@ doc/faq/html/index.html: doc/faq/FAQ.v.html
 ifdef QUICK
 doc/stdlib/html/genindex.html:
 else
-doc/stdlib/html/genindex.html: | $(COQDOC) $(THEORIESVO) $(PLUGINSVO)
+doc/stdlib/html/genindex.html: | $(COQDOC) $(THEORIESVO)
 endif
 	- rm -rf doc/stdlib/html
 	$(MKDIR) doc/stdlib/html
 	$(COQDOC) -q -d doc/stdlib/html --with-header doc/common/styles/html/$(HTMLSTYLE)/header.html --with-footer doc/common/styles/html/$(HTMLSTYLE)/footer.html --multi-index --html -g \
-	  -R theories Coq -R plugins Coq $(THEORIESVO:.vo=.v)  $(PLUGINSVO:.vo=.v)
+	  -R theories Coq $(THEORIESVO:.vo=.v)
 	mv doc/stdlib/html/index.html doc/stdlib/html/genindex.html
 
 doc/stdlib/index-list.html: doc/stdlib/index-list.html.template doc/stdlib/make-library-index
-	./doc/stdlib/make-library-index doc/stdlib/index-list.html
+	./doc/stdlib/make-library-index doc/stdlib/index-list.html doc/stdlib/hidden-files
 
 doc/stdlib/html/index.html: doc/stdlib/html/genindex.html doc/stdlib/index-list.html
 	cat doc/common/styles/html/$(HTMLSTYLE)/header.html doc/stdlib/index-list.html > $@
@@ -224,6 +240,34 @@ doc/stdlib/Library.pdf: $(DOCCOMMON) doc/stdlib/Library.coqdoc.tex doc/stdlib/Li
 	$(PDFLATEX) -interaction=batchmode Library;\
 	../tools/show_latex_messages -no-overfull Library.log)
 
+### Standard library (full version if you're crazy enouth to try)
+
+doc/stdlib/FullLibrary.tex: doc/stdlib/Library.tex
+	sed -e 's/Library.coqdoc/FullLibrary.coqdoc/g;s/\\begin{document}/\\newcommand{\\textlambda}{\\ensuremath{\\lambda}}\\newcommand{\\textPi}{\\ensuremath{\\Pi}}\\begin{document}/' $< > $@
+
+ifdef QUICK
+doc/stdlib/FullLibrary.coqdoc.tex:
+	$(COQDOC) -q -boot --gallina --body-only --latex --stdout --utf8 \
+            -R theories Coq $(THEORIESVO:.vo=.v) > $@
+	sed -i.tmp -e 's///g' $@ && rm $@.tmp
+else
+doc/stdlib/FullLibrary.coqdoc.tex: $(COQDOC) $(THEORIESVO)
+	$(COQDOC) -q -boot --gallina --body-only --latex --stdout --utf8 \
+            -R theories Coq $(THEORIESVO:.vo=.v) > $@
+	sed -i.tmp -e 's///g' $@ && rm $@.tmp
+endif
+
+doc/stdlib/FullLibrary.dvi: $(DOCCOMMON) doc/stdlib/FullLibrary.coqdoc.tex doc/stdlib/FullLibrary.tex
+	(cd doc/stdlib;\
+	$(LATEX) -interaction=batchmode FullLibrary;\
+	$(LATEX) -interaction=batchmode FullLibrary > /dev/null;\
+	../tools/show_latex_messages -no-overfull FullLibrary.log)
+
+doc/stdlib/FullLibrary.pdf: $(DOCCOMMON) doc/stdlib/FullLibrary.coqdoc.tex doc/stdlib/FullLibrary.dvi
+	(cd doc/stdlib;\
+	$(PDFLATEX) -interaction=batchmode FullLibrary;\
+	../tools/show_latex_messages -no-overfull FullLibrary.log)
+
 ######################################################################
 # Tutorial on inductive types
 ######################################################################
@@ -245,22 +289,12 @@ doc/RecTutorial/RecTutorial.html: doc/RecTutorial/RecTutorial.tex
 	(cd doc/RecTutorial; $(HEVEA) $(HEVEAOPTS) RecTutorial)
 
 ######################################################################
-# Index file for CoqIDE
-######################################################################
-
-# Not robust, improve...
-ide/index_urls.txt: doc/refman/html/index.html
-	@ rm -f doc/refman/html/index_urls.txt
-	cat doc/refman/html/command-index.html doc/refman/html/tactic-index.html | grep li-indexenv | grep HREF | sed -e 's@.*<TT>\(.*\)</TT>.*, <A HREF="\(.*\)">.*@\1,\2@' > doc/refman/html/index_urls.txt
-
-
-######################################################################
 # Install all documentation files
 ######################################################################
 
-.PHONY: install-doc install-doc-meta install-doc-html install-doc-printable install-doc-index-url
+.PHONY: install-doc install-doc-meta install-doc-html install-doc-printable install-doc-index-urls
 
-install-doc: install-doc-meta install-doc-html install-doc-printable install-doc-index-url
+install-doc: install-doc-meta install-doc-html install-doc-printable install-doc-index-urls
 
 install-doc-meta:
 	$(MKDIR) $(FULLDOCDIR)
@@ -287,9 +321,9 @@ install-doc-printable:
 	$(INSTALLLIB) doc/RecTutorial/RecTutorial.ps $(FULLDOCDIR)/ps/RecTutorial.ps
 	$(INSTALLLIB) doc/faq/FAQ.v.ps $(FULLDOCDIR)/ps/FAQ.ps
 
-install-doc-index-url:
+install-doc-index-urls:
 	$(MKDIR) $(FULLDOCDIR)/ps $(FULLDOCDIR)/pdf
-	$(INSTALLLIB) doc/refman/html/index_urls.txt \
+	$(INSTALLLIB) $(INDEXURLS) \
 		$(FULLDOCDIR)/html/refman 
 
 # For emacs:

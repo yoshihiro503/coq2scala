@@ -8,7 +8,7 @@ open Vernacexpr
 type obligation_info =
   (identifier * Term.types * hole_kind located *
       obligation_definition_status * Intset.t * tactic option) array
-    (* ident, type, source, (opaque or transparent, expand or define),
+    (* ident, type, location, (opaque or transparent, expand or define),
        dependencies, tactic to solve it *)
 
 type progress = (* Resolution status of a program *)

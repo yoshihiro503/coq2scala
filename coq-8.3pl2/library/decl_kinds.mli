@@ -1,23 +1,19 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: decl_kinds.mli 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 open Util
 open Libnames
 
-(* Informal mathematical status of declarations *)
+(** Informal mathematical status of declarations *)
 
 type locality =
   | Local
   | Global
-
-type boxed_flag = bool
 
 type theorem_kind =
   | Theorem
@@ -44,7 +40,7 @@ type definition_object_kind =
 
 type assumption_object_kind = Definitional | Logical | Conjectural
 
-(* [assumption_kind]
+(** [assumption_kind]
 
                 |  Local      | Global
    ------------------------------------
@@ -54,9 +50,9 @@ type assumption_object_kind = Definitional | Logical | Conjectural
 *)
 type assumption_kind = locality * assumption_object_kind
 
-type definition_kind = locality * boxed_flag * definition_object_kind
+type definition_kind = locality * definition_object_kind
 
-(* Kinds used in proofs *)
+(** Kinds used in proofs *)
 
 type goal_object_kind =
   | DefinitionBody of definition_object_kind
@@ -64,31 +60,31 @@ type goal_object_kind =
 
 type goal_kind = locality * goal_object_kind
 
-(* Kinds used in library *)
+(** Kinds used in library *)
 
 type logical_kind =
   | IsAssumption of assumption_object_kind
   | IsDefinition of definition_object_kind
   | IsProof of theorem_kind
 
-(* Utils *)
+(** Utils *)
 
 val logical_kind_of_goal_kind : goal_object_kind -> logical_kind
 val string_of_theorem_kind : theorem_kind -> string
 val string_of_definition_kind :
-  locality * boxed_flag * definition_object_kind -> string
+  locality * definition_object_kind -> string
 
-(* About locality *)
+(** About locality *)
 
 val strength_of_global : global_reference -> locality
 val string_of_strength : locality -> string
 
-(* About recursive power of type declarations *)
+(** About recursive power of type declarations *)
 
 type recursivity_kind =
-  | Finite (* = inductive *)
-  | CoFinite (* = coinductive *)
-  | BiFinite (* = non-recursive, like in "Record" definitions *)
+  | Finite (** = inductive *)
+  | CoFinite (** = coinductive *)
+  | BiFinite (** = non-recursive, like in "Record" definitions *)
 
-(* helper, converts to "finiteness flag" booleans *)
+(** helper, converts to "finiteness flag" booleans *)
 val recursivity_flag_of_kind : recursivity_kind -> bool

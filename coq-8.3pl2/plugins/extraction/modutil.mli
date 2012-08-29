@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: modutil.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 open Names
 open Declarations
@@ -38,4 +36,5 @@ val get_decl_in_structure : global_reference -> ml_structure -> ml_decl
    optimizations. The first argument is the list of objects we want to appear.
 *)
 
-val optimize_struct : global_reference list -> ml_structure -> ml_structure
+val optimize_struct : global_reference list * module_path list ->
+  ml_structure -> ml_structure

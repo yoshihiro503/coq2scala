@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: NZDomain.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Export NumPrelude NZAxioms.
 Require Import NZBase NZOrder NZAddOrder Plus Minus.
@@ -16,97 +14,36 @@ Require Import NZBase NZOrder NZAddOrder Plus Minus.
     translation from Peano numbers [nat] into NZ.
 *)
 
-(** First, a section about iterating a function. *)
+(** First, some complements about [nat_iter] *)
 
-Section Iter.
-Variable A : Type.
-Fixpoint iter (f:A->A)(n:nat) : A -> A := fun a =>
-  match n with
-    | O => a
-    | S n => f (iter f n a)
-  end.
-Infix "^" := iter.
+Local Notation "f ^ n" := (nat_iter n f).
 
-Lemma iter_alt : forall f n m, (f^(Datatypes.S n)) m = (f^n) (f m).
+Instance nat_iter_wd n {A} (R:relation A) :
+ Proper ((R==>R)==>R==>R) (nat_iter n).
 Proof.
-induction n; simpl; auto.
-intros; rewrite <- IHn; auto.
+intros f f' Hf. induction n; simpl; red; auto.
 Qed.
-
-Lemma iter_plus : forall f n n' m, (f^(n+n')) m = (f^n) ((f^n') m).
-Proof.
-induction n; simpl; auto.
-intros; rewrite IHn; auto.
-Qed.
-
-Lemma iter_plus_bis : forall f n n' m, (f^(n+n')) m = (f^n') ((f^n) m).
-Proof.
-induction n; simpl; auto.
-intros. rewrite <- iter_alt, IHn; auto.
-Qed.
-
-Global Instance iter_wd (R:relation A) : Proper ((R==>R)==>eq==>R==>R) iter.
-Proof.
-intros f f' Hf n n' Hn; subst n'. induction n; simpl; red; auto.
-Qed.
-
-End Iter.
-Implicit Arguments iter [A].
-Local Infix "^" := iter.
-
 
 Module NZDomainProp (Import NZ:NZDomainSig').
+Include NZBaseProp NZ.
 
 (** * Relationship between points thanks to [succ] and [pred]. *)
 
-(** We prove that any points in NZ have a common descendant by [succ] *)
+(** For any two points, one is an iterated successor of the other. *)
 
-Definition common_descendant n m := exists k, exists l, (S^k) n == (S^l) m.
-
-Instance common_descendant_wd : Proper (eq==>eq==>iff) common_descendant.
+Lemma itersucc_or_itersucc n m : exists k, n == (S^k) m \/ m == (S^k) n.
 Proof.
-unfold common_descendant. intros n n' Hn m m' Hm.
-setoid_rewrite Hn. setoid_rewrite Hm. auto with *.
-Qed.
-
-Instance common_descendant_equiv : Equivalence common_descendant.
-Proof.
-split; red.
-intros x. exists O; exists O. simpl; auto with *.
-intros x y (p & q & H); exists q; exists p; auto with *.
-intros x y z (p & q & Hpq) (r & s & Hrs).
-exists (r+p)%nat. exists (q+s)%nat.
-rewrite !iter_plus. rewrite Hpq, <-Hrs, <-iter_plus, <- iter_plus_bis.
-auto with *.
-Qed.
-
-Lemma common_descendant_with_0 : forall n, common_descendant n 0.
-Proof.
-apply bi_induction.
-intros n n' Hn. rewrite Hn; auto with *.
-reflexivity.
-split; intros (p & q & H).
-exists p; exists (Datatypes.S q). rewrite <- iter_alt; simpl.
- apply succ_wd; auto.
-exists (Datatypes.S p); exists q. rewrite iter_alt; auto.
-Qed.
-
-Lemma common_descendant_always : forall n m, common_descendant n m.
-Proof.
-intros. transitivity 0; [|symmetry]; apply common_descendant_with_0.
-Qed.
-
-(** Thanks to [succ] being injective, we can then deduce that for any two
-    points, one is an iterated successor of the other. *)
-
-Lemma itersucc_or_itersucc : forall n m, exists k, n == (S^k) m \/ m == (S^k) n.
-Proof.
-intros n m. destruct (common_descendant_always n m) as (k & l & H).
-revert l H. induction k.
-simpl. intros; exists l; left; auto with *.
-intros. destruct l.
-simpl in *. exists (Datatypes.S k); right; auto with *.
-simpl in *. apply pred_wd in H; rewrite !pred_succ in H. eauto.
+nzinduct n m.
+exists 0%nat. now left.
+intros n. split; intros [k [L|R]].
+exists (Datatypes.S k). left. now apply succ_wd.
+destruct k as [|k].
+simpl in R. exists 1%nat. left. now apply succ_wd.
+rewrite nat_iter_succ_r in R. exists k. now right.
+destruct k as [|k]; simpl in L.
+exists 1%nat. now right.
+apply succ_inj in L. exists k. now left.
+exists (Datatypes.S k). right. now rewrite nat_iter_succ_r.
 Qed.
 
 (** Generalized version of [pred_succ] when iterating *)
@@ -116,7 +53,7 @@ Proof.
 induction k.
 simpl; auto with *.
 simpl; intros. apply pred_wd in H. rewrite pred_succ in H. apply IHk in H; auto.
-rewrite <- iter_alt in H; auto.
+rewrite <- nat_iter_succ_r in H; auto.
 Qed.
 
 (** From a given point, all others are iterated successors
@@ -307,7 +244,7 @@ End NZOfNat.
 
 Module NZOfNatOrd (Import NZ:NZOrdSig').
 Include NZOfNat NZ.
-Include NZOrderPropFunct NZ.
+Include NZBaseProp NZ <+ NZOrderProp NZ.
 Local Open Scope ofnat.
 
 Theorem ofnat_S_gt_0 :
@@ -315,8 +252,8 @@ Theorem ofnat_S_gt_0 :
 Proof.
 unfold ofnat.
 intros n; induction n as [| n IH]; simpl in *.
-apply lt_0_1.
-apply lt_trans with 1. apply lt_0_1. now rewrite <- succ_lt_mono.
+apply lt_succ_diag_r.
+apply lt_trans with (S 0). apply lt_succ_diag_r. now rewrite <- succ_lt_mono.
 Qed.
 
 Theorem ofnat_S_neq_0 :
@@ -375,14 +312,14 @@ Lemma ofnat_add_l : forall n m, [n]+m == (S^n) m.
 Proof.
  induction n; intros.
  apply add_0_l.
- rewrite ofnat_succ, add_succ_l. simpl; apply succ_wd; auto.
+ rewrite ofnat_succ, add_succ_l. simpl. now f_equiv.
 Qed.
 
 Lemma ofnat_add : forall n m, [n+m] == [n]+[m].
 Proof.
  intros. rewrite ofnat_add_l.
  induction n; simpl. reflexivity.
- rewrite ofnat_succ. now apply succ_wd.
+ rewrite ofnat_succ. now f_equiv.
 Qed.
 
 Lemma ofnat_mul : forall n m, [n*m] == [n]*[m].
@@ -391,14 +328,14 @@ Proof.
  symmetry. apply mul_0_l.
  rewrite plus_comm.
  rewrite ofnat_succ, ofnat_add, mul_succ_l.
- now apply add_wd.
+ now f_equiv.
 Qed.
 
 Lemma ofnat_sub_r : forall n m, n-[m] == (P^m) n.
 Proof.
  induction m; simpl; intros.
  rewrite ofnat_zero. apply sub_0_r.
- rewrite ofnat_succ, sub_succ_r. now apply pred_wd.
+ rewrite ofnat_succ, sub_succ_r. now f_equiv.
 Qed.
 
 Lemma ofnat_sub : forall n m, m<=n -> [n-m] == [n]-[m].
@@ -409,7 +346,7 @@ Proof.
  intros.
  destruct n.
  inversion H.
- rewrite iter_alt.
+ rewrite nat_iter_succ_r.
  simpl.
  rewrite ofnat_succ, pred_succ; auto with arith.
 Qed.

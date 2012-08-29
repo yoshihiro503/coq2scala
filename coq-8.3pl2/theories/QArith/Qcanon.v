@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Qcanon.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Import Field.
 Require Import QArith.
@@ -20,43 +18,43 @@ Record Qc : Set := Qcmake { this :> Q ; canon : Qred this = this }.
 
 Delimit Scope Qc_scope with Qc.
 Bind Scope Qc_scope with Qc.
-Arguments Scope Qcmake [Q_scope].
+Arguments Qcmake this%Q _.
 Open Scope Qc_scope.
 
 Lemma Qred_identity :
-  forall q:Q, Zgcd (Qnum q) (QDen q) = 1%Z -> Qred q = q.
+  forall q:Q, Z.gcd (Qnum q) (QDen q) = 1%Z -> Qred q = q.
 Proof.
   unfold Qred; intros (a,b); simpl.
-  generalize (Zggcd_gcd a ('b)) (Zggcd_correct_divisors a ('b)).
+  generalize (Z.ggcd_gcd a ('b)) (Z.ggcd_correct_divisors a ('b)).
   intros.
   rewrite H1 in H; clear H1.
-  destruct (Zggcd a ('b)) as (g,(aa,bb)); simpl in *; subst.
+  destruct (Z.ggcd a ('b)) as (g,(aa,bb)); simpl in *; subst.
   destruct H0.
-  rewrite Zmult_1_l in H, H0.
+  rewrite Z.mul_1_l in H, H0.
   subst; simpl; auto.
 Qed.
 
 Lemma Qred_identity2 :
-  forall q:Q, Qred q = q -> Zgcd (Qnum q) (QDen q) = 1%Z.
+  forall q:Q, Qred q = q -> Z.gcd (Qnum q) (QDen q) = 1%Z.
 Proof.
   unfold Qred; intros (a,b); simpl.
-  generalize (Zggcd_gcd a ('b)) (Zggcd_correct_divisors a ('b)) (Zgcd_is_pos a ('b)).
+  generalize (Z.ggcd_gcd a ('b)) (Z.ggcd_correct_divisors a ('b)) (Z.gcd_nonneg a ('b)).
   intros.
   rewrite <- H; rewrite <- H in H1; clear H.
-  destruct (Zggcd a ('b)) as (g,(aa,bb)); simpl in *; subst.
+  destruct (Z.ggcd a ('b)) as (g,(aa,bb)); simpl in *; subst.
   injection H2; intros; clear H2.
   destruct H0.
   clear H0 H3.
   destruct g as [|g|g]; destruct bb as [|bb|bb]; simpl in *; try discriminate.
   f_equal.
-  apply Pmult_reg_r with bb.
+  apply Pos.mul_reg_r with bb.
   injection H2; intros.
   rewrite <- H0.
   rewrite H; simpl; auto.
   elim H1; auto.
 Qed.
 
-Lemma Qred_iff : forall q:Q, Qred q = q <-> Zgcd (Qnum q) (QDen q) = 1%Z.
+Lemma Qred_iff : forall q:Q, Qred q = q <-> Z.gcd (Qnum q) (QDen q) = 1%Z.
 Proof.
   split; intros.
   apply Qred_identity2; auto.
@@ -71,7 +69,7 @@ Proof.
 Qed.
 
 Definition Q2Qc (q:Q) : Qc := Qcmake (Qred q) (Qred_involutive q).
-Arguments Scope Q2Qc [Q_scope].
+Arguments Q2Qc q%Q.
 Notation " !! " := Q2Qc : Qc_scope.
 
 Lemma Qc_is_canon : forall q q' : Qc, q == q' -> q = q'.
@@ -468,18 +466,16 @@ Proof.
   destruct n; simpl.
   destruct 1; auto.
   intros.
-  apply Qc_is_canon.
-  simpl.
-  compute; auto.
+  now apply Qc_is_canon.
 Qed.
 
 Lemma Qcpower_pos : forall p n, 0 <= p -> 0 <= p^n.
 Proof.
   induction n; simpl; auto with qarith.
-  intros; compute; intro; discriminate.
+  easy.
   intros.
   apply Qcle_trans with (0*(p^n)).
-  compute; intro; discriminate.
+  easy.
   apply Qcmult_le_compat_r; auto.
 Qed.
 
@@ -492,7 +488,7 @@ Definition Qc_eq_bool (x y : Qc) :=
 
 Lemma Qc_eq_bool_correct : forall x y : Qc, Qc_eq_bool x y = true -> x=y.
 Proof.
-  intros x y; unfold Qc_eq_bool in |- *; case (Qc_eq_dec x y); simpl in |- *; auto.
+  intros x y; unfold Qc_eq_bool; case (Qc_eq_dec x y); simpl; auto.
   intros _ H; inversion H.
 Qed.
 

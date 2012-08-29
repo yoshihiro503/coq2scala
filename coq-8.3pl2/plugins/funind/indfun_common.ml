@@ -76,8 +76,8 @@ let chop_rlambda_n  =
       then List.rev acc,rt
       else
 	match rt with
-	  | Rawterm.RLambda(_,name,k,t,b) -> chop_lambda_n ((name,t,false)::acc) (n-1) b
-	  | Rawterm.RLetIn(_,name,v,b) -> chop_lambda_n ((name,v,true)::acc) (n-1) b
+	  | Glob_term.GLambda(_,name,k,t,b) -> chop_lambda_n ((name,t,false)::acc) (n-1) b
+	  | Glob_term.GLetIn(_,name,v,b) -> chop_lambda_n ((name,v,true)::acc) (n-1) b
 	  | _ ->
 	      raise (Util.UserError("chop_rlambda_n",
 				    str "chop_rlambda_n: Not enough Lambdas"))
@@ -90,7 +90,7 @@ let chop_rprod_n  =
       then List.rev acc,rt
       else
 	match rt with
-	  | Rawterm.RProd(_,name,k,t,b) -> chop_prod_n ((name,t)::acc) (n-1) b
+	  | Glob_term.GProd(_,name,k,t,b) -> chop_prod_n ((name,t)::acc) (n-1) b
 	  | _ -> raise (Util.UserError("chop_rprod_n",str "chop_rprod_n: Not enough products"))
   in
   chop_prod_n []
@@ -120,9 +120,9 @@ let const_of_id id =
 let def_of_const t =
    match (Term.kind_of_term t) with
     Term.Const sp ->
-      (try (match (Global.lookup_constant sp) with
-             {Declarations.const_body=Some c} -> Declarations.force c
-	     |_ -> assert false)
+      (try (match Declarations.body_of_constant (Global.lookup_constant sp) with
+             | Some c -> Declarations.force c
+	     | _ -> assert false)
        with _ -> assert false)
     |_ -> assert false
 
@@ -158,6 +158,7 @@ let definition_message id =
 
 let save with_clean id const (locality,kind) hook =
   let {const_entry_body = pft;
+       const_entry_secctx = _;
        const_entry_type = tpo;
        const_entry_opaque = opacity } = const in
   let l,r = match locality with
@@ -180,48 +181,9 @@ let save with_clean id const (locality,kind) hook =
 
 
 
-
-let extract_pftreestate pts =
-  let pfterm,subgoals = Refiner.extract_open_pftreestate pts in
-  let tpfsigma = Refiner.evc_of_pftreestate pts in
-  let exl = Evarutil.non_instantiated tpfsigma  in
-  if subgoals <> [] or exl <> [] then
-    Util.errorlabstrm "extract_proof"
-      (if subgoals <> [] then
-        str "Attempt to save an incomplete proof"
-      else
-        str "Attempt to save a proof with existential variables still non-instantiated");
-  let env = Global.env_of_context (Refiner.proof_of_pftreestate pts).Proof_type.goal.Evd.evar_hyps in
-  env,tpfsigma,pfterm
-
-
-let nf_betaiotazeta =
-  let clos_norm_flags flgs env sigma t =
-    Closure.norm_val (Closure.create_clos_infos flgs env) (Closure.inject (Reductionops.nf_evar sigma t)) in
-  clos_norm_flags Closure.betaiotazeta
-
-let nf_betaiota =
-  let clos_norm_flags flgs env sigma t =
-    Closure.norm_val (Closure.create_clos_infos flgs env) (Closure.inject (Reductionops.nf_evar sigma t)) in
-  clos_norm_flags Closure.betaiota
-
-let cook_proof do_reduce =
-  let pfs = Pfedit.get_pftreestate ()
-(*   and ident = Pfedit.get_current_proof_name ()  *)
-  and (ident,strength,concl,hook) = Pfedit.current_proof_statement ()  in
-  let env,sigma,pfterm = extract_pftreestate pfs in
-  let pfterm =
-    if do_reduce
-    then nf_betaiota env sigma pfterm
-    else pfterm
-  in
-  (ident,
-   ({ const_entry_body = pfterm;
-      const_entry_type = Some concl;
-      const_entry_opaque = false;
-      const_entry_boxed = false},
-    strength, hook))
-
+let cook_proof _ =
+  let (id,(entry,_,strength,hook)) = Pfedit.cook_proof (fun _ -> ()) in
+  (id,(entry,strength,hook))
 
 let new_save_named opacity =
   let id,(const,persistence,hook) = cook_proof true  in
@@ -401,7 +363,7 @@ let pr_table tb =
   let l = Cmap.fold (fun k v acc -> v::acc) tb [] in
   Util.prlist_with_sep fnl pr_info l
 
-let in_Function,out_Function =
+let in_Function : function_info -> Libobject.obj =
   Libobject.declare_object
     {(Libobject.default_object "FUNCTIONS_DB") with
        Libobject.cache_function = cache_Function;
@@ -490,6 +452,7 @@ open Goptions
 let functional_induction_rewrite_dependent_proofs_sig = 
   {
     optsync = false;
+    optdepr = false;
     optname = "Functional Induction Rewrite Dependent";
     optkey =  ["Functional";"Induction";"Rewrite";"Dependent"];
     optread = (fun () -> !functional_induction_rewrite_dependent_proofs);
@@ -502,6 +465,7 @@ let do_rewrite_dependent () = !functional_induction_rewrite_dependent_proofs = t
 let function_debug_sig =
   {
     optsync = false;
+    optdepr = false;
     optname = "Function debug";
     optkey =  ["Function_debug"];
     optread = (fun () -> !function_debug);
@@ -521,6 +485,7 @@ let is_strict_tcc () = !strict_tcc
 let strict_tcc_sig =
   {
     optsync = false;
+    optdepr = false;
     optname = "Raw Function Tcc";
     optkey =  ["Function_raw_tcc"];
     optread = (fun () -> !strict_tcc);

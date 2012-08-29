@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,11 +8,14 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: NZBase.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Import NZAxioms.
 
-Module Type NZBasePropSig (Import NZ : NZDomainSig').
+Module Type NZBaseProp (Import NZ : NZDomainSig').
+
+(** An artificial scope meant to be substituted later *)
+
+Delimit Scope abstract_scope with abstract.
+Bind Scope abstract_scope with t.
 
 Include BackportEq NZ NZ. (** eq_refl, eq_sym, eq_trans *)
 
@@ -50,7 +53,7 @@ Theorem succ_inj_wd : forall n1 n2, S n1 == S n2 <-> n1 == n2.
 Proof.
 intros; split.
 apply succ_inj.
-apply succ_wd.
+intros. now f_equiv.
 Qed.
 
 Theorem succ_inj_wd_neg : forall n m, S n ~= S m <-> n ~= m.
@@ -63,7 +66,7 @@ left-inverse to the successor at this point *)
 
 Section CentralInduction.
 
-Variable A : predicate t.
+Variable A : t -> Prop.
 Hypothesis A_wd : Proper (eq==>iff) A.
 
 Theorem central_induction :
@@ -72,7 +75,7 @@ Theorem central_induction :
       forall n, A n.
 Proof.
 intros z Base Step; revert Base; pattern z; apply bi_induction.
-solve_predicate_wd.
+solve_proper.
 intro; now apply bi_induction.
 intro; pose proof (Step n); tauto.
 Qed.
@@ -85,5 +88,5 @@ Tactic Notation "nzinduct" ident(n) :=
 Tactic Notation "nzinduct" ident(n) constr(u) :=
   induction_maker n ltac:(apply central_induction with (z := u)).
 
-End NZBasePropSig.
+End NZBaseProp.
 

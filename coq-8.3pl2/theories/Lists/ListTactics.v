@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: ListTactics.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Import BinPos.
 Require Import List.
@@ -62,7 +60,7 @@ Ltac Find_at a l :=
    match l with
    | nil     => fail 100 "anomaly: Find_at"
    | a :: _  => eval compute in n
-   | _ :: ?l => find (Psucc n) l
+   | _ :: ?l => find (Pos.succ n) l
    end
  in find 1%positive l.
 

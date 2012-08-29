@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,12 +8,10 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: NZAddOrder.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Import NZAxioms NZBase NZMul NZOrder.
 
-Module Type NZAddOrderPropSig (Import NZ : NZOrdAxiomsSig').
-Include NZBasePropSig NZ <+ NZMulPropSig NZ <+ NZOrderPropSig NZ.
+Module Type NZAddOrderProp (Import NZ : NZOrdAxiomsSig').
+Include NZBaseProp NZ <+ NZMulProp NZ <+ NZOrderProp NZ.
 
 Theorem add_lt_mono_l : forall n m p, n < m <-> p + n < p + m.
 Proof.
@@ -30,7 +28,7 @@ Theorem add_lt_mono : forall n m p q, n < m -> p < q -> n + p < m + q.
 Proof.
 intros n m p q H1 H2.
 apply lt_trans with (m + p);
-[now apply -> add_lt_mono_r | now apply -> add_lt_mono_l].
+[now apply add_lt_mono_r | now apply add_lt_mono_l].
 Qed.
 
 Theorem add_le_mono_l : forall n m p, n <= m <-> p + n <= p + m.
@@ -48,21 +46,21 @@ Theorem add_le_mono : forall n m p q, n <= m -> p <= q -> n + p <= m + q.
 Proof.
 intros n m p q H1 H2.
 apply le_trans with (m + p);
-[now apply -> add_le_mono_r | now apply -> add_le_mono_l].
+[now apply add_le_mono_r | now apply add_le_mono_l].
 Qed.
 
 Theorem add_lt_le_mono : forall n m p q, n < m -> p <= q -> n + p < m + q.
 Proof.
 intros n m p q H1 H2.
 apply lt_le_trans with (m + p);
-[now apply -> add_lt_mono_r | now apply -> add_le_mono_l].
+[now apply add_lt_mono_r | now apply add_le_mono_l].
 Qed.
 
 Theorem add_le_lt_mono : forall n m p q, n <= m -> p < q -> n + p < m + q.
 Proof.
 intros n m p q H1 H2.
 apply le_lt_trans with (m + p);
-[now apply -> add_le_mono_r | now apply -> add_lt_mono_l].
+[now apply add_le_mono_r | now apply add_lt_mono_l].
 Qed.
 
 Theorem add_pos_pos : forall n m, 0 < n -> 0 < m -> 0 < n + m.
@@ -149,5 +147,22 @@ Proof.
 intros n m H; apply add_le_cases; now nzsimpl.
 Qed.
 
-End NZAddOrderPropSig.
+(** Substraction *)
+
+(** We can prove the existence of a subtraction of any number by
+    a smaller one *)
+
+Lemma le_exists_sub : forall n m, n<=m -> exists p, m == p+n /\ 0<=p.
+Proof.
+ intros n m H. apply le_ind with (4:=H). solve_proper.
+ exists 0; nzsimpl; split; order.
+ clear m H. intros m H (p & EQ & LE). exists (S p).
+  split. nzsimpl. now f_equiv. now apply le_le_succ_r.
+Qed.
+
+(** For the moment, it doesn't seem possible to relate
+    this existing subtraction with [sub].
+*)
+
+End NZAddOrderProp.
 

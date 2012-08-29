@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: haskell.ml 14010 2011-04-15 16:05:07Z letouzey $ i*)
 
 (*s Production of Haskell syntax. *)
 
@@ -47,17 +45,19 @@ let preamble mod_name used_modules usf =
   (if used_modules = [] then mt () else fnl ()) ++
   (if not usf.magic then mt ()
    else str "\
-#ifdef __GLASGOW_HASKELL__
-import qualified GHC.Base
-unsafeCoerce = GHC.Base.unsafeCoerce#
-#else
--- HUGS
-import qualified IOExts
-unsafeCoerce = IOExts.unsafeCoerce
-#endif" ++ fnl2 ())
+\nunsafeCoerce :: a -> b\
+\n#ifdef __GLASGOW_HASKELL__\
+\nimport qualified GHC.Base\
+\nunsafeCoerce = GHC.Base.unsafeCoerce#\
+\n#else\
+\n-- HUGS\
+\nimport qualified IOExts\
+\nunsafeCoerce = IOExts.unsafeCoerce\
+\n#endif" ++ fnl2 ())
   ++
   (if not usf.mldummy then mt ()
-   else str "__ = Prelude.error \"Logical or arity value used\"" ++ fnl2 ())
+   else str "__ :: any" ++ fnl () ++
+        str "__ = Prelude.error \"Logical or arity value used\"" ++ fnl2 ())
 
 let pp_abst = function
   | [] -> (mt ())
@@ -76,17 +76,17 @@ let pp_global k r =
 
 let kn_sig =
   let specif = MPfile (dirpath_of_string "Coq.Init.Specif") in
-  make_kn specif empty_dirpath (mk_label "sig")
+  make_mind specif empty_dirpath (mk_label "sig")
 
 let rec pp_type par vl t =
   let rec pp_rec par = function
     | Tmeta _ | Tvar' _ -> assert false
     | Tvar i -> (try pr_id (List.nth vl (pred i)) with _ -> (str "a" ++ int i))
     | Tglob (r,[]) -> pp_global Type r
-    | Tglob (r,l) ->
-	if r = IndRef (mind_of_kn kn_sig,0) then
+    | Tglob (IndRef(kn,0),l)
+	when not (keep_singleton ()) && kn = mk_ind "Coq.Init.Specif" "sig" ->
 	  pp_type true vl (List.hd l)
-	else
+    | Tglob (r,l) ->
 	  pp_par par
 	    (pp_global Type r ++ spc () ++
 	     prlist_with_sep spc (pp_type true vl) l)
@@ -111,8 +111,8 @@ let expr_needs_par = function
 
 
 let rec pp_expr par env args =
-  let par' = args <> [] || par
-  and apply st = pp_apply st par args in
+  let apply st = pp_apply st par args
+  and apply2 st = pp_apply2 st par args in
   function
     | MLrel n ->
 	let id = get_db_name n env in apply (pr_id id)
@@ -123,7 +123,7 @@ let rec pp_expr par env args =
       	let fl,a' = collect_lams a in
 	let fl,env' = push_vars (List.map id_of_mlid fl) env in
 	let st = (pp_abst (List.rev fl) ++ pp_expr false env' [] a') in
-	apply (pp_par par' st)
+	apply2 st
     | MLletin (id,a1,a2) ->
 	let i,env' = push_vars [id_of_mlid id] env in
 	let pp_id = pr_id (List.hd i)
@@ -133,37 +133,42 @@ let rec pp_expr par env args =
 	  str "let {" ++ cut () ++
 	  hov 1 (pp_id ++ str " = " ++ pp_a1 ++ str "}")
 	in
-	apply
-	  (pp_par par'
-	     (hv 0 (hv 0 (hv 1 pp_def ++ spc () ++ str "in") ++
-		    spc () ++ hov 0 pp_a2)))
+	apply2 (hv 0 (hv 0 (hv 1 pp_def ++ spc () ++ str "in") ++
+		       spc () ++ hov 0 pp_a2))
     | MLglob r ->
 	apply (pp_global Term r)
-    | MLcons _ as c when is_native_char c -> assert (args=[]); pp_native_char c
-    | MLcons (_,r,[]) ->
-	assert (args=[]); pp_global Cons r
-    | MLcons (_,r,[a]) ->
-	assert (args=[]);
-	pp_par par (pp_global Cons r ++ spc () ++ pp_expr true env [] a)
-    | MLcons (_,r,args') ->
-	assert (args=[]);
-	pp_par par (pp_global Cons r ++ spc () ++
-		    prlist_with_sep spc (pp_expr true env []) args')
+    | MLcons (_,r,a) as c ->
+        assert (args=[]);
+        begin match a with
+	  | _ when is_native_char c -> pp_native_char c
+	  | [] -> pp_global Cons r
+	  | [a] ->
+	    pp_par par (pp_global Cons r ++ spc () ++ pp_expr true env [] a)
+	  | _ ->
+	    pp_par par (pp_global Cons r ++ spc () ++
+			prlist_with_sep spc (pp_expr true env []) a)
+	end
+    | MLtuple l ->
+        assert (args=[]);
+        pp_boxed_tuple (pp_expr true env []) l
     | MLcase (_,t, pv) when is_custom_match pv ->
-	let mkfun (_,ids,e) =
+        if not (is_regular_match pv) then
+	  error "Cannot mix yet user-given match and general patterns.";
+	let mkfun (ids,_,e) =
 	  if ids <> [] then named_lams (List.rev ids) e
 	  else dummy_lams (ast_lift 1 e) 1
 	in
-	apply
-	  (pp_par par'
-	     (hov 2
-		(str (find_custom_match pv) ++ fnl () ++
-		 prvect (fun tr -> pp_expr true env [] (mkfun tr) ++ fnl ()) pv
-		 ++ pp_expr true env [] t)))
-    | MLcase (info,t, pv) ->
-      	apply (pp_par par'
-		 (v 0 (str "case " ++ pp_expr false env [] t ++ str " of {" ++
-		       fnl () ++ pp_pat env info pv)))
+	let pp_branch tr = pp_expr true env [] (mkfun tr) ++ fnl () in
+	let inner =
+	  str (find_custom_match pv) ++ fnl () ++
+	  prvect pp_branch pv ++
+	  pp_expr true env [] t
+	in
+	apply2 (hov 2 inner)
+    | MLcase (typ,t,pv) ->
+        apply2
+	  (v 0 (str "case " ++ pp_expr false env [] t ++ str " of {" ++
+		fnl () ++ pp_pat env pv))
     | MLfix (i,ids,defs) ->
 	let ids',env' = push_vars (List.rev (Array.to_list ids)) env in
       	pp_fix par env' i (Array.of_list (List.rev ids'),defs) args
@@ -176,44 +181,31 @@ let rec pp_expr par env args =
 	pp_apply (str "unsafeCoerce") par (pp_expr true env [] a :: args)
     | MLaxiom -> pp_par par (str "Prelude.error \"AXIOM TO BE REALIZED\"")
 
-and pp_pat env info pv =
-  let pp_one_pat (name,ids,t) =
-    let ids,env' = push_vars (List.rev_map id_of_mlid ids) env in
-    let par = expr_needs_par t in
-    hov 2 (str " " ++ pp_global Cons name ++
-	   (match ids with
-	      | [] -> mt ()
-	      | _  -> (str " " ++
-		       prlist_with_sep spc pr_id (List.rev ids))) ++
-	   str " ->" ++ spc () ++ pp_expr par env' [] t)
-  in
-  let factor_br, factor_set = try match info.m_same with
-    | BranchFun ints ->
-        let i = Intset.choose ints in
-	branch_as_fun info.m_typs pv.(i), ints
-    | BranchCst ints ->
-        let i = Intset.choose ints in
-        ast_pop (branch_as_cst pv.(i)), ints
-    | BranchNone -> MLdummy, Intset.empty
-  with _ -> MLdummy, Intset.empty
-  in
-  let last = Array.length pv - 1 in
+and pp_cons_pat par r ppl =
+  pp_par par
+    (pp_global Cons r ++ space_if (ppl<>[]) ++ prlist_with_sep spc identity ppl)
+
+and pp_gen_pat par ids env = function
+  | Pcons (r,l) -> pp_cons_pat par r (List.map (pp_gen_pat true ids env) l)
+  | Pusual r -> pp_cons_pat par r (List.map pr_id ids)
+  | Ptuple l -> pp_boxed_tuple (pp_gen_pat false ids env) l
+  | Pwild -> str "_"
+  | Prel n -> pr_id (get_db_name n env)
+
+and pp_one_pat env (ids,p,t) =
+  let ids',env' = push_vars (List.rev_map id_of_mlid ids) env in
+  hov 2 (str " " ++
+	 pp_gen_pat false (List.rev ids') env' p ++
+	 str " ->" ++ spc () ++
+	 pp_expr (expr_needs_par t) env' [] t)
+
+and pp_pat env pv =
   prvecti
-    (fun i x -> if Intset.mem i factor_set then mt () else
-       (pp_one_pat pv.(i) ++
-       if i = last && Intset.is_empty factor_set then str "}" else
-	 (str ";" ++ fnl ()))) pv
-  ++
-  if Intset.is_empty factor_set then mt () else
-  let par = expr_needs_par factor_br in
-  match info.m_same with
-    | BranchFun _ ->
-        let ids, env' = push_vars [anonymous_name] env in
-        hov 2 (str " " ++ pr_id (List.hd ids) ++ str " ->" ++ spc () ++
-	       pp_expr par env' [] factor_br ++ str "}")
-    | BranchCst _ ->
-        hov 2 (str " _ ->" ++ spc () ++ pp_expr par env [] factor_br ++ str "}")
-    | BranchNone -> mt ()
+    (fun i x ->
+       pp_one_pat env pv.(i) ++
+       if i = Array.length pv - 1 then str "}" else
+	 (str ";" ++ fnl ()))
+    pv
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
@@ -291,12 +283,10 @@ let rec pp_ind first kn i ind =
 
 (*s Pretty-printing of a declaration. *)
 
-let pp_string_parameters ids = prlist (fun id -> str id ++ str " ")
-
 let pp_decl = function
   | Dind (kn,i) when i.ind_kind = Singleton ->
-      pp_singleton (mind_of_kn kn) i.ind_packets.(0) ++ fnl ()
-  | Dind (kn,i) -> hov 0 (pp_ind true (mind_of_kn kn) 0 i)
+      pp_singleton kn i.ind_packets.(0) ++ fnl ()
+  | Dind (kn,i) -> hov 0 (pp_ind true kn 0 i)
   | Dtype (r, l, t) ->
       if is_inline_custom r then mt ()
       else

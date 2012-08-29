@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -55,7 +55,7 @@ Definition Rcompare x y :=
   | inright _ => Gt
  end.
 
-Lemma Rcompare_spec : forall x y, CompSpec eq Rlt x y (Rcompare x y).
+Lemma Rcompare_spec : forall x y, CompareSpec (x=y) (x<y) (y<x) (Rcompare x y).
 Proof.
  intros. unfold Rcompare.
  destruct total_order_T as [[H|H]|H]; auto.

@@ -1,22 +1,18 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: Rtauto.v 13323 2010-07-24 15:57:30Z herbelin $ *)
-
 
 Require Export List.
 Require Export Bintree.
 Require Import Bool.
-Unset Boxed Definitions.
 
 Declare ML Module "rtauto_plugin".
 
-Ltac caseq t := generalize (refl_equal t); pattern t at -1; case t.
 Ltac clean:=try (simpl;congruence).
 
 Inductive form:Set:=
@@ -43,7 +39,7 @@ end.
 
 Theorem pos_eq_refl : forall m n, pos_eq m n = true -> m = n.
 induction m;simpl;destruct n;congruence ||
-(intro e;apply f_equal with positive;auto).
+(intro e;apply f_equal;auto).
 Qed.
 
 Fixpoint form_eq (p q:form) {struct p} :bool :=
@@ -69,15 +65,15 @@ end.
 Theorem form_eq_refl: forall p q, form_eq p q = true -> p = q.
 induction p;destruct q;simpl;clean.
 intro h;generalize (pos_eq_refl _ _ h);congruence.
-caseq (form_eq p1 q1);clean.
+case_eq (form_eq p1 q1);clean.
 intros e1 e2;generalize (IHp1 _ e1) (IHp2 _ e2);congruence.
-caseq (form_eq p1 q1);clean.
+case_eq (form_eq p1 q1);clean.
 intros e1 e2;generalize (IHp1 _ e1) (IHp2 _ e2);congruence.
-caseq (form_eq p1 q1);clean.
+case_eq (form_eq p1 q1);clean.
 intros e1 e2;generalize (IHp1 _ e1) (IHp2 _ e2);congruence.
 Qed.
 
-Implicit Arguments form_eq_refl [p q].
+Arguments form_eq_refl [p q] _.
 
 Section with_env.
 
@@ -165,7 +161,7 @@ intros hyps F p g e; apply project_In.
 apply get_In with p;assumption.
 Qed.
 
-Implicit Arguments project [hyps p g].
+Arguments project [hyps] F [p g] _.
 
 Inductive proof:Set :=
   Ax : positive -> proof
@@ -263,7 +259,7 @@ induction p;intros hyps F gl.
 
 (* cas Axiom *)
 Focus 1.
-simpl;caseq (get p hyps);clean.
+simpl;case_eq (get p hyps);clean.
 intros f nth_f e;rewrite <- (form_eq_refl e).
 apply project with p;trivial.
 
@@ -276,10 +272,10 @@ apply IHp;try constructor;trivial.
 
 (* Cas Arrow_Elim *)
 Focus 1.
-simpl check_proof;caseq (get p hyps);clean.
-intros f ef;caseq (get p0 hyps);clean.
+simpl check_proof;case_eq (get p hyps);clean.
+intros f ef;case_eq (get p0 hyps);clean.
 intros f0 ef0;destruct f0;clean.
-caseq (form_eq f f0_1);clean.
+case_eq (form_eq f f0_1);clean.
 simpl;intros e check_p1.
 generalize  (project  F ef) (project  F ef0)
 (IHp (hyps \ f0_2) (F_push f0_2 hyps F) gl check_p1);
@@ -291,10 +287,10 @@ auto.
 
 (* cas Arrow_Destruct *)
 Focus 1.
-simpl;caseq (get p1 hyps);clean.
+simpl;case_eq (get p1 hyps);clean.
 intros f ef;destruct f;clean.
 destruct f1;clean.
-caseq (check_proof (hyps \ f1_2 =>> f2 \ f1_1) f1_2 p2);clean.
+case_eq (check_proof (hyps \ f1_2 =>> f2 \ f1_1) f1_2 p2);clean.
 intros check_p1 check_p2.
 generalize (project F ef)
 (IHp1 (hyps \ f1_2 =>> f2 \ f1_1)
@@ -305,7 +301,7 @@ simpl;apply compose3;auto.
 
 (* Cas False_Elim *)
 Focus 1.
-simpl;caseq (get p hyps);clean.
+simpl;case_eq (get p hyps);clean.
 intros f ef;destruct f;clean.
 intros _; generalize (project F ef).
 apply compose1;apply False_ind.
@@ -313,13 +309,13 @@ apply compose1;apply False_ind.
 (* Cas And_Intro *)
 Focus 1.
 simpl;destruct gl;clean.
-caseq (check_proof hyps gl1 p1);clean.
+case_eq (check_proof hyps gl1 p1);clean.
 intros Hp1 Hp2;generalize (IHp1 hyps F gl1 Hp1) (IHp2 hyps F gl2 Hp2).
 apply compose2 ;simpl;auto.
 
 (* cas And_Elim *)
 Focus 1.
-simpl;caseq (get p hyps);clean.
+simpl;case_eq (get p hyps);clean.
 intros f ef;destruct f;clean.
 intro check_p;generalize  (project F ef)
 (IHp (hyps \ f1 \ f2) (F_push f2 (hyps \ f1) (F_push f1 hyps F)) gl check_p).
@@ -327,7 +323,7 @@ simpl;apply compose2;intros [h1 h2];auto.
 
 (* cas And_Destruct *)
 Focus 1.
-simpl;caseq (get p hyps);clean.
+simpl;case_eq (get p hyps);clean.
 intros f ef;destruct f;clean.
 destruct f1;clean.
 intro H;generalize  (project F ef)
@@ -349,9 +345,9 @@ apply compose1;simpl;auto.
 
 (* cas Or_elim *)
 Focus 1.
-simpl;caseq (get p1 hyps);clean.
+simpl;case_eq (get p1 hyps);clean.
 intros f ef;destruct f;clean.
-caseq (check_proof (hyps \ f1) gl p2);clean.
+case_eq (check_proof (hyps \ f1) gl p2);clean.
 intros check_p1 check_p2;generalize (project F ef)
 (IHp1 (hyps \ f1) (F_push f1 hyps F) gl check_p1)
 (IHp2 (hyps \ f2) (F_push f2 hyps F) gl check_p2);
@@ -359,7 +355,7 @@ simpl;apply compose3;simpl;intro h;destruct h;auto.
 
 (* cas Or_Destruct *)
 Focus 1.
-simpl;caseq (get p hyps);clean.
+simpl;case_eq (get p hyps);clean.
 intros f ef;destruct f;clean.
 destruct f1;clean.
 intro check_p0;generalize (project F ef)
@@ -370,7 +366,7 @@ apply compose2;auto.
 
 (* cas Cut *)
 Focus 1.
-simpl;caseq (check_proof hyps f p1);clean.
+simpl;case_eq (check_proof hyps f p1);clean.
 intros check_p1 check_p2;
 generalize (IHp1 hyps F f check_p1)
 (IHp2 (hyps\f) (F_push f hyps F) gl check_p2);
@@ -378,7 +374,7 @@ simpl; apply compose2;auto.
 Qed.
 
 Theorem Reflect: forall gl prf, if check_proof empty gl prf then [[gl]] else True.
-intros gl prf;caseq (check_proof empty gl prf);intro check_prf.
+intros gl prf;case_eq (check_proof empty gl prf);intro check_prf.
 change (interp_ctx empty F_empty [[gl]]) ;
 apply interp_proof with prf;assumption.
 trivial.

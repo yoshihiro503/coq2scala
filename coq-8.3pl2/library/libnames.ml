@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: libnames.ml 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 open Pp
 open Util
@@ -29,8 +27,7 @@ let isConstructRef = function ConstructRef _ -> true | _ -> false
 
 let eq_gr gr1 gr2 =
   match gr1,gr2 with 
-      ConstRef con1, ConstRef con2 ->
-	eq_constant con1 con2
+    | ConstRef con1, ConstRef con2 -> eq_constant con1 con2
     | IndRef kn1,IndRef kn2 -> eq_ind kn1 kn2
     | ConstructRef kn1,ConstructRef kn2 -> eq_constructor kn1 kn2
     | _,_ -> gr1=gr2
@@ -58,13 +55,10 @@ let subst_global subst ref = match ref with
 	if c'==c then ref,t else ConstructRef c', t
 
 let canonical_gr = function
-  | ConstRef con -> 
-      ConstRef(constant_of_kn(canonical_con con))
-  | IndRef (kn,i) ->
-      IndRef(mind_of_kn(canonical_mind kn),i)
-  | ConstructRef ((kn,i),j )->
-	  ConstructRef((mind_of_kn(canonical_mind kn),i),j)
-  | VarRef id ->  VarRef id
+  | ConstRef con -> ConstRef(constant_of_kn(canonical_con con))
+  | IndRef (kn,i) -> IndRef(mind_of_kn(canonical_mind kn),i)
+  | ConstructRef ((kn,i),j )-> ConstructRef((mind_of_kn(canonical_mind kn),i),j)
+  | VarRef id -> VarRef id
 
 let global_of_constr c = match kind_of_term c with
   | Const sp -> ConstRef sp
@@ -82,25 +76,37 @@ let constr_of_global = function
 let constr_of_reference = constr_of_global
 let reference_of_constr = global_of_constr
 
-(* outside of the kernel, names are ordered on their canonical part *)
+let global_ord_gen fc fmi x y =
+  let ind_ord (indx,ix) (indy,iy) =
+    let c = Pervasives.compare ix iy in
+    if c = 0 then kn_ord (fmi indx) (fmi indy) else c
+  in
+  match x, y with
+    | ConstRef cx, ConstRef cy -> kn_ord (fc cx) (fc cy)
+    | IndRef indx, IndRef indy -> ind_ord indx indy
+    | ConstructRef (indx,jx), ConstructRef (indy,jy) ->
+      let c = Pervasives.compare jx jy in
+      if c = 0 then ind_ord indx indy else c
+    | _, _ -> Pervasives.compare x y
+
+let global_ord_can = global_ord_gen canonical_con canonical_mind
+let global_ord_user = global_ord_gen user_con user_mind
+
+(* By default, [global_reference] are ordered on their canonical part *)
+
 module RefOrdered = struct
   type t = global_reference
-  let compare x y = 
-    let make_name = function
-      | ConstRef con -> 
-	  ConstRef(constant_of_kn(canonical_con con))
-      | IndRef (kn,i) ->
-	  IndRef(mind_of_kn(canonical_mind kn),i)
-      | ConstructRef ((kn,i),j )->
-	  ConstructRef((mind_of_kn(canonical_mind kn),i),j)
-      | VarRef id ->  VarRef id
-    in
-	Pervasives.compare (make_name x) (make_name y)
+  let compare = global_ord_can
 end
-  
+
+module RefOrdered_env = struct
+  type t = global_reference
+  let compare = global_ord_user
+end
+
 module Refset = Set.Make(RefOrdered)
 module Refmap = Map.Make(RefOrdered)
-  
+
 (* Extended global references *)
 
 type syndef_name = kernel_name
@@ -108,6 +114,18 @@ type syndef_name = kernel_name
 type extended_global_reference =
   | TrueGlobal of global_reference
   | SynDef of syndef_name
+
+(* We order [extended_global_reference] via their user part
+   (cf. pretty printer) *)
+
+module ExtRefOrdered = struct
+  type t = extended_global_reference
+  let compare x y =
+    match x, y with
+      | TrueGlobal rx, TrueGlobal ry -> global_ord_user rx ry
+      | SynDef knx, SynDef kny -> kn_ord knx kny
+      | _, _ -> Pervasives.compare x y
+end
 
 (**********************************************)
 
@@ -177,6 +195,7 @@ type full_path = {
   basename : identifier }
 
 let make_path pa id = { dirpath = pa; basename = id }
+
 let repr_path { dirpath = pa; basename = id } = (pa,id)
 
 (* parsing and printing of section paths *)
@@ -197,8 +216,6 @@ module SpOrdered =
     let compare = sp_ord
   end
 
-module Spset = Set.Make(SpOrdered)
-module Sppred = Predicate.Make(SpOrdered)
 module Spmap = Map.Make(SpOrdered)
 
 let dirpath sp = let (p,_) = repr_path sp in p

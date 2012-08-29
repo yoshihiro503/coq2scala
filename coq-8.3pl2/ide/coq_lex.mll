@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id$ *)
 
 {
   open Lexing
@@ -21,60 +19,56 @@
 
   (* Without this table, the automaton would be too big and
      ocamllex would fail *)
-  let is_one_word_command =
-    let h = Hashtbl.create 97 in
-    List.iter (fun s -> Hashtbl.add h s ())
-      [  "Add" ; "Check"; "Eval"; "Extraction" ;
-	 "Load" ; "Undo"; "Goal";
-	 "Proof" ; "Print";"Save" ;
-	 "End" ; "Section"; "Chapter"; "Transparent"; "Opaque"; "Comments"
-      ];
-    Hashtbl.mem h
 
-  let is_constr_kw =
-    let h = Hashtbl.create 97 in
-      List.iter (fun s -> Hashtbl.add h s ())
-	[ "forall"; "fun"; "match"; "fix"; "cofix"; "with"; "for";
-	  "end"; "as"; "let"; "in"; "if"; "then"; "else"; "return";
-	  "Prop"; "Set"; "Type" ];
-      Hashtbl.mem h
-
-  (* Without this table, the automaton would be too big and
-     ocamllex would fail *)
-  let is_one_word_declaration =
-    let h = Hashtbl.create 97 in
-      List.iter (fun s -> Hashtbl.add h s ())
-	[ (* Definitions *)
-	  "Definition" ; "Let" ; "Example" ; "SubClass" ;
-          "Fixpoint" ; "CoFixpoint" ; "Scheme" ; "Function" ;
-          (* Assumptions *)
-	  "Hypothesis" ; "Variable" ; "Axiom" ; "Parameter" ; "Conjecture" ;
-	  "Hypotheses" ; "Variables" ; "Axioms" ; "Parameters";
-          (* Inductive *)
-          "Inductive" ; "CoInductive" ; "Record" ; "Structure" ;
-          (* Other *)
-	  "Ltac" ; "Typeclasses"; "Instance"; "Include"; "Context"; "Class"
-	];
-      Hashtbl.mem h
-
-  let is_proof_declaration =
-    let h = Hashtbl.create 97 in
-    List.iter (fun s -> Hashtbl.add h s ())
+  let tag_of_ident =
+    let one_word_commands =
+      [ "Add" ; "Check"; "Eval"; "Extraction" ;
+	"Load" ; "Undo"; "Goal";
+	"Proof" ; "Print";"Save" ; "Restart";
+	"End" ; "Section"; "Chapter"; "Transparent"; "Opaque"; "Comments" ]
+    in
+    let one_word_declarations =
+      [ (* Definitions *)
+	"Definition" ; "Let" ; "Example" ; "SubClass" ;
+        "Fixpoint" ; "CoFixpoint" ; "Scheme" ; "Function" ;
+        (* Assumptions *)
+	"Hypothesis" ; "Variable" ; "Axiom" ; "Parameter" ; "Conjecture" ;
+	"Hypotheses" ; "Variables" ; "Axioms" ; "Parameters";
+        (* Inductive *)
+        "Inductive" ; "CoInductive" ; "Record" ; "Structure" ;
+        (* Other *)
+	"Ltac" ; "Instance"; "Include"; "Context"; "Class" ;
+	 "Arguments" ]
+    in
+    let proof_declarations =
       [ "Theorem" ; "Lemma" ; " Fact" ; "Remark" ; "Corollary" ;
-        "Proposition" ; "Property" ];
-    Hashtbl.mem h
+        "Proposition" ; "Property" ]
+    in
+    let proof_ends =
+      [ "Qed" ; "Defined" ; "Admitted"; "Abort" ]
+    in
+    let constr_keywords =
+      [ "forall"; "fun"; "match"; "fix"; "cofix"; "with"; "for";
+	"end"; "as"; "let"; "in"; "if"; "then"; "else"; "return";
+	"Prop"; "Set"; "Type" ]
+    in
+    let h = Hashtbl.create 97 in (* for vernac *)
+    let h' = Hashtbl.create 97 in (* for constr *)
+    List.iter (fun s -> Hashtbl.add h s Keyword) one_word_commands;
+    List.iter (fun s -> Hashtbl.add h s Declaration) one_word_declarations;
+    List.iter (fun s -> Hashtbl.add h s ProofDeclaration) proof_declarations;
+    List.iter (fun s -> Hashtbl.add h s Qed) proof_ends;
+    List.iter (fun s -> Hashtbl.add h' s Keyword) constr_keywords;
+    (fun initial id -> Hashtbl.find (if initial then h else h') id)
 
-  let is_proof_end =
-    let h = Hashtbl.create 97 in
-    List.iter (fun s -> Hashtbl.add h s ())
-      [ "Qed" ; "Defined" ; "Admitted" ];
-    Hashtbl.mem h
+  exception Unterminated
 
-  let start = ref true
+  let here f lexbuf = f (Lexing.lexeme_start lexbuf) (Lexing.lexeme_end lexbuf)
+
 }
 
 let space =
-  [' ' '\010' '\013' '\009' '\012']
+  [' ' '\n' '\r' '\t' '\012'] (* '\012' is form-feed *)
 
 let firstchar =
   ['$' 'A'-'Z' 'a'-'z' '_' '\192'-'\214' '\216'-'\246' '\248'-'\255']
@@ -82,41 +76,38 @@ let identchar =
   ['$' 'A'-'Z' 'a'-'z' '_' '\192'-'\214' '\216'-'\246' '\248'-'\255' '\'' '0'-'9']
 let ident = firstchar identchar*
 
-let sentence_sep = '.' [ ' ' '\n' '\t' ]
+let undotted_sep = [ '{' '}' '-' '+' '*' ]
+
+let dot_sep = '.' (space | eof)
 
 let multiword_declaration =
   "Module" (space+ "Type")?
 | "Program" space+ ident
-| "Existing" space+ "Instance"
+| "Existing" space+ "Instance" "s"?
 | "Canonical" space+ "Structure"
 
-let locality = ("Local" space+)?
+let locality = (space+ "Local")?
 
 let multiword_command =
-  "Set" (space+ ident)*
-| "Unset" (space+ ident)*
-| "Open" space+ locality "Scope"
-| "Close" space+ locality "Scope"
-| "Bind" space+ "Scope"
-| "Arguments" space+ "Scope"
-| "Reserved" space+ "Notation" space+ locality
-| "Delimit" space+ "Scope"
+  ("Uns" | "S")" et" (space+ ident)*
+| (("Open" | "Close") locality | "Bind" | " Delimit" )
+    space+ "Scope"
+| (("Reserved" space+)? "Notation" | "Infix") locality space+
 | "Next" space+ "Obligation"
 | "Solve" space+ "Obligations"
 | "Require" space+ ("Import"|"Export")?
-| "Infix" space+ locality
-| "Notation" space+ locality
-| "Hint" space+ locality ident
+| "Hint" locality space+ ident
 | "Reset" (space+ "Initial")?
 | "Tactic" space+ "Notation"
-| "Implicit" space+ "Arguments"
-| "Implicit" space+ ("Type"|"Types")
+| "Implicit" space+ "Type" "s"?
 | "Combined" space+ "Scheme"
 | "Extraction" space+ (("Language" space+ ("Ocaml"|"Haskell"|"Scheme"|"Toplevel"))|
     ("Library"|"Inline"|"NoInline"|"Blacklist"))
 | "Recursive" space+ "Extraction" (space+ "Library")?
 | ("Print"|"Reset") space+ "Extraction" space+ ("Inline"|"Blacklist")
 | "Extract" space+ (("Inlined" space+) "Constant"| "Inductive")
+| "Typeclasses" space+ ("eauto" | "Transparent" | "Opaque")
+| ("Generalizable" space+) ("All" | "No")? "Variable" "s"?
 
 (* At least still missing: "Inline" + decl, variants of "Identity
   Coercion", variants of Print, Add, ... *)
@@ -130,65 +121,75 @@ rule coq_string = parse
 and comment = parse
   | "(*" { ignore (comment lexbuf); comment lexbuf }
   | "\"" { ignore (coq_string lexbuf); comment lexbuf }
-  | "*)" { Lexing.lexeme_end lexbuf }
-  | eof { Lexing.lexeme_end lexbuf }
+  | "*)" { (true, Lexing.lexeme_start lexbuf + 2) }
+  | eof { (false, Lexing.lexeme_end lexbuf) }
   | _ { comment lexbuf }
 
-and sentence stamp = parse
-  | space+ { sentence stamp lexbuf }
+and sentence initial stamp = parse
   | "(*" {
       let comm_start = Lexing.lexeme_start lexbuf in
-      let comm_end = comment lexbuf in
+      let trully_terminated,comm_end = comment lexbuf in
       stamp comm_start comm_end Comment;
-      sentence stamp lexbuf
+      if not trully_terminated then raise Unterminated;
+      (* A comment alone is a sentence.
+	 A comment in a sentence doesn't terminate the sentence.
+         Note: comm_end is the first position _after_ the comment,
+	 as required when tagging a zone, hence the -1 to locate the
+	 ")" terminating the comment.
+      *)
+      if initial then comm_end - 1 else sentence false stamp lexbuf
     }
   | "\"" {
       let str_start = Lexing.lexeme_start lexbuf in
       let str_end = coq_string lexbuf in
       stamp str_start str_end String;
-      start := false;
-      sentence stamp lexbuf
+      sentence false stamp lexbuf
     }
   | multiword_declaration {
-      if !start then begin
-        start := false;
-        stamp (Lexing.lexeme_start lexbuf) (Lexing.lexeme_end lexbuf) Declaration
-      end;
-      sentence stamp lexbuf
+      if initial then here stamp lexbuf Declaration;
+      sentence false stamp lexbuf
     }
   | multiword_command {
-      if !start then begin
-        start := false;
-        stamp (Lexing.lexeme_start lexbuf) (Lexing.lexeme_end lexbuf) Keyword
-      end;
-      sentence stamp lexbuf }
+      if initial then here stamp lexbuf Keyword;
+      sentence false stamp lexbuf
+    }
   | ident as id {
-      if !start then begin
-        start := false;
-        if id <> "Time" then begin
-            if is_proof_end id then
-              stamp (Lexing.lexeme_start lexbuf) (Lexing.lexeme_end lexbuf) Qed
-            else if is_one_word_command id then
-              stamp (Lexing.lexeme_start lexbuf) (Lexing.lexeme_end lexbuf) Keyword
-            else if is_one_word_declaration id then
-              stamp (Lexing.lexeme_start lexbuf) (Lexing.lexeme_end lexbuf) Declaration
-            else if is_proof_declaration id then
-              stamp (Lexing.lexeme_start lexbuf) (Lexing.lexeme_end lexbuf) ProofDeclaration
-        end
-      end else begin
-        if is_constr_kw id then
-	  stamp (Lexing.lexeme_start lexbuf) (Lexing.lexeme_end lexbuf) Keyword
-      end;
-      sentence stamp lexbuf }
-  | ".."
-  | _    { sentence stamp lexbuf}
-  | sentence_sep { }
-  | eof { raise Not_found }
+      (try here stamp lexbuf (tag_of_ident initial id) with Not_found -> ());
+      sentence false stamp lexbuf }
+  | ".." {
+      (* We must have a particular rule for parsing "..", where no dot
+	 is a terminator, even if we have a blank afterwards
+	 (cf. for instance the syntax for recursive notation).
+	 This rule and the following one also allow to treat the "..."
+	 special case, where the third dot is a terminator. *)
+      sentence false stamp lexbuf
+    }
+  | dot_sep { Lexing.lexeme_start lexbuf } (* The usual "." terminator *)
+  | undotted_sep {
+      (* Separators like { or } and bullets * - + are only active
+	 at the start of a sentence *)
+      if initial then Lexing.lexeme_start lexbuf
+      else sentence false stamp lexbuf
+    }
+  | space+ {
+       (* Parsing spaces is the only situation preserving initiality *)
+       sentence initial stamp lexbuf
+    }
+  | _ {
+      (* Any other characters *)
+      sentence false stamp lexbuf
+    }
+  | eof { raise Unterminated }
 
 {
-  let find_end_offset stamp slice =
-    let lb = Lexing.from_string slice in
-    start := true;
-    sentence stamp lb;
-    Lexing.lexeme_end lb
+
+  (** Parse a sentence in string [slice], tagging relevant parts with
+      function [stamp], and returning the position of the first
+      sentence delimitor (either "." or "{" or "}" or the end of a comment).
+      It will raise [Unterminated] when no end of sentence is found.
+  *)
+
+  let delimit_sentence stamp slice =
+    sentence true stamp (Lexing.from_string slice)
+
 }

@@ -1,29 +1,26 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: bigint.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
-(*i*)
-open Pp
-(*i*)
-
-(* Arbitrary large integer numbers *)
+(** Arbitrary large integer numbers *)
 
 type bigint
 
 val of_string : string -> bigint
 val to_string : bigint -> string
 
+val of_int : int -> bigint
+val to_int : bigint -> int (** May raise a Failure on oversized numbers *)
+
 val zero : bigint
 val one : bigint
 val two : bigint
 
-val div2_with_rest : bigint -> bigint * bool (* true=odd; false=even *)
+val div2_with_rest : bigint -> bigint * bool (** true=odd; false=even *)
 val add_1 : bigint -> bigint
 val sub_1 : bigint -> bigint
 val mult_2 : bigint -> bigint
@@ -42,6 +39,4 @@ val is_pos_or_zero : bigint -> bool
 val is_neg_or_zero : bigint -> bool
 val neg : bigint -> bigint
 
-val pow : bigint -> bigint -> bigint
-
-val pr_bigint : bigint -> std_ppcmds
+val pow : bigint -> int -> bigint

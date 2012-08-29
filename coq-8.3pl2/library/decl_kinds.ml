@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(* $Id: decl_kinds.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Util
 open Libnames
@@ -16,8 +14,6 @@ open Libnames
 type locality =
   | Local
   | Global
-
-type boxed_flag = bool
 
 type theorem_kind =
   | Theorem
@@ -54,7 +50,7 @@ type assumption_object_kind = Definitional | Logical | Conjectural
 *)
 type assumption_kind = locality * assumption_object_kind
 
-type definition_kind = locality * boxed_flag * definition_object_kind
+type definition_kind = locality * definition_object_kind
 
 (* Kinds used in proofs *)
 
@@ -86,12 +82,12 @@ let string_of_theorem_kind = function
   | Proposition -> "Proposition"
   | Corollary -> "Corollary"
 
-let string_of_definition_kind (l,boxed,d) =
-  match (l,d) with
+let string_of_definition_kind def =
+  match def with
   | Local, Coercion -> "Coercion Local"
   | Global, Coercion -> "Coercion"
   | Local, Definition -> "Let"
-  | Global, Definition -> if boxed then "Boxed Definition" else "Definition"
+  | Global, Definition -> "Definition"
   | Local, SubClass -> "Local SubClass"
   | Global, SubClass -> "SubClass"
   | Global, CanonicalStructure -> "Canonical Structure"

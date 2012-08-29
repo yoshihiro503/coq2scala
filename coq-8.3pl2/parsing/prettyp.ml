@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -9,8 +9,6 @@
 (* Changed by (and thus parts copyright ©) by Lionel Elie Mamane <lionel@mamane.lu>
  * on May-June 2006 for implementation of abstraction of pretty-printing of objects.
  *)
-
-(* $Id: prettyp.ml 13967 2011-04-08 14:08:43Z herbelin $ *)
 
 open Pp
 open Util
@@ -41,7 +39,6 @@ type object_pr = {
   print_module              : bool -> Names.module_path -> std_ppcmds;
   print_modtype             : module_path -> std_ppcmds;
   print_named_decl          : identifier * constr option * types -> std_ppcmds;
-  print_leaf_entry          : bool -> Libnames.object_name * Libobject.obj -> Pp.std_ppcmds;
   print_library_entry       : bool -> (object_name * Lib.node) -> std_ppcmds option;
   print_context             : bool -> int option -> Lib.library_segment -> std_ppcmds;
   print_typed_value_in_env  : Environ.env -> Term.constr * Term.types -> Pp.std_ppcmds;
@@ -122,6 +119,11 @@ let print_impargs_list prefix l =
 	    then print_one_impargs_list imps
 	    else [str "No implicit arguments"]))])]) l)
 
+let print_renames_list prefix l =
+  if l = [] then [] else
+  [add_colon prefix ++ str "Arguments are renamed to " ++
+    hv 2 (prlist_with_sep pr_comma (fun x -> x) (List.map pr_name l))]
+
 let need_expansion impl ref =
   let typ = Global.type_of_global ref in
   let ctx = (prod_assum typ) in
@@ -154,6 +156,45 @@ let print_argument_scopes prefix = function
       str "]")]
   | _  -> []
 
+(*****************************)
+(** Printing simpl behaviour *)
+
+let print_simpl_behaviour ref =
+  match Tacred.get_simpl_behaviour ref with
+  | None -> []
+  | Some (recargs, nargs, flags) ->
+     let never = List.mem `SimplNeverUnfold flags in
+     let nomatch = List.mem `SimplDontExposeCase flags in
+     let pp_nomatch = spc() ++ if nomatch then
+       str "avoiding to expose match constructs" else str"" in
+     let pp_recargs = spc() ++ str "when the " ++
+       let rec aux = function
+         | [] -> mt()
+         | [x] -> str (ordinal (x+1))
+         | [x;y] -> str (ordinal (x+1)) ++ str " and " ++ str (ordinal (y+1))
+         | x::tl -> str (ordinal (x+1)) ++ str ", " ++ aux tl in
+       aux recargs ++ str (plural (List.length recargs) " argument") ++
+       str (plural (if List.length recargs >= 2 then 1 else 2) " evaluate") ++
+       str " to a constructor" in
+     let pp_nargs =
+       spc() ++ str "when applied to " ++ int nargs ++
+       str (plural nargs " argument") in
+     [hov 2 (str "The simpl tactic " ++
+     match recargs, nargs, never with
+     | _,_, true -> str "never unfolds " ++ pr_global ref
+     | [], 0, _ -> str "always unfolds " ++ pr_global ref
+     | _::_, n, _ when n < 0 ->
+        str "unfolds " ++ pr_global ref ++ pp_recargs ++ pp_nomatch
+     | _::_, n, _ when n > List.fold_left max 0 recargs ->
+        str "unfolds " ++ pr_global ref ++ pp_recargs ++
+        str " and" ++ pp_nargs ++ pp_nomatch
+     | _::_, _, _ ->
+        str "unfolds " ++ pr_global ref ++ pp_recargs ++ pp_nomatch
+     | [], n, _ when n > 0 ->
+        str "unfolds " ++ pr_global ref ++ pp_nargs ++ pp_nomatch
+     | _ -> str "unfolds " ++ pr_global ref ++ pp_nomatch )]
+;;
+
 (*********************)
 (** Printing Opacity *)
 
@@ -166,10 +207,11 @@ let opacity env = function
       Some(TransparentMaybeOpacified (Conv_oracle.get_strategy(VarKey v)))
   | ConstRef cst ->
       let cb = Environ.lookup_constant cst env in
-      if cb.const_body = None then None
-      else if cb.const_opaque then Some FullyOpaque
-      else Some
-        (TransparentMaybeOpacified (Conv_oracle.get_strategy(ConstKey cst)))
+      (match cb.const_body with
+	| Undef _ -> None
+	| OpaqueDef _ -> Some FullyOpaque
+	| Def _ -> Some
+          (TransparentMaybeOpacified (Conv_oracle.get_strategy(ConstKey cst))))
   | _ -> None
 
 let print_opacity ref =
@@ -194,6 +236,8 @@ let print_opacity ref =
 let print_name_infos ref =
   let impls = implicits_of_global ref in
   let scopes = Notation.find_arguments_scope ref in
+  let renames =
+    try List.hd (Arguments_renaming.arguments_names ref) with Not_found -> [] in
   let type_info_for_implicit =
     if need_expansion (select_impargs_size 0 impls) ref then
       (* Need to reduce since implicits are computed with products flattened *)
@@ -202,6 +246,7 @@ let print_name_infos ref =
     else
       [] in
   type_info_for_implicit @
+  print_renames_list (mt()) renames @
   print_impargs_list (mt()) impls @
   print_argument_scopes (mt()) scopes
 
@@ -225,6 +270,12 @@ let print_inductive_implicit_args =
   print_args_data_of_inductive_ids
     implicits_of_global (fun l -> positions_of_implicits l <> [])
     print_impargs_list
+
+let print_inductive_renames =
+  print_args_data_of_inductive_ids
+    (fun r -> try List.hd (Arguments_renaming.arguments_names r) with _ -> [])
+    ((<>) Anonymous)
+    print_renames_list
 
 let print_inductive_argument_scopes =
   print_args_data_of_inductive_ids
@@ -337,89 +388,14 @@ let assumptions_for_print lna =
 (*********************)
 (* *)
 
-let print_params env params =
-  if params = [] then mt () else pr_rel_context env params ++ brk(1,2)
-
-let print_constructors envpar names types =
-  let pc =
-    prlist_with_sep (fun () -> brk(1,0) ++ str "| ")
-      (fun (id,c) -> pr_id id ++ str " : " ++ pr_lconstr_env envpar c)
-      (Array.to_list (array_map2 (fun n t -> (n,t)) names types))
-  in
-  hv 0 (str "  " ++ pc)
-
-let build_inductive sp tyi =
-  let (mib,mip) = Global.lookup_inductive (sp,tyi) in
-  let params = mib.mind_params_ctxt in
-  let args = extended_rel_list 0 params in
-  let env = Global.env() in
-  let fullarity = match mip.mind_arity with
-    | Monomorphic ar -> ar.mind_user_arity
-    | Polymorphic ar ->
-	it_mkProd_or_LetIn (mkSort (Type ar.poly_level)) mip.mind_arity_ctxt in
-  let arity = hnf_prod_applist env fullarity args in
-  let cstrtypes = type_of_constructors env (sp,tyi) in
-  let cstrtypes =
-    Array.map (fun c -> hnf_prod_applist env c args) cstrtypes in
-  let cstrnames = mip.mind_consnames in
-  (IndRef (sp,tyi), params, arity, cstrnames, cstrtypes)
-
-let print_one_inductive (sp,tyi) =
-  let (ref, params, arity, cstrnames, cstrtypes) = build_inductive sp tyi in
-  let env = Global.env () in
-  let envpar = push_rel_context params env in
-  hov 0 (
-    pr_global (IndRef (sp,tyi)) ++ brk(1,4) ++ print_params env params ++
-    str ": " ++ pr_lconstr_env envpar arity ++ str " :=") ++
-  brk(0,2) ++ print_constructors envpar cstrnames cstrtypes
-
-let pr_mutual_inductive finite indl =
-  hov 0 (
-    str (if finite then "Inductive " else "CoInductive ") ++
-    prlist_with_sep (fun () -> fnl () ++ str"  with ")
-      print_one_inductive indl)
-
-let get_fields =
-  let rec prodec_rec l subst c =
-    match kind_of_term c with
-    | Prod (na,t,c) ->
-	let id = match na with Name id -> id | Anonymous -> id_of_string "_" in
-	prodec_rec ((id,true,substl subst t)::l) (mkVar id::subst) c
-    | LetIn (na,b,_,c) ->
-	let id = match na with Name id -> id | Anonymous -> id_of_string "_" in
-	prodec_rec ((id,false,substl subst b)::l) (mkVar id::subst) c
-    | _               -> List.rev l
-  in
-  prodec_rec [] []
-
-let pr_record (sp,tyi) =
-  let (ref, params, arity, cstrnames, cstrtypes) = build_inductive sp tyi in
-  let env = Global.env () in
-  let envpar = push_rel_context params env in
-  let fields = get_fields cstrtypes.(0) in
-  hov 0 (
-    hov 0 (
-      str "Record " ++ pr_global (IndRef (sp,tyi)) ++ brk(1,4) ++
-      print_params env params ++
-      str ": " ++ pr_lconstr_env envpar arity ++ brk(1,2) ++
-      str ":= " ++ pr_id cstrnames.(0)) ++
-    brk(1,2) ++
-    hv 2 (str "{ " ++
-      prlist_with_sep (fun () -> str ";" ++ brk(2,0))
-        (fun (id,b,c) ->
-	  pr_id id ++ str (if b then " : " else " := ") ++
-	  pr_lconstr_env envpar c) fields) ++ str" }")
-
 let gallina_print_inductive sp =
-  let (mib,mip) = Global.lookup_inductive (sp,0) in
+  let env = Global.env() in
+  let mib = Environ.lookup_mind sp env in
   let mipv = mib.mind_packets in
-  let names = list_tabulate (fun x -> (sp,x)) (Array.length mipv) in
-  (if mib.mind_record & not !Flags.raw_print then
-    pr_record (List.hd names)
-  else
-    pr_mutual_inductive mib.mind_finite names) ++ fnl () ++
+  pr_mutual_inductive_body env sp mib ++ fnl () ++
   with_line_skip
-    (print_inductive_implicit_args sp mipv @
+    (print_inductive_renames sp mipv @
+     print_inductive_implicit_args sp mipv @
      print_inductive_argument_scopes sp mipv)
 
 let print_named_decl id =
@@ -442,7 +418,7 @@ let ungeneralized_type_of_constant_type = function
 
 let print_constant with_values sep sp =
   let cb = Global.lookup_constant sp in
-  let val_0 = cb.const_body in
+  let val_0 = body_of_constant cb in
   let typ = ungeneralized_type_of_constant_type cb.const_type in
   hov 0 (
     match val_0 with
@@ -462,13 +438,13 @@ let gallina_print_constant_with_infos sp =
 let gallina_print_syntactic_def kn =
   let qid = Nametab.shortest_qualid_of_syndef Idset.empty kn
   and (vars,a) = Syntax_def.search_syntactic_definition kn in
-  let c = Topconstr.rawconstr_of_aconstr dummy_loc a in
+  let c = Topconstr.glob_constr_of_aconstr dummy_loc a in
   hov 2
     (hov 4
        (str "Notation " ++ pr_qualid qid ++
         prlist (fun id -> spc () ++ pr_id id) (List.map fst vars) ++ 
         spc () ++ str ":=") ++
-     spc () ++ Constrextern.without_symbols pr_rawconstr c) ++ fnl ()
+     spc () ++ Constrextern.without_symbols pr_glob_constr c) ++ fnl ()
 
 let gallina_print_leaf_entry with_values ((sp,kn as oname),lobj) =
   let sep = if with_values then " = " else " : "
@@ -508,17 +484,8 @@ let gallina_print_library_entry with_values ent =
 	Some (str " >>>>>>> Module " ++ pr_name oname)
     | (oname,Lib.ClosedModule _) ->
         Some (str " >>>>>>> Closed Module " ++ pr_name oname)
-    | (oname,Lib.OpenedModtype _) ->
-	Some (str " >>>>>>> Module Type " ++ pr_name oname)
-    | (oname,Lib.ClosedModtype _) ->
-        Some (str " >>>>>>> Closed Module Type " ++ pr_name oname)
     | (_,Lib.FrozenState _) ->
 	None
-
-let gallina_print_leaf_entry with_values c =
-  match gallina_print_leaf_entry with_values c with
-    | None    -> mt ()
-    | Some pp -> pp ++ fnl()
 
 let gallina_print_context with_values =
   let rec prec n = function
@@ -545,7 +512,6 @@ let default_object_pr = {
   print_module              = gallina_print_module;
   print_modtype             = gallina_print_modtype;
   print_named_decl          = gallina_print_named_decl;
-  print_leaf_entry          = gallina_print_leaf_entry;
   print_library_entry       = gallina_print_library_entry;
   print_context             = gallina_print_context;
   print_typed_value_in_env  = gallina_print_typed_value_in_env;
@@ -562,7 +528,6 @@ let print_syntactic_def x = !object_pr.print_syntactic_def x
 let print_module x  = !object_pr.print_module  x
 let print_modtype x = !object_pr.print_modtype x
 let print_named_decl x = !object_pr.print_named_decl x
-let print_leaf_entry x = !object_pr.print_leaf_entry x
 let print_library_entry x = !object_pr.print_library_entry x
 let print_context x = !object_pr.print_context x
 let print_typed_value_in_env x = !object_pr.print_typed_value_in_env x
@@ -596,31 +561,28 @@ let print_full_pure_context () =
   | ((_,kn),Lib.Leaf lobj)::rest ->
       let pp = match object_tag lobj with
       | "CONSTANT" ->
-	  let con = Global.constant_of_delta (constant_of_kn kn) in
+	  let con = Global.constant_of_delta_kn kn in
 	  let cb = Global.lookup_constant con in
-	  let val_0 = cb.const_body in
 	  let typ = ungeneralized_type_of_constant_type cb.const_type in
 	  hov 0 (
-	    match val_0 with
-	    | None ->
-		str (if cb.const_opaque then "Axiom " else "Parameter ") ++
+	    match cb.const_body with
+	      | Undef _ ->
+		str "Parameter " ++
 		print_basename con ++ str " : " ++ cut () ++ pr_ltype typ
-	    | Some v ->
-		if cb.const_opaque then
-		  str "Theorem " ++ print_basename con ++ cut () ++
-		  str " : " ++ pr_ltype typ ++ str "." ++ fnl () ++
-		  str "Proof " ++ print_body val_0
-		else
-		  str "Definition " ++ print_basename con ++ cut () ++
-		  str "  : " ++ pr_ltype typ ++ cut () ++ str " := " ++
-		  print_body val_0) ++ str "." ++ fnl () ++ fnl ()
+	      | OpaqueDef lc ->
+		str "Theorem " ++ print_basename con ++ cut () ++
+		str " : " ++ pr_ltype typ ++ str "." ++ fnl () ++
+		str "Proof " ++ pr_lconstr (Declarations.force_opaque lc)
+	      | Def c ->
+		str "Definition " ++ print_basename con ++ cut () ++
+		str "  : " ++ pr_ltype typ ++ cut () ++ str " := " ++
+		pr_lconstr (Declarations.force c))
+          ++ str "." ++ fnl () ++ fnl ()
       | "INDUCTIVE" ->
-	  let mind = Global.mind_of_delta (mind_of_kn kn) in
-	  let (mib,mip) = Global.lookup_inductive (mind,0) in
-	  let mipv = mib.mind_packets in
-	  let names = list_tabulate (fun x -> (mind,x)) (Array.length mipv) in
-	  pr_mutual_inductive mib.mind_finite names ++ str "." ++
-	  fnl () ++ fnl ()
+	  let mind = Global.mind_of_delta_kn kn in
+	  let mib = Global.lookup_mind mind in
+	  pr_mutual_inductive_body (Global.env()) mind mib ++
+	    str "." ++ fnl () ++ fnl ()
       | "MODULE" ->
 	  (* TODO: make it reparsable *)
 	  let (mp,_,l) = repr_kn kn in
@@ -640,16 +602,6 @@ let print_full_pure_context () =
    its constructors and elimination,
    assume that the declaration of constructors and eliminations
    follows the definition of the inductive type *)
-
-let list_filter_vec f vec =
-  let rec frec n lf =
-    if n < 0 then lf
-    else if f vec.(n) then
-      frec (n-1) (vec.(n)::lf)
-    else
-      frec (n-1) lf
-  in
-  frec (Array.length vec -1) []
 
 (* This is designed to print the contents of an opened section *)
 let read_sec_context r =
@@ -708,7 +660,7 @@ let print_opaque_name qid =
   match global qid with
     | ConstRef cst ->
 	let cb = Global.lookup_constant cst in
-        if cb.const_body <> None then
+        if constant_has_body cb then
 	  print_constant_with_infos cst
         else
 	  error "Not a defined constant."
@@ -721,15 +673,20 @@ let print_opaque_name qid =
         let (_,c,ty) = lookup_named id env in
 	print_named_decl (id,c,ty)
 
-let print_about_any k =
+let print_about_any loc k =
   match k with
   | Term ref ->
+    Dumpglob.add_glob loc ref;
       pr_infos_list
-       ([print_ref false ref; blankline] @
+       (print_ref false ref :: blankline ::
 	print_name_infos ref @
+	print_simpl_behaviour ref @
 	print_opacity ref @
 	[hov 0 (str "Expands to: " ++ pr_located_qualid k)])
   | Syntactic kn ->
+    let () = match Syntax_def.search_syntactic_definition kn with
+    | [],Topconstr.ARef ref -> Dumpglob.add_glob loc ref
+    | _ -> () in
       v 0 (
       print_syntactic_def kn ++
       hov 0 (str "Expands to: " ++ pr_located_qualid k)) ++ fnl()
@@ -738,20 +695,11 @@ let print_about_any k =
 
 let print_about = function
   | Genarg.ByNotation (loc,ntn,sc) ->
-      print_about_any
+      print_about_any loc
         (Term (Notation.interp_notation_as_global_reference loc (fun _ -> true)
                ntn sc))
   | Genarg.AN ref ->
-      print_about_any (locate_any_name ref)
-
-let unfold_head_fconst =
-  let rec unfrec k = match kind_of_term k with
-    | Const cst -> constant_value (Global.env ()) cst
-    | Lambda (na,t,b) -> mkLambda (na,t,unfrec b)
-    | App (f,v) -> appvect (unfrec f,v)
-    | _ -> k
-  in
-  unfrec
+      print_about_any (loc_of_reference ref) (locate_any_name ref)
 
 (* for debug *)
 let inspect depth =

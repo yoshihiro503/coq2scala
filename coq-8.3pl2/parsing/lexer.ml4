@@ -1,20 +1,15 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i camlp4use: "pr_o.cmo pa_macro.cmo" i*)
-(* Add pr_o.cmo to circumvent a useless-warning bug when preprocessed with
- * ast-based camlp4 *)
-
-(*i $Id: lexer.ml4 13521 2010-10-10 21:59:00Z herbelin $ i*)
-
 open Pp
 open Util
-open Token
+open Compat
+open Tok
 
 (* Dictionaries: trees annotated with string options, each node being a map
    from chars to dictionaries (the subtrees). A trie, in other words. *)
@@ -76,18 +71,37 @@ let ttree_remove ttree str =
 
 (* Errors occuring while lexing (explained as "Lexer error: ...") *)
 
-type error =
-  | Illegal_character
-  | Unterminated_comment
-  | Unterminated_string
-  | Undefined_token
-  | Bad_token of string
+module Error = struct
 
-exception Error of error
+  type t =
+    | Illegal_character
+    | Unterminated_comment
+    | Unterminated_string
+    | Undefined_token
+    | Bad_token of string
+    | UnsupportedUnicode of int
 
-let err loc str = Stdpp.raise_with_loc (Util.make_loc loc) (Error str)
+  exception E of t
 
-let bad_token str = raise (Error (Bad_token str))
+  let to_string x =
+    "Syntax Error: Lexer: " ^
+      (match x with
+	 | Illegal_character -> "Illegal character"
+	 | Unterminated_comment -> "Unterminated comment"
+	 | Unterminated_string -> "Unterminated string"
+	 | Undefined_token -> "Undefined token"
+	 | Bad_token tok -> Format.sprintf "Bad token %S" tok
+	 | UnsupportedUnicode x ->
+	     Printf.sprintf "Unsupported Unicode character (0x%x)" x)
+
+  let print ppf x = Format.fprintf ppf "%s@." (to_string x)
+
+end
+open Error
+
+let err loc str = Loc.raise (make_loc loc) (Error.E str)
+
+let bad_token str = raise (Error.E (Bad_token str))
 
 (* Lexer conventions on tokens *)
 
@@ -96,9 +110,9 @@ type token_kind =
   | AsciiChar
   | EmptyStream
 
-let error_unsupported_unicode_character n cs =
+let error_unsupported_unicode_character n unicode cs =
   let bp = Stream.count cs in
-  err (bp,bp+n) (Bad_token "Unsupported Unicode character")
+  err (bp,bp+n) (UnsupportedUnicode unicode)
 
 let error_utf8 cs =
   let bp = Stream.count cs in
@@ -147,7 +161,8 @@ let lookup_utf8_tail c cs =
       | _ -> error_utf8 cs
     in
     try classify_unicode unicode, n
-    with UnsupportedUtf8 -> njunk n cs; error_unsupported_unicode_character n cs
+    with UnsupportedUtf8 ->
+      njunk n cs; error_unsupported_unicode_character n unicode cs
 
 let lookup_utf8 cs =
   match Stream.peek cs with
@@ -155,13 +170,25 @@ let lookup_utf8 cs =
     | Some ('\x80'..'\xFF' as c) -> Utf8Token (lookup_utf8_tail c cs)
     | None -> EmptyStream
 
-let check_special_token str =
+let unlocated f x =
+  try f x with Loc.Exc_located (_,exc) -> raise exc
+
+let check_keyword str =
   let rec loop_symb = parser
     | [< ' (' ' | '\n' | '\r' | '\t' | '"') >] -> bad_token str
-    | [< _ = Stream.empty >] -> ()
-    | [< '_ ; s >] -> loop_symb s
+    | [< s >] ->
+	match unlocated lookup_utf8 s with
+	| Utf8Token (_,n) -> njunk n s; loop_symb s
+	| AsciiChar -> Stream.junk s; loop_symb s
+	| EmptyStream -> ()
   in
   loop_symb (Stream.of_string str)
+
+let check_keyword_to_add s =
+  try check_keyword s
+  with Error.E (UnsupportedUnicode unicode) ->
+    Flags.if_verbose msg_warning
+      (strbrk (Printf.sprintf "Token '%s' contains unicode character 0x%x which will not be parsable." s unicode))
 
 let check_ident str =
   let rec loop_id intail = parser
@@ -170,7 +197,7 @@ let check_ident str =
     | [< ' ('0'..'9' | ''') when intail; s >] ->
         loop_id true s
     | [< s >] ->
-	match lookup_utf8 s with
+	match unlocated lookup_utf8 s with
 	| Utf8Token (UnicodeLetter, n) -> njunk n s; loop_id true s
 	| Utf8Token (UnicodeIdentPart, n) when intail -> njunk n s; loop_id true s
 	| EmptyStream -> ()
@@ -178,9 +205,8 @@ let check_ident str =
   in
   loop_id false (Stream.of_string str)
 
-let check_keyword str =
-  try check_special_token str
-  with Error _ -> check_ident str
+let is_ident str =
+  try let _ = check_ident str in true with Error.E _ -> false
 
 (* Keyword and symbol dictionary *)
 let token_tree = ref empty_ttree
@@ -190,21 +216,14 @@ let is_keyword s =
   with Not_found -> false
 
 let add_keyword str =
-  check_keyword str;
-  token_tree := ttree_add !token_tree str
+  if not (is_keyword str) then
+    begin
+      check_keyword_to_add str;
+      token_tree := ttree_add !token_tree str
+    end
 
 let remove_keyword str =
   token_tree := ttree_remove !token_tree str
-
-(* Adding a new token (keyword or special token). *)
-let add_token (con, str) = match con with
-  | "" -> add_keyword str
-  | "METAIDENT" | "LEFTQMARK" | "IDENT" | "FIELD" | "INT" | "STRING" | "EOI"
-      -> ()
-  | _ ->
-      raise (Token.Error ("\
-the constructor \"" ^ con ^ "\" is not recognized by Lexer"))
-
 
 (* Freeze and unfreeze the state of the lexer *)
 type frozen_t = ttree
@@ -249,17 +268,22 @@ let rec number len = parser
   | [< ' ('0'..'9' as c); s >] -> number (store len c) s
   | [< >] -> len
 
-let escape len c = store len c
-
 let rec string in_comments bp len = parser
   | [< ''"'; esc=(parser [<''"' >] -> true | [< >] -> false); s >] ->
       if esc then string in_comments bp (store len '"') s else len
+  | [< ''('; s >] ->
+      (parser
+        | [< ''*'; s >] ->
+            string (Option.map succ in_comments) bp (store (store len '(') '*') s
+        | [< >] ->
+	    string in_comments bp (store len '(') s) s
   | [< ''*'; s >] ->
       (parser
         | [< '')'; s >] ->
-	    if in_comments then
+            if in_comments = Some 0 then
 	      msg_warning (str "Not interpreting \"*)\" as the end of current non-terminated comment because it occurs in a non-terminated string of the comment.");
-	    string in_comments bp (store (store len '*') ')') s
+            let in_comments = Option.map pred in_comments in
+ 	    string in_comments bp (store (store len '*') ')') s
         | [< >] ->
 	    string in_comments bp (store len '*') s) s
   | [< 'c; s >] -> string in_comments bp (store len c) s
@@ -348,7 +372,7 @@ let rec comment bp = parser bp2
          | [< s >] -> real_push_char '*'; comment bp s >] -> ()
   | [< ''"'; s >] ->
       if Flags.do_beautify() then (push_string"\"";comm_string bp2 s)
-      else ignore (string true bp2 0 s);
+      else ignore (string (Some 0) bp2 0 s);
       comment bp s
   | [< _ = Stream.empty >] ep -> err (bp, ep) Unterminated_comment
   | [< 'z; s >] -> real_push_char z; comment bp s
@@ -394,61 +418,68 @@ let find_keyword id s =
   let tt = ttree_find !token_tree id in
   match progress_further tt.node 0 tt s with
   | None -> raise Not_found
-  | Some c -> c
+  | Some c -> KEYWORD c
 
 (* Must be a special token *)
 let process_chars bp c cs =
   let t = progress_from_byte None (-1) !token_tree cs c in
   let ep = Stream.count cs in
   match t with
-    | Some t -> (("", t), (bp, ep))
+    | Some t -> (KEYWORD t, (bp, ep))
     | None ->
 	let ep' = bp + utf8_char_size cs c in
 	njunk (ep' - ep) cs;
 	err (bp, ep') Undefined_token
 
-let parse_after_dollar bp =
-  parser
-  | [< ' ('a'..'z' | 'A'..'Z' | '_' as c); len = ident_tail (store 0 c) >] ->
-      ("METAIDENT", get_buff len)
-  | [< s >] ->
-      match lookup_utf8 s with
-      | Utf8Token (UnicodeLetter, n) ->
-	  ("METAIDENT", get_buff (ident_tail (nstore n 0 s) s))
-      | AsciiChar | Utf8Token _ | EmptyStream -> fst (process_chars bp '$' s)
+let token_of_special c s = match c with
+  | '$' -> METAIDENT s
+  | '.' -> FIELD s
+  | _ -> assert false
 
-(* Parse what follows a dot *)
-let parse_after_dot bp c =
+(* Parse what follows a dot / a dollar *)
+
+let parse_after_special c bp =
   parser
-  | [< ' ('a'..'z' | 'A'..'Z' | '_' as c); len = ident_tail (store 0 c) >] ->
-      ("FIELD", get_buff len)
+  | [< ' ('a'..'z' | 'A'..'Z' | '_' as d); len = ident_tail (store 0 d) >] ->
+      token_of_special c (get_buff len)
   | [< s >] ->
       match lookup_utf8 s with
       | Utf8Token (UnicodeLetter, n) ->
-	  ("FIELD", get_buff (ident_tail (nstore n 0 s) s))
-      | AsciiChar | Utf8Token _ | EmptyStream ->
-	  fst (process_chars bp c s)
+	  token_of_special c (get_buff (ident_tail (nstore n 0 s) s))
+      | AsciiChar | Utf8Token _ | EmptyStream -> fst (process_chars bp c s)
 
 (* Parse what follows a question mark *)
+
 let parse_after_qmark bp s =
   match Stream.peek s with
-    |Some ('a'..'z' | 'A'..'Z' | '_') -> ("LEFTQMARK", "")
-    |None -> ("","?")
+    | Some ('a'..'z' | 'A'..'Z' | '_') -> LEFTQMARK
+    | None -> KEYWORD "?"
     | _ ->
 	match lookup_utf8 s with
-	  | Utf8Token (UnicodeLetter, _) -> ("LEFTQMARK", "")
+	  | Utf8Token (UnicodeLetter, _) -> LEFTQMARK
 	  | AsciiChar | Utf8Token _ | EmptyStream -> fst (process_chars bp '?' s)
 
+let blank_or_eof cs =
+  match Stream.peek cs with
+    | None -> true
+    | Some (' ' | '\t' | '\n' |'\r') -> true
+    | _ -> false
 
 (* Parse a token in a char stream *)
+
 let rec next_token = parser bp
   | [< '' ' | '\t' | '\n' |'\r' as c; s >] ->
       comm_loc bp; push_char c; next_token s
-  | [< ''$'; t = parse_after_dollar bp >] ep ->
+  | [< ''$' as c; t = parse_after_special c bp >] ep ->
       comment_stop bp; (t, (ep, bp))
-  | [< ''.' as c; t = parse_after_dot bp c >] ep ->
+  | [< ''.' as c; t = parse_after_special c bp; s >] ep ->
       comment_stop bp;
-      if Flags.do_beautify() & t=("",".") then between_com := true;
+      (* We enforce that "." should either be part of a larger keyword,
+         for instance ".(", or followed by a blank or eof. *)
+      if t = KEYWORD "." then begin
+	if not (blank_or_eof s) then err (bp,ep+1) Undefined_token;
+	if Flags.do_beautify() then between_com := true;
+      end;
       (t, (bp,ep))
   | [< ''?'; s >] ep ->
       let t = parse_after_qmark bp s in comment_stop bp; (t, (ep, bp))
@@ -456,13 +487,13 @@ let rec next_token = parser bp
        len = ident_tail (store 0 c); s >] ep ->
       let id = get_buff len in
       comment_stop bp;
-      (try ("", find_keyword id s) with Not_found -> ("IDENT", id)), (bp, ep)
+      (try find_keyword id s with Not_found -> IDENT id), (bp, ep)
   | [< ' ('0'..'9' as c); len = number (store 0 c) >] ep ->
       comment_stop bp;
-      (("INT", get_buff len), (bp, ep))
-  | [< ''\"'; len = string false bp 0 >] ep ->
+      (INT (get_buff len), (bp, ep))
+  | [< ''\"'; len = string None bp 0 >] ep ->
       comment_stop bp;
-      (("STRING", get_buff len), (bp, ep))
+      (STRING (get_buff len), (bp, ep))
   | [< ' ('(' as c);
       t = parser
         | [< ''*'; s >] ->
@@ -479,62 +510,53 @@ let rec next_token = parser bp
 	    let id = get_buff len in
 	    let ep = Stream.count s in
 	    comment_stop bp;
-	    (try ("",find_keyword id s) with Not_found -> ("IDENT",id)), (bp, ep)
+	    (try find_keyword id s with Not_found -> IDENT id), (bp, ep)
 	| AsciiChar | Utf8Token ((UnicodeSymbol | UnicodeIdentPart), _) ->
 	    let t = process_chars bp (Stream.next s) s in
 	    comment_stop bp; t
 	| EmptyStream ->
-	    comment_stop bp; (("EOI", ""), (bp, bp + 1))
+	    comment_stop bp; (EOI, (bp, bp + 1))
+
+(* (* Debug: uncomment this for tracing tokens seen by coq...*)
+let next_token s =
+  let (t,(bp,ep)) = next_token s in Printf.eprintf "[%s]\n%!" (Tok.to_string t);
+  (t,(bp,ep))
+*)
 
 (* Location table system for creating tables associating a token count
    to its location in a char stream (the source) *)
 
 let locerr () = invalid_arg "Lexer: location function"
 
-let tsz = 256   (* up to 2^29 entries on a 32-bit machine, 2^61 on 64-bit *)
-
-let loct_create () = ref [| [| |] |]
+let loct_create () = Hashtbl.create 207
 
 let loct_func loct i =
-  match
-    if i < 0 || i/tsz >= Array.length !loct then None
-    else if !loct.(i/tsz) = [| |] then None
-    else !loct.(i/tsz).(i mod tsz)
-  with
-    | Some loc -> Util.make_loc loc
-    | _ -> locerr ()
+  try Hashtbl.find loct i with Not_found -> locerr ()
 
-let loct_add loct i loc =
-  while i/tsz >= Array.length !loct do
-    let new_tmax = Array.length !loct * 2 in
-    let new_loct = Array.make new_tmax [| |] in
-    Array.blit !loct 0 new_loct 0 (Array.length !loct);
-    loct := new_loct;
-  done;
-  if !loct.(i/tsz) = [| |] then !loct.(i/tsz) <- Array.make tsz None;
-  !loct.(i/tsz).(i mod tsz) <- Some loc
+let loct_add loct i loc = Hashtbl.add loct i loc
 
-let current_location_table = ref (ref [| [| |] |])
+let current_location_table = ref (loct_create ())
 
-let location_function n =
-  loct_func !current_location_table n
-
-let func cs =
-  let loct = loct_create () in
-  let ts =
-    Stream.from
-      (fun i ->
-         let (tok, loc) = next_token cs in
-	   loct_add loct i loc; Some tok)
-  in
-    current_location_table := loct;
-    (ts, loct_func loct)
-
-type location_table = (int * int) option array array ref
+type location_table = (int, loc) Hashtbl.t
 let location_table () = !current_location_table
 let restore_location_table t = current_location_table := t
+let location_function n = loct_func !current_location_table n
 
-(* Names of tokens, for this lexer, used in Grammar error messages *)
+(** {6 The lexer of Coq} *)
+
+(** Note: removing a token.
+   We do nothing because [remove_token] is called only when removing a grammar
+   rule with [Grammar.delete_rule]. The latter command is called only when
+   unfreezing the state of the grammar entries (see GRAMMAR summary, file
+   env/metasyntax.ml). Therefore, instead of removing tokens one by one,
+   we unfreeze the state of the lexer. This restores the behaviour of the
+   lexer. B.B. *)
+
+IFDEF CAMLP5 THEN
+
+type te = Tok.t
+
+(** Names of tokens, for this lexer, used in Grammar error messages *)
 
 let token_text = function
   | ("", t) -> "'" ^ t ^ "'"
@@ -547,43 +569,65 @@ let token_text = function
   | (con, "") -> con
   | (con, prm) -> con ^ " \"" ^ prm ^ "\""
 
-(* The lexer of Coq *)
-
-(* Note: removing a token.
-   We do nothing because [remove_token] is called only when removing a grammar
-   rule with [Grammar.delete_rule]. The latter command is called only when
-   unfreezing the state of the grammar entries (see GRAMMAR summary, file
-   env/metasyntax.ml). Therefore, instead of removing tokens one by one,
-   we unfreeze the state of the lexer. This restores the behaviour of the
-   lexer. B.B. *)
-
-IFDEF CAMLP5 THEN
+let func cs =
+  let loct = loct_create () in
+  let ts =
+    Stream.from
+      (fun i ->
+         let (tok, loc) = next_token cs in
+	 loct_add loct i (make_loc loc); Some tok)
+  in
+  current_location_table := loct;
+  (ts, loct_func loct)
 
 let lexer = {
   Token.tok_func = func;
-  Token.tok_using = add_token;
+  Token.tok_using =
+    (fun pat -> match Tok.of_pattern pat with
+       | KEYWORD s -> add_keyword s
+       | _ -> ());
   Token.tok_removing = (fun _ -> ());
-  Token.tok_match = default_match;
+  Token.tok_match = Tok.match_pattern;
   Token.tok_comm = None;
   Token.tok_text = token_text }
 
-ELSE
+ELSE (* official camlp4 for ocaml >= 3.10 *)
 
-let lexer = {
-  Token.func = func;
-  Token.using = add_token;
-  Token.removing = (fun _ -> ());
-  Token.tparse = (fun _ -> None);
-  Token.text = token_text }
+module M_ = Camlp4.ErrorHandler.Register (Error)
+
+module Loc = Loc
+module Token = struct
+  include Tok (* Cf. tok.ml *)
+  module Loc = Loc
+  module Error = Camlp4.Struct.EmptyError
+  module Filter = struct
+    type token_filter = (Tok.t * Loc.t) Stream.t -> (Tok.t * Loc.t) Stream.t
+    type t = unit
+    let mk _is_kwd = ()
+    let keyword_added () kwd _ = add_keyword kwd
+    let keyword_removed () _ = ()
+    let filter () x = x
+    let define_filter () _ = ()
+  end
+end
+
+let mk () _init_loc(*FIXME*) cs =
+  let loct = loct_create () in
+  let rec self =
+    parser i
+       [< (tok, loc) = next_token; s >] ->
+          let loc = make_loc loc in
+            loct_add loct i loc;
+            [< '(tok, loc); self s >]
+      | [< >] -> [< >]
+  in current_location_table := loct; self cs
 
 END
 
-(* Terminal symbols interpretation *)
+(** Terminal symbols interpretation *)
 
 let is_ident_not_keyword s =
-  match s.[0] with
-    | 'a'..'z' | 'A'..'Z' | '_' -> not (is_keyword s)
-    | _ -> false
+  is_ident s && not (is_keyword s)
 
 let is_number s =
   let rec aux i =
@@ -613,6 +657,6 @@ let strip s =
 let terminal s =
   let s = strip s in
   if s = "" then failwith "empty token";
-  if is_ident_not_keyword s then ("IDENT", s)
-  else if is_number s then ("INT", s)
-  else ("", s)
+  if is_ident_not_keyword s then IDENT s
+  else if is_number s then INT s
+  else KEYWORD s

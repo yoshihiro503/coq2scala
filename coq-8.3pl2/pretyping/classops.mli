@@ -1,14 +1,11 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: classops.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
-(*i*)
 open Names
 open Decl_kinds
 open Term
@@ -16,9 +13,8 @@ open Evd
 open Environ
 open Nametab
 open Mod_subst
-(*i*)
 
-(*s This is the type of class kinds *)
+(** {6 This is the type of class kinds } *)
 type cl_typ =
   | CL_SORT
   | CL_FUN
@@ -28,53 +24,53 @@ type cl_typ =
 
 val subst_cl_typ : substitution -> cl_typ -> cl_typ
 
-(* This is the type of infos for declared classes *)
+(** This is the type of infos for declared classes *)
 type cl_info_typ = {
   cl_param : int }
 
-(* This is the type of coercion kinds *)
+(** This is the type of coercion kinds *)
 type coe_typ = Libnames.global_reference
 
-(* This is the type of infos for declared coercions *)
+(** This is the type of infos for declared coercions *)
 type coe_info_typ
 
-(* [cl_index] is the type of class keys *)
+(** [cl_index] is the type of class keys *)
 type cl_index
 
-(* [coe_index] is the type of coercion keys *)
+(** [coe_index] is the type of coercion keys *)
 type coe_index
 
-(* This is the type of paths from a class to another *)
+(** This is the type of paths from a class to another *)
 type inheritance_path = coe_index list
 
-(*s Access to classes infos *)
+(** {6 Access to classes infos } *)
 val class_info : cl_typ -> (cl_index * cl_info_typ)
 val class_exists : cl_typ -> bool
 val class_info_from_index : cl_index -> cl_typ * cl_info_typ
 
-(* [find_class_type env sigma c] returns the head reference of [c] and its
+(** [find_class_type env sigma c] returns the head reference of [c] and its
    arguments *)
-val find_class_type : env -> evar_map -> types -> cl_typ * constr list
+val find_class_type : evar_map -> types -> cl_typ * constr list
 
-(* raises [Not_found] if not convertible to a class *)
+(** raises [Not_found] if not convertible to a class *)
 val class_of : env -> evar_map -> types -> types * cl_index
 
-(* raises [Not_found] if not mapped to a class *)
+(** raises [Not_found] if not mapped to a class *)
 val inductive_class_of : inductive -> cl_index
 
 val class_args_of : env -> evar_map -> types -> constr list
 
-(*s [declare_coercion] adds a coercion in the graph of coercion paths *)
+(** {6 [declare_coercion] adds a coercion in the graph of coercion paths } *)
 val declare_coercion :
   coe_typ -> locality -> isid:bool ->
       src:cl_typ -> target:cl_typ -> params:int -> unit
 
-(*s Access to coercions infos *)
+(** {6 Access to coercions infos } *)
 val coercion_exists : coe_typ -> bool
 
 val coercion_value : coe_index -> (unsafe_judgment * bool)
 
-(*s Lookup functions for coercion paths *)
+(** {6 Lookup functions for coercion paths } *)
 val lookup_path_between_class : cl_index * cl_index -> inheritance_path
 
 val lookup_path_between : env -> evar_map -> types * types ->
@@ -86,13 +82,14 @@ val lookup_path_to_sort_from : env -> evar_map -> types ->
 val lookup_pattern_path_between :
   inductive * inductive -> (constructor * int) list
 
-(*i Crade *)
+(**/**)
+(* Crade *)
 open Pp
 val install_path_printer :
   ((cl_index * cl_index) * inheritance_path -> std_ppcmds) -> unit
-(*i*)
+(**/**)
 
-(*s This is for printing purpose *)
+(** {6 This is for printing purpose } *)
 val string_of_class : cl_typ -> string
 val pr_class : cl_typ -> std_ppcmds
 val pr_cl_index : cl_index -> std_ppcmds
@@ -101,6 +98,6 @@ val inheritance_graph : unit -> ((cl_index * cl_index) * inheritance_path) list
 val classes : unit -> cl_typ list
 val coercions : unit -> coe_index list
 
-(* [hide_coercion] returns the number of params to skip if the coercion must
+(** [hide_coercion] returns the number of params to skip if the coercion must
    be hidden, [None] otherwise; it raises [Not_found] if not a coercion *)
 val hide_coercion : coe_typ -> int option

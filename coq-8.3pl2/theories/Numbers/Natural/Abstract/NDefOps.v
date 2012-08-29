@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,14 +8,41 @@
 (*                      Evgeny Makarov, INRIA, 2007                     *)
 (************************************************************************)
 
-(*i $Id: NDefOps.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
 Require Import Bool. (* To get the orb and negb function *)
 Require Import RelationPairs.
 Require Export NStrongRec.
 
-Module NdefOpsPropFunct (Import N : NAxiomsSig').
-Include NStrongRecPropFunct N.
+(** In this module, we derive generic implementations of usual operators
+   just via the use of a [recursion] function. *)
+
+Module NdefOpsProp (Import N : NAxiomsRecSig').
+Include NStrongRecProp N.
+
+(** Nullity Test *)
+
+Definition if_zero (A : Type) (a b : A) (n : N.t) : A :=
+  recursion a (fun _ _ => b) n.
+
+Arguments if_zero [A] a b n.
+
+Instance if_zero_wd (A : Type) :
+ Proper (Logic.eq ==> Logic.eq ==> N.eq ==> Logic.eq) (@if_zero A).
+Proof.
+unfold if_zero. (* TODO : solve_proper : SLOW + BUG *)
+f_equiv'.
+Qed.
+
+Theorem if_zero_0 : forall (A : Type) (a b : A), if_zero a b 0 = a.
+Proof.
+unfold if_zero; intros; now rewrite recursion_0.
+Qed.
+
+Theorem if_zero_succ :
+ forall (A : Type) (a b : A) (n : N.t), if_zero a b (S n) = b.
+Proof.
+intros; unfold if_zero.
+now rewrite recursion_succ.
+Qed.
 
 (*****************************************************)
 (**                   Addition                       *)
@@ -24,17 +51,9 @@ Definition def_add (x y : N.t) := recursion y (fun _ => S) x.
 
 Local Infix "+++" := def_add (at level 50, left associativity).
 
-Instance def_add_prewd : Proper (N.eq==>N.eq==>N.eq) (fun _ => S).
-Proof.
-intros _ _ _ p p' Epp'; now rewrite Epp'.
-Qed.
-
 Instance def_add_wd : Proper (N.eq ==> N.eq ==> N.eq) def_add.
 Proof.
-intros x x' Exx' y y' Eyy'. unfold def_add.
-(* TODO: why rewrite Exx' don't work here (or verrrry slowly) ? *)
-apply recursion_wd with (Aeq := N.eq); auto with *.
-apply def_add_prewd.
+unfold def_add. f_equiv'.
 Qed.
 
 Theorem def_add_0_l : forall y, 0 +++ y == y.
@@ -45,7 +64,7 @@ Qed.
 Theorem def_add_succ_l : forall x y, S x +++ y == S (x +++ y).
 Proof.
 intros x y; unfold def_add.
-rewrite recursion_succ; auto with *.
+rewrite recursion_succ; f_equiv'.
 Qed.
 
 Theorem def_add_add : forall n m, n +++ m == n + m.
@@ -62,18 +81,10 @@ Definition def_mul (x y : N.t) := recursion 0 (fun _ p => p +++ x) y.
 
 Local Infix "**" := def_mul (at level 40, left associativity).
 
-Instance def_mul_prewd :
- Proper (N.eq==>N.eq==>N.eq==>N.eq) (fun x _ p => p +++ x).
-Proof.
-repeat red; intros; now apply def_add_wd.
-Qed.
-
 Instance def_mul_wd : Proper (N.eq ==> N.eq ==> N.eq) def_mul.
 Proof.
-unfold def_mul.
-intros x x' Exx' y y' Eyy'.
-apply recursion_wd; auto with *.
-now apply def_mul_prewd.
+unfold def_mul. (* TODO : solve_proper SLOW + BUG *)
+f_equiv'.
 Qed.
 
 Theorem def_mul_0_r : forall x, x ** 0 == 0.
@@ -85,7 +96,7 @@ Theorem def_mul_succ_r : forall x y, x ** S y == x ** y +++ x.
 Proof.
 intros x y; unfold def_mul.
 rewrite recursion_succ; auto with *.
-now apply def_mul_prewd.
+f_equiv'.
 Qed.
 
 Theorem def_mul_mul : forall n m, n ** m == n * m.
@@ -106,25 +117,9 @@ recursion
 
 Local Infix "<<" := ltb (at level 70, no associativity).
 
-Instance ltb_prewd1 : Proper (N.eq==>Logic.eq) (if_zero false true).
-Proof.
-red; intros; apply if_zero_wd; auto.
-Qed.
-
-Instance ltb_prewd2 : Proper (N.eq==>(N.eq==>Logic.eq)==>N.eq==>Logic.eq)
- (fun _ f n => recursion false (fun n' _ => f n') n).
-Proof.
-repeat red; intros; simpl.
-apply recursion_wd; auto with *.
-repeat red; auto.
-Qed.
-
 Instance ltb_wd : Proper (N.eq ==> N.eq ==> Logic.eq) ltb.
 Proof.
-unfold ltb.
-intros n n' Hn m m' Hm.
-apply f_equiv; auto with *.
-apply recursion_wd; auto; [ apply ltb_prewd1 | apply ltb_prewd2 ].
+unfold ltb. f_equiv'.
 Qed.
 
 Theorem ltb_base : forall n, 0 << n = if_zero false true n.
@@ -136,11 +131,9 @@ Theorem ltb_step :
   forall m n, S m << n = recursion false (fun n' _ => m << n') n.
 Proof.
 intros m n; unfold ltb at 1.
-apply f_equiv; auto with *.
-rewrite recursion_succ by (apply ltb_prewd1||apply ltb_prewd2).
-fold (ltb m).
-repeat red; intros. apply recursion_wd; auto.
-repeat red; intros; now apply ltb_wd.
+f_equiv.
+rewrite recursion_succ; f_equiv'.
+reflexivity.
 Qed.
 
 (* Above, we rewrite applications of function. Is it possible to rewrite
@@ -162,8 +155,7 @@ Qed.
 Theorem succ_ltb_mono : forall n m, (S n << S m) = (n << m).
 Proof.
 intros n m.
-rewrite ltb_step. rewrite recursion_succ; try reflexivity.
-repeat red; intros; now apply ltb_wd.
+rewrite ltb_step. rewrite recursion_succ; f_equiv'.
 Qed.
 
 Theorem ltb_lt : forall n m, n << m = true <-> n < m.
@@ -188,9 +180,7 @@ Definition even (x : N.t) := recursion true (fun _ p => negb p) x.
 
 Instance even_wd : Proper (N.eq==>Logic.eq) even.
 Proof.
-intros n n' Hn. unfold even.
-apply recursion_wd; auto.
-congruence.
+unfold even. f_equiv'.
 Qed.
 
 Theorem even_0 : even 0 = true.
@@ -202,18 +192,11 @@ Qed.
 Theorem even_succ : forall x, even (S x) = negb (even x).
 Proof.
 unfold even.
-intro x; rewrite recursion_succ; try reflexivity.
-congruence.
+intro x; rewrite recursion_succ; f_equiv'.
 Qed.
 
 (*****************************************************)
 (**                Division by 2                     *)
-
-Local Notation "a <= b <= c" := (a<=b /\ b<=c).
-Local Notation "a <= b < c" := (a<=b /\ b<c).
-Local Notation "a < b <= c" := (a<b /\ b<=c).
-Local Notation "a < b < c" := (a<b /\ b<c).
-Local Notation "2" := (S 1).
 
 Definition half_aux (x : N.t) : N.t * N.t :=
   recursion (0, 0) (fun _ p => let (x1, x2) := p in (S x2, x1)) x.
@@ -223,14 +206,14 @@ Definition half (x : N.t) := snd (half_aux x).
 Instance half_aux_wd : Proper (N.eq ==> N.eq*N.eq) half_aux.
 Proof.
 intros x x' Hx. unfold half_aux.
-apply recursion_wd; auto with *.
+f_equiv; trivial.
 intros y y' Hy (u,v) (u',v') (Hu,Hv). compute in *.
 rewrite Hu, Hv; auto with *.
 Qed.
 
 Instance half_wd : Proper (N.eq==>N.eq) half.
 Proof.
-intros x x' Hx. unfold half. rewrite Hx; auto with *.
+unfold half. f_equiv'.
 Qed.
 
 Lemma half_aux_0 : half_aux 0 = (0,0).
@@ -245,8 +228,7 @@ intros.
 remember (half_aux x) as h.
 destruct h as (f,s); simpl in *.
 unfold half_aux in *.
-rewrite recursion_succ, <- Heqh; simpl; auto.
-repeat red; intros; subst; auto.
+rewrite recursion_succ, <- Heqh; simpl; f_equiv'.
 Qed.
 
 Theorem half_aux_spec : forall n,
@@ -258,7 +240,7 @@ rewrite half_aux_0; simpl; rewrite add_0_l; auto with *.
 intros.
 rewrite half_aux_succ. simpl.
 rewrite add_succ_l, add_comm; auto.
-apply succ_wd; auto.
+now f_equiv.
 Qed.
 
 Theorem half_aux_spec2 : forall n,
@@ -271,7 +253,7 @@ rewrite half_aux_0; simpl. auto with *.
 intros.
 rewrite half_aux_succ; simpl.
 destruct H; auto with *.
-right; apply succ_wd; auto with *.
+right; now f_equiv.
 Qed.
 
 Theorem half_0 : half 0 == 0.
@@ -281,14 +263,14 @@ Qed.
 
 Theorem half_1 : half 1 == 0.
 Proof.
-unfold half. rewrite half_aux_succ, half_aux_0; simpl; auto with *.
+unfold half. rewrite one_succ, half_aux_succ, half_aux_0; simpl; auto with *.
 Qed.
 
 Theorem half_double : forall n,
  n == 2 * half n \/ n == 1 + 2 * half n.
 Proof.
 intros. unfold half.
-nzsimpl.
+nzsimpl'.
 destruct (half_aux_spec2 n) as [H|H]; [left|right].
 rewrite <- H at 1. apply half_aux_spec.
 rewrite <- add_succ_l. rewrite <- H at 1. apply half_aux_spec.
@@ -319,24 +301,23 @@ assert (LE : 0 <= half n) by apply le_0_l.
 le_elim LE; auto.
 destruct (half_double n) as [E|E];
  rewrite <- LE, mul_0_r, ?add_0_r in E; rewrite E in LT.
-destruct (nlt_0_r _ LT).
-rewrite <- succ_lt_mono in LT.
-destruct (nlt_0_r _ LT).
+order'.
+order.
 Qed.
 
 Theorem half_decrease : forall n, 0 < n -> half n < n.
 Proof.
 intros n LT.
-destruct (half_double n) as [E|E]; rewrite E at 2;
- rewrite ?mul_succ_l, ?mul_0_l, ?add_0_l, ?add_assoc.
+destruct (half_double n) as [E|E]; rewrite E at 2; nzsimpl'.
 rewrite <- add_0_l at 1.
 rewrite <- add_lt_mono_r.
 assert (LE : 0 <= half n) by apply le_0_l.
 le_elim LE; auto.
 rewrite <- LE, mul_0_r in E. rewrite E in LT. destruct (nlt_0_r _ LT).
+rewrite <- add_succ_l.
 rewrite <- add_0_l at 1.
 rewrite <- add_lt_mono_r.
-rewrite add_succ_l. apply lt_0_succ.
+apply lt_0_succ.
 Qed.
 
 
@@ -347,17 +328,9 @@ Definition pow (n m : N.t) := recursion 1 (fun _ r => n*r) m.
 
 Local Infix "^^" := pow (at level 30, right associativity).
 
-Instance pow_prewd :
- Proper (N.eq==>N.eq==>N.eq==>N.eq) (fun n _ r => n*r).
-Proof.
-intros n n' Hn x x' Hx y y' Hy. rewrite Hn, Hy; auto with *.
-Qed.
-
 Instance pow_wd : Proper (N.eq==>N.eq==>N.eq) pow.
 Proof.
-intros n n' Hn m m' Hm. unfold pow.
-apply recursion_wd; auto with *.
-now apply pow_prewd.
+unfold pow. f_equiv'.
 Qed.
 
 Lemma pow_0 : forall n, n^^0 == 1.
@@ -367,8 +340,7 @@ Qed.
 
 Lemma pow_succ : forall n m, n^^(S m) == n*(n^^m).
 Proof.
-intros. unfold pow. rewrite recursion_succ; auto with *.
-now apply pow_prewd.
+intros. unfold pow. rewrite recursion_succ; f_equiv'.
 Qed.
 
 
@@ -389,15 +361,13 @@ Proof.
 intros g g' Hg n n' Hn.
 rewrite Hn.
 destruct (n' << 2); auto with *.
-apply succ_wd.
-apply Hg. rewrite Hn; auto with *.
+f_equiv. apply Hg. now f_equiv.
 Qed.
 
 Instance log_wd : Proper (N.eq==>N.eq) log.
 Proof.
 intros x x' Exx'. unfold log.
-apply strong_rec_wd; auto with *.
-apply log_prewd.
+apply strong_rec_wd; f_equiv'.
 Qed.
 
 Lemma log_good_step : forall n h1 h2,
@@ -406,11 +376,11 @@ Lemma log_good_step : forall n h1 h2,
   (if n << 2 then 0 else S (h2 (half n))).
 Proof.
 intros n h1 h2 E.
-destruct (n<<2) as [ ]_eqn:H.
+destruct (n<<2) eqn:H.
 auto with *.
-apply succ_wd, E, half_decrease.
-rewrite <- not_true_iff_false, ltb_lt, nlt_ge, le_succ_l in H.
-apply lt_succ_l; auto.
+f_equiv. apply E, half_decrease.
+rewrite two_succ, <- not_true_iff_false, ltb_lt, nlt_ge, le_succ_l in H.
+order'.
 Qed.
 Hint Resolve log_good_step.
 
@@ -441,14 +411,14 @@ intros n IH k Hk1 Hk2.
 destruct (lt_ge_cases k 2) as [LT|LE].
 (* base *)
 rewrite log_init, pow_0 by auto.
-rewrite <- le_succ_l in Hk2.
+rewrite <- le_succ_l, <- one_succ in Hk2.
 le_elim Hk2.
-rewrite <- nle_gt, le_succ_l in LT. destruct LT; auto.
+rewrite two_succ, <- nle_gt, le_succ_l in LT. destruct LT; auto.
 rewrite <- Hk2.
 rewrite half_1; auto using lt_0_1, le_refl.
 (* step *)
 rewrite log_step, pow_succ by auto.
-rewrite le_succ_l in LE.
+rewrite two_succ, le_succ_l in LE.
 destruct (IH (half k)) as (IH1,IH2).
  rewrite <- lt_succ_r. apply lt_le_trans with k; auto.
   now apply half_decrease.
@@ -458,22 +428,13 @@ split.
 rewrite <- le_succ_l in IH1.
 apply mul_le_mono_l with (p:=2) in IH1.
 eapply lt_le_trans; eauto.
-nzsimpl.
+nzsimpl'.
 rewrite lt_succ_r.
 eapply le_trans; [ eapply half_lower_bound | ].
-nzsimpl; apply le_refl.
+nzsimpl'; apply le_refl.
 eapply le_trans; [ | eapply half_upper_bound ].
 apply mul_le_mono_l; auto.
 Qed.
 
-(** Later:
-
-Theorem log_mul : forall n m, 0 < n -> 0 < m ->
- log (n*m) == log n + log m.
-
-Theorem log_pow2 : forall n, log (2^^n) = n.
-
-*)
-
-End NdefOpsPropFunct.
+End NdefOpsProp.
 

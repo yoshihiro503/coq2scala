@@ -1,14 +1,11 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i $Id: himsg.mli 13323 2010-07-24 15:57:30Z herbelin $ i*)
-
-(*i*)
 open Pp
 open Names
 open Indtypes
@@ -19,13 +16,12 @@ open Typeclasses_errors
 open Indrec
 open Cases
 open Logic
-(*i*)
 
-(* This module provides functions to explain the type errors. *)
+(** This module provides functions to explain the type errors. *)
 
-val explain_type_error : env -> type_error -> std_ppcmds
+val explain_type_error : env -> Evd.evar_map -> type_error -> std_ppcmds
 
-val explain_pretype_error : env -> pretype_error -> std_ppcmds
+val explain_pretype_error : env -> Evd.evar_map -> pretype_error -> std_ppcmds
 
 val explain_inductive_error : inductive_error -> std_ppcmds
 
@@ -44,3 +40,8 @@ val explain_reduction_tactic_error :
 val explain_ltac_call_trace :
   int * Proof_type.ltac_call_kind * Proof_type.ltac_trace * Util.loc ->
   std_ppcmds
+
+val explain_module_error : Modops.module_typing_error -> std_ppcmds
+
+val explain_module_internalization_error :
+  Modintern.module_internalization_error -> std_ppcmds

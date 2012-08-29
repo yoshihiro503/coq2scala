@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: Operators_Properties.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 (************************************************************************)
 (** * Some properties of the operators on relations                     *)
@@ -19,17 +17,17 @@ Require Import Relation_Operators.
 
 Section Properties.
 
-  Implicit Arguments clos_refl_trans [A].
-  Implicit Arguments clos_refl_trans_1n [A].
-  Implicit Arguments clos_refl_trans_n1 [A].
-  Implicit Arguments clos_refl_sym_trans [A].
-  Implicit Arguments clos_refl_sym_trans_1n [A].
-  Implicit Arguments clos_refl_sym_trans_n1 [A].
-  Implicit Arguments clos_trans [A].
-  Implicit Arguments clos_trans_1n [A].
-  Implicit Arguments clos_trans_n1 [A].
-  Implicit Arguments inclusion [A].
-  Implicit Arguments preorder [A].
+  Arguments clos_refl_trans [A] R x _.
+  Arguments clos_refl_trans_1n [A] R x _.
+  Arguments clos_refl_trans_n1 [A] R x _.
+  Arguments clos_refl_sym_trans [A] R _ _.
+  Arguments clos_refl_sym_trans_1n [A] R x _.
+  Arguments clos_refl_sym_trans_n1 [A] R x _.
+  Arguments clos_trans [A] R x _.
+  Arguments clos_trans_1n [A] R x _.
+  Arguments clos_trans_n1 [A] R x _.
+  Arguments inclusion [A] R1 R2.
+  Arguments preorder [A] R.
 
   Variable A : Type.
   Variable R : relation A.
@@ -52,7 +50,7 @@ Section Properties.
 
     Lemma clos_rt_idempotent : inclusion (R*)* R*.
     Proof.
-      red in |- *.
+      red.
       induction 1; auto with sets.
       intros.
       apply rt_trans with y; auto with sets.
@@ -68,7 +66,7 @@ Section Properties.
     Lemma clos_rt_clos_rst :
       inclusion (clos_refl_trans R) (clos_refl_sym_trans R).
     Proof.
-      red in |- *.
+      red.
       induction 1; auto with sets.
       apply rst_trans with y; auto with sets.
     Qed.
@@ -89,7 +87,7 @@ Section Properties.
       inclusion (clos_refl_sym_trans (clos_refl_sym_trans R))
       (clos_refl_sym_trans R).
     Proof.
-      red in |- *.
+      red.
       induction 1; auto with sets.
       apply rst_trans with y; auto with sets.
     Qed.

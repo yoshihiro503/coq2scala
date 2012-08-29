@@ -1,20 +1,19 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* $Id: command_windows.ml 13323 2010-07-24 15:57:30Z herbelin $ *)
-
-class command_window () =
+class command_window coqtop current =
 (*  let window = GWindow.window
 		 ~allow_grow:true ~allow_shrink:true
 		 ~width:500 ~height:250
 		 ~position:`CENTER
 		 ~title:"CoqIde queries" ~show:false ()
   in *)
+  let views = ref [] in
   let frame = GBin.frame ~label:"Command Pane" ~shadow_type:`IN () in
   let _ = frame#misc#hide () in
   let _ = GtkData.AccelGroup.create () in
@@ -51,12 +50,17 @@ class command_window () =
       ()
   in
 
+  let remove_cb () =
+    let index = notebook#current_page in
+    let () = notebook#remove_page index in
+    views := Minilib.list_filter_i (fun i x -> i <> index) !views
+  in
   let _ =
     toolbar#insert_button
       ~tooltip:"Delete Page"
       ~text:"Delete Page"
       ~icon:(Ideutils.stock_to_widget `DELETE)
-      ~callback:(fun () -> notebook#remove_page notebook#current_page)
+      ~callback:remove_cb
       ()
   in
 object(self)
@@ -65,25 +69,21 @@ object(self)
 
   val new_page_menu = new_page_menu
   val notebook = notebook
+
   method frame = frame
   method new_command ?command ?term () =
-    let appendp x = ignore (notebook#append_page x) in
     let frame = GBin.frame
 		  ~shadow_type:`ETCHED_OUT
-		  ~packing:appendp
 		  ()
     in
+    let _ = notebook#append_page frame#coerce in
     notebook#goto_page (notebook#page_num frame#coerce);
     let vbox = GPack.vbox ~homogeneous:false ~packing:frame#add () in
     let hbox = GPack.hbox ~homogeneous:false ~packing:vbox#pack () in
-    let combo = GEdit.combo ~popdown_strings:Coq_commands.state_preserving
-		  ~enable_arrow_keys:true
-		  ~allow_empty:false
-		  ~value_in_list:false (* true is not ok with disable_activate...*)
+    let (combo,_) = GEdit.combo_box_entry_text ~strings:Coq_commands.state_preserving
 		  ~packing:hbox#pack
 		  ()
     in
-    combo#disable_activate ();
     let on_activate c () =
       if List.mem combo#entry#text Coq_commands.state_preserving then c ()
       else prerr_endline "Not a state preserving command"
@@ -97,6 +97,10 @@ object(self)
 	~packing:(vbox#pack ~fill:true ~expand:true) () in
     let ok_b = GButton.button ~label:"Ok" ~packing:(hbox#pack ~expand:false) () in
     let result = GText.view ~packing:r_bin#add () in
+    let () = views := !views @ [result] in
+    result#misc#modify_font !current.Preferences.text_font;
+    let clr = Tags.color_of_string !current.Preferences.background_color in
+    result#misc#modify_base [`NORMAL, `COLOR clr];
     result#misc#set_can_focus true; (* false causes problems for selection *)
     result#set_editable false;
     let callback () =
@@ -106,11 +110,14 @@ object(self)
 	then com ^ " " else com ^ " " ^ entry#text ^" . "
       in
       try
-	ignore(Coq.interp false phrase);
-	result#buffer#set_text
-	  ("Result for command " ^ phrase ^ ":\n" ^ Ideutils.read_stdout ())
+        result#buffer#set_text
+          (match Coq.interp !coqtop ~raw:true phrase with
+             | Interface.Fail (l,str) ->
+                 ("Error while interpreting "^phrase^":\n"^str)
+             | Interface.Good results ->
+                 ("Result for command " ^ phrase ^ ":\n" ^ results))
       with e ->
-	let (s,loc) = Coq.process_exn e in
+	let s = Printexc.to_string e in
 	assert (Glib.Utf8.validate s);
 	result#buffer#set_text s
     in
@@ -136,15 +143,16 @@ object(self)
     ignore (combo#entry#connect#activate ~callback);
     self#frame#misc#show ()
 
+  method refresh_font () =
+    let iter view = view#misc#modify_font !current.Preferences.text_font in
+    List.iter iter !views
+
+  method refresh_color () =
+    let clr = Tags.color_of_string !current.Preferences.background_color in
+    let iter view = view#misc#modify_base [`NORMAL, `COLOR clr] in
+    List.iter iter !views
+
   initializer
-    ignore (new_page_menu#connect#clicked self#new_command);
+    ignore (new_page_menu#connect#clicked ~callback:self#new_command);
    (* ignore (window#event#connect#delete (fun _ -> window#misc#hide(); true));*)
 end
-
-let command_window = ref None
-
-let main () = command_window := Some (new command_window ())
-
-let command_window () = match !command_window with
-  | None -> failwith "No command window."
-  | Some c -> c

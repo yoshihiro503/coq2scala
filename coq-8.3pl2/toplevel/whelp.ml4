@@ -1,14 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
 (*i camlp4deps: "parsing/grammar.cma" i*)
-
-(* $Id: whelp.ml4 13323 2010-07-24 15:57:30Z herbelin $ *)
 
 open Flags
 open Pp
@@ -17,10 +15,9 @@ open System
 open Names
 open Term
 open Environ
-open Rawterm
+open Glob_term
 open Libnames
 open Nametab
-open Termops
 open Detyping
 open Constrintern
 open Dischargedhypsmap
@@ -41,6 +38,7 @@ open Goptions
 let _ =
   declare_string_option
     { optsync  = false;
+      optdepr  = false;
       optname  = "Whelp server";
       optkey   = ["Whelp";"Server"];
       optread  = (fun () -> !whelp_server_name);
@@ -49,6 +47,7 @@ let _ =
 let _ =
   declare_string_option
     { optsync  = false;
+      optdepr  = false;
       optname  = "Whelp getter";
       optkey   = ["Whelp";"Getter"];
       optread  = (fun () -> !getter_server_name);
@@ -94,10 +93,10 @@ let uri_of_repr_kn ref (mp,dir,l) =
 let url_paren f l = url_char '('; f l; url_char ')'
 let url_bracket f l = url_char '['; f l; url_char ']'
 
-let whelp_of_rawsort = function
-  | RProp Null -> "Prop"
-  | RProp Pos -> "Set"
-  | RType _ -> "Type"
+let whelp_of_glob_sort = function
+  | GProp Null -> "Prop"
+  | GProp Pos -> "Set"
+  | GType _ -> "Type"
 
 let uri_int n = Buffer.add_string b (string_of_int n)
 
@@ -130,9 +129,9 @@ let uri_params f = function
 let get_discharged_hyp_names sp = List.map basename (get_discharged_hyps sp)
 
 let section_parameters = function
-  | RRef (_,(ConstructRef ((induri,_),_) | IndRef (induri,_))) ->
+  | GRef (_,(ConstructRef ((induri,_),_) | IndRef (induri,_))) ->
       get_discharged_hyp_names (path_of_global (IndRef(induri,0)))
-  | RRef (_,(ConstRef cst as ref)) ->
+  | GRef (_,(ConstRef cst as ref)) ->
       get_discharged_hyp_names (path_of_global ref)
   | _ -> []
 
@@ -144,33 +143,33 @@ let merge vl al =
 
 let rec uri_of_constr c =
   match c with
-  | RVar (_,id) -> url_id id
-  | RRef (_,ref) ->  uri_of_global ref
-  | RHole _ | REvar _ -> url_string "?"
-  | RSort (_,s) -> url_string (whelp_of_rawsort s)
+  | GVar (_,id) -> url_id id
+  | GRef (_,ref) ->  uri_of_global ref
+  | GHole _ | GEvar _ -> url_string "?"
+  | GSort (_,s) -> url_string (whelp_of_glob_sort s)
   | _ -> url_paren (fun () -> match c with
-  | RApp (_,f,args) ->
+  | GApp (_,f,args) ->
       let inst,rest = merge (section_parameters f) args in
       uri_of_constr f; url_char ' '; uri_params uri_of_constr inst;
       url_list_with_sep " " uri_of_constr rest
-  | RLambda (_,na,k,ty,c) ->
+  | GLambda (_,na,k,ty,c) ->
       url_string "\\lambda "; url_of_name na; url_string ":";
       uri_of_constr ty; url_string "."; uri_of_constr c
-  | RProd (_,Anonymous,k,ty,c) ->
+  | GProd (_,Anonymous,k,ty,c) ->
       uri_of_constr ty; url_string "\\to "; uri_of_constr c
-  | RProd (_,Name id,k,ty,c) ->
+  | GProd (_,Name id,k,ty,c) ->
       url_string "\\forall "; url_id id; url_string ":";
       uri_of_constr ty; url_string "."; uri_of_constr c
-  | RLetIn (_,na,b,c) ->
+  | GLetIn (_,na,b,c) ->
       url_string "let "; url_of_name na; url_string "\\def ";
       uri_of_constr b; url_string " in "; uri_of_constr c
-  | RCast (_,c, CastConv (_,t)) ->
+  | GCast (_,c, CastConv (_,t)) ->
       uri_of_constr c; url_string ":"; uri_of_constr t
-  | RRec _ | RIf _ | RLetTuple _ | RCases _ ->
+  | GRec _ | GIf _ | GLetTuple _ | GCases _ ->
       error "Whelp does not support pattern-matching and (co-)fixpoint."
-  | RVar _ | RRef _ | RHole _ | REvar _ | RSort _ | RCast (_,_, CastCoerce) ->
+  | GVar _ | GRef _ | GHole _ | GEvar _ | GSort _ | GCast (_,_, CastCoerce) ->
       anomaly "Written w/o parenthesis"
-  | RPatVar _ | RDynamic _ ->
+  | GPatVar _ ->
       anomaly "Found constructors not supported in constr") ()
 
 let make_string f x = Buffer.reset b; f x; Buffer.contents b
@@ -196,8 +195,9 @@ let whelp_elim ind =
   send_whelp "elim" (make_string uri_of_global (IndRef ind))
 
 let on_goal f =
-  let gls = nth_goal_of_pftreestate 1 (get_pftreestate ()) in
-  f (it_mkNamedProd_or_LetIn (pf_concl gls) (pf_hyps gls))
+  let { Evd.it=goals ; sigma=sigma } = Proof.V82.subgoals (get_pftreestate ()) in
+  let gls = { Evd.it=List.hd goals ; sigma = sigma }  in
+  f (Termops.it_mkNamedProd_or_LetIn (pf_concl gls) (pf_hyps gls))
 
 type whelp_request =
   | Locate of string

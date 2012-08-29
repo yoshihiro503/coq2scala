@@ -1,3 +1,15 @@
+(************************************************************************)
+(*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(*   \VV/  **************************************************************)
+(*    //   *      This file is distributed under the terms of the       *)
+(*         *       GNU Lesser General Public License Version 2.1        *)
+(************************************************************************)
+
+(* Author: Benjamin Grégoire as part of the bytecode-based virtual reduction
+   machine, Oct 2004 *)
+(* Extension: Arnaud Spiwack (support for native arithmetic), May 2005 *)
+
 open Util
 open Names
 open Cbytecodes
@@ -339,7 +351,7 @@ let rec str_const c =
   | App(f,args) ->
       begin
 	match kind_of_term f with
-	| Construct((kn,j),i) -> (* arnaud: Construct(((kn,j),i) as cstr) -> *)
+	| Construct((kn,j),i) -> 
             begin
 	    let oib = lookup_mind kn !global_env in
 	    let oip = oib.mind_packets.(j) in
@@ -409,7 +421,7 @@ let rec str_const c =
 	| _ -> Bconstr c
       end
   | Ind ind -> Bstrconst (Const_ind ind)
-  | Construct ((kn,j),i) ->  (*arnaud: Construct ((kn,j),i as cstr) ->  *)
+  | Construct ((kn,j),i) ->  
       begin
       (* spiwack: tries first to apply the run-time compilation
            behavior of the constructor, as in 2/ above *)
@@ -668,19 +680,6 @@ and compile_str_cst reloc sc sz cont =
 (* spiwack : compilation of constants with their arguments.
    Makes a special treatment with 31-bit integer addition *)
 and compile_const =
-(*arnaud:  let code_construct kn cont =
-     let f_cont =
-         let else_lbl = Label.create () in
-         Kareconst(2, else_lbl):: Kacc 0:: Kpop 1::
-          Kaddint31:: Kreturn 0:: Klabel else_lbl::
-         (* works as comp_app with nargs = 2 and tailcall cont [Kreturn 0]*)
-          Kgetglobal (get_allias !global_env kn)::
-          Kappterm(2, 2):: [] (* = discard_dead_code [Kreturn 0] *)
-     in
-     let lbl = Label.create () in
-     fun_code := [Ksequence (add_grab 2 lbl f_cont, !fun_code)];
-     Kclosure(lbl, 0)::cont
-  in *)
   fun reloc-> fun  kn -> fun args -> fun sz -> fun cont ->
   let nargs = Array.length args in
   (* spiwack: checks if there is a specific way to compile the constant
@@ -715,18 +714,11 @@ let compile env c =
   Format.print_flush();  *)
   init_code,!fun_code, Array.of_list fv
 
-let compile_constant_body env body opaque boxed =
-  if opaque then BCconstant
-  else match body with
-  | None -> BCconstant
-  | Some sb ->
+let compile_constant_body env = function
+  | Undef _ | OpaqueDef _ -> BCconstant
+  | Def sb ->
       let body = Declarations.force sb in
-      if boxed then
-	let res = compile env body in
-	let to_patch = to_memory res in
-	BCdefined(true, to_patch)
-      else
-	match kind_of_term body with
+      match kind_of_term body with
 	| Const kn' ->
 	    (* we use the canonical name of the constant*)
 	    let con= constant_of_kn (canonical_con kn') in
@@ -734,8 +726,11 @@ let compile_constant_body env body opaque boxed =
 	| _ ->
 	    let res = compile env body in
 	    let to_patch = to_memory res in
-	    BCdefined (false, to_patch)
+	    BCdefined to_patch
 
+(* Shortcut of the previous function used during module strengthening *)
+
+let compile_alias kn = BCallias (constant_of_kn (canonical_con kn))
 
 (* spiwack: additional function which allow different part of compilation of the
       31-bit integers *)

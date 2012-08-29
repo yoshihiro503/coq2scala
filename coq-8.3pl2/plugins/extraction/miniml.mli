@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: miniml.mli 13733 2010-12-21 13:08:53Z letouzey $ i*)
 
 (*s Target language for extraction: a core ML called MiniML. *)
 
@@ -57,7 +55,7 @@ type inductive_kind =
   | Singleton
   | Coinductive
   | Standard
-  | Record of global_reference list
+  | Record of global_reference option list (* None for anonymous field *)
 
 (* A [ml_ind_packet] is the miniml counterpart of a [one_inductive_body].
    If the inductive is logical ([ip_logical = false]), then all other fields
@@ -73,8 +71,7 @@ type ml_ind_packet = {
   ip_logical : bool;
   ip_sign : signature;
   ip_vars : identifier list;
-  ip_types : (ml_type list) array;
-  mutable ip_optim_id_ok : bool option
+  ip_types : (ml_type list) array
 }
 
 (* [ip_nparams] contains the number of parameters. *)
@@ -99,28 +96,17 @@ type ml_ident =
   | Tmp of identifier
 
 (** We now store some typing information on constructors
-    and cases to avoid type-unsafe optimisations.
-    For cases, we also store the set of branches to merge
-    in a common pattern, either "_ -> c" or "x -> f x"
+    and cases to avoid type-unsafe optimisations. This will be
+    either the type of the applied constructor or the type
+    of the head of the match.
 *)
 
-type constructor_info = {
-  c_kind : inductive_kind;
-  c_typs : ml_type list;
-}
+(** Nota : the constructor [MLtuple] and the extension of [MLcase]
+    to general patterns have been proposed by P.N. Tollitte for
+    his Relation Extraction plugin. [MLtuple] is currently not
+    used by the main extraction, as well as deep patterns. *)
 
-type branch_same =
-  | BranchNone
-  | BranchFun of Intset.t
-  | BranchCst of Intset.t
-
-type match_info = {
-  m_kind : inductive_kind;
-  m_typs : ml_type list;
-  m_same : branch_same
-}
-
-type ml_branch = global_reference * ml_ident list * ml_ast
+type ml_branch = ml_ident list * ml_pattern * ml_ast
 
 and ml_ast =
   | MLrel    of int
@@ -128,24 +114,32 @@ and ml_ast =
   | MLlam    of ml_ident * ml_ast
   | MLletin  of ml_ident * ml_ast * ml_ast
   | MLglob   of global_reference
-  | MLcons   of constructor_info * global_reference * ml_ast list
-  | MLcase   of match_info * ml_ast * ml_branch array
+  | MLcons   of ml_type * global_reference * ml_ast list
+  | MLtuple  of ml_ast list
+  | MLcase   of ml_type * ml_ast * ml_branch array
   | MLfix    of int * identifier array * ml_ast array
   | MLexn    of string
   | MLdummy
   | MLaxiom
   | MLmagic  of ml_ast
 
+and ml_pattern =
+  | Pcons   of global_reference * ml_pattern list
+  | Ptuple  of ml_pattern list
+  | Prel    of int (** Cf. the idents in the branch. [Prel 1] is the last one. *)
+  | Pwild
+  | Pusual  of global_reference (** Shortcut for Pcons (r,[Prel n;...;Prel 1]) **)
+
 (*s ML declarations. *)
 
 type ml_decl =
-  | Dind  of kernel_name * ml_ind
+  | Dind  of mutual_inductive * ml_ind
   | Dtype of global_reference * identifier list * ml_type
   | Dterm of global_reference * ml_ast * ml_type
   | Dfix  of global_reference array * ml_ast array * ml_type array
 
 type ml_spec =
-  | Sind  of kernel_name * ml_ind
+  | Sind  of mutual_inductive * ml_ind
   | Stype of global_reference * identifier list * ml_type option
   | Sval  of global_reference * ml_type
 

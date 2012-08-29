@@ -1,12 +1,10 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2010     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
-
-(*i $Id: LegacyRfield.v 13323 2010-07-24 15:57:30Z herbelin $ i*)
 
 Require Export Raxioms.
 Require Export LegacyField.
@@ -19,9 +17,9 @@ Open Scope R_scope.
 Lemma RLegacyTheory : Ring_Theory Rplus Rmult 1 0 Ropp (fun x y:R => false).
   split.
   exact Rplus_comm.
-  symmetry  in |- *; apply Rplus_assoc.
+  symmetry ; apply Rplus_assoc.
   exact Rmult_comm.
-  symmetry  in |- *; apply Rmult_assoc.
+  symmetry ; apply Rmult_assoc.
   intro; apply Rplus_0_l.
   intro; apply Rmult_1_l.
   exact Rplus_opp_r.
